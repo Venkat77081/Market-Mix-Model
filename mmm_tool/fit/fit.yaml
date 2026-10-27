@@ -1,0 +1,40 @@
+# Phase E settings. Gate thresholds are from the roadmap; change them here,
+# not in the code.
+
+samplers:
+  # For a first look: fewer draws, same model. Convergence (step 30) is still checked.
+  quick: {label: "Quick", n_chains: 2, n_adapt: 300, n_burnin: 300, n_keep: 300}
+  # The roadmap's settings for step 29: 4 chains, 500 adapt, 500 burn-in, 1,000 kept.
+  full: {label: "Full", n_chains: 4, n_adapt: 500, n_burnin: 500, n_keep: 1000}
+
+prior_draws: 500
+seed: 7
+confidence: 0.9            # every range is a 90% range
+
+prior_check:               # step 28 (warning)
+  max_width: 10            # the prior's 90% range of total KPI may be at most 10x the actual total
+
+convergence:               # step 30 (gate)
+  rhat_max: 1.1
+  rerun_factor: 2          # once, with twice the adapt, burn-in and kept draws
+
+holdout:                   # step 31 (gate)
+  test_mape_max: 0.10
+  season_weeks: 52         # seasonal-naive forecast: the same week a year earlier
+
+plausibility:              # step 32 (gate)
+  roi_min: 0.05
+  roi_max: 20
+  baseline_share: [0.20, 0.95]
+  reconcile_tolerance: 0.001   # contributions + baseline vs the fit, as a share of the fit
+
+prior_driven:              # step 33 (badge)
+  min_narrowing: 0.30      # posterior 90% range at least 30% narrower than the prior's
+
+stability:                 # step 34 (badge, optional)
+  drop_weeks: 26
+  min_weeks: 104           # a window shorter than this is skipped
+  cv_max: 0.3
+
+placebo:                   # step 35 (warning, optional)
+  name: placebo

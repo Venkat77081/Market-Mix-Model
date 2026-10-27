@@ -200,8 +200,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity",
     "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money",
     "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report",
-    "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27] };
+    "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout",
+    "Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -242,6 +243,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
+    if (view === "e" && !(data.result_d && data.result_d.status === "complete")) view = "d";
     if (view === "d" && !data.result_d) view = "c";
     if (view === "c" && !data.result_c) view = "b";
     if (view === "b" && !data.result_b) view = "a";
@@ -282,7 +284,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   // ---------- helpers ----------
   const phaseResult = v => ({ a: run.result, b: run.result_b, c: run.result_c, d: run.result_d })[v];
-  const stepOf = n => [run.result, run.result_b, run.result_c, run.result_d].filter(Boolean).flatMap(r => r.steps).find(s => s.step === n);
+  const fitResult = () => run && run.fit && run.fit.result ? run.fit.result : null;
+  const stepOf = n => [run.result, run.result_b, run.result_c, run.result_d, fitResult()].filter(Boolean).flatMap(r => r.steps).find(s => s.step === n);
   const decision = (s, id) => s && s.decisions.find(d => d.id === id);
   const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
   function seg(d, options, labels = {}) {
@@ -819,21 +822,21 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       done: "The data can support an MMM. Phase D configures the model.", next: "d", nextLabel: "Continue to D · Configure" },
     d: { eyebrow: "D · steps 21–27", title: "Configure the model", csv: "model_data", table: "Data Meridian fits",
       note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
-      done: "The model is configured. Phase E fits and validates it.", next: null, nextLabel: "Continue to E · Validate (not built yet)" },
+      done: "The model is configured. Phase E fits and validates it.", next: "e", nextLabel: "Continue to E · Validate" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail() };
+  // Phase E in the rail: open once D is complete; its dot shows the fit's outcome.
+  function fitRail() {
+    if (!run.result_d || run.result_d.status !== "complete") return null;
+    const f = run.fit, res = fitResult();
+    const status = !f || f.stale ? "none" : ["queued", "running"].includes(f.state) ? "running"
+      : res ? (res.status === "accepted" ? "complete" : "failed") : f.state === "failed" ? "failed" : "none";
+    return { status, steps: res ? res.steps : [], pending: [] };
+  }
 
-  function render() {
-    $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
-    const r = phaseResult(view);
-    const info = PHASE_INFO[view];
-    const nums = PHASE_STEPS[view];
-    const statuses = nums.map(n => (stepOf(n) || {}).verdict || "");
-    const done = statuses.filter(v => v === "pass" || v === "warn").length;
-    const pending = r.pending.length;
-    const dot = res => !res ? "" : res.status === "complete" ? "pass" : res.status === "failed" ? "fail" : "needs_input";
-
-    $("rail").innerHTML = PHASES.map(([k, name], i) => {
+  const dot = res => !res ? "" : res.status === "complete" ? "pass" : res.status === "failed" ? "fail" : res.status === "none" ? "" : res.status === "running" ? "warn" : "needs_input";
+  function railHtml() {
+    return PHASES.map(([k, name], i) => {
       const key = k.toLowerCase();
       const res = RESULT_OF[key] ? RESULT_OF[key]() : null;
       const head = (i === 0 ? '<div class="group">Pipeline</div>' : i === 5 ? '<div class="group">Screens</div>' : "");
@@ -845,6 +848,18 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const steps = view === key ? `<ol>${PHASE_STEPS[key].map(n => `<li><span class="dot ${(stepOf(n) || {}).verdict || ""}"></span><a href="#" data-jump="${n}">${n}. ${STEP_NAMES[n - 1]}</a></li>`).join("")}</ol>` : "";
       return head + row + steps;
     }).join("");
+  }
+
+  function render() {
+    $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
+    if (view === "e") return renderFit();
+    const r = phaseResult(view);
+    const info = PHASE_INFO[view];
+    const nums = PHASE_STEPS[view];
+    const statuses = nums.map(n => (stepOf(n) || {}).verdict || "");
+    const done = statuses.filter(v => v === "pass" || v === "warn").length;
+    const pending = r.pending.length;
+    $("rail").innerHTML = railHtml();
 
     const bodies = { 1: step1, 2: step2, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, 8: step8, 9: step9, 10: step10, 11: step11, 12: step12, 13: step13,
       14: step14, 15: step15, 16: step16, 17: step17, 18: step18, 19: step19, 20: step20,
@@ -891,6 +906,150 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     wire();
     const first = r.steps.find(s => s.blocks);
     if (first && render.scrolled !== view) { render.scrolled = view; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
+  }
+
+  // ---------- Phase E: fit and validate ----------
+  let fitSettings = null;   // samplers and thresholds from fit.yaml
+  let fitPoll = null;       // timer while a fit runs
+  const FIT_ACTIVE = ["queued", "running"];
+  const gateName = { 30: "Convergence", 31: "Holdout accuracy", 32: "Plausibility" };
+  const r2 = x => x == null ? "–" : x.toFixed(2);
+
+  function fitChart(c) {
+    if (!c || !c.weeks || c.weeks.length < 2) return "";
+    const W = 680, H = 190, l = 56, r = 10, t = 10, b = 22, n = c.weeks.length;
+    const vals = c.actual.concat(c.fitted), lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.08 || 1, y0 = lo - pad, y1 = hi + pad;
+    const x = i => l + (i / (n - 1)) * (W - l - r), y = v => t + (1 - (v - y0) / (y1 - y0)) * (H - t - b);
+    const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+    const first = c.test.indexOf(true);
+    const shade = first >= 0 ? `<rect x="${x(first)}" y="${t}" width="${x(n - 1) - x(first)}" height="${H - t - b}" fill="var(--accent-soft)"/><text x="${x(first) + 4}" y="${t + 12}" fill="var(--muted)" font-size="11">held back</text>` : "";
+    const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${num(Math.round(v))}</text>`).join("");
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Actual and fitted KPI by week, held-back weeks shaded" style="width:100%;height:auto;display:block">${shade}${ticks}
+      <path d="${path(c.actual)}" fill="none" stroke="var(--muted)" stroke-width="1.4"/><path d="${path(c.fitted)}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+      <text x="${l}" y="${H - 6}" fill="var(--muted)" font-size="11">${esc(c.weeks[0])}</text><text x="${W - r}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(c.weeks[n - 1])}</text></svg>
+      <p class="muted small"><span style="color:var(--muted)">━</span> actual &nbsp; <span style="color:var(--accent)">━</span> fitted (posterior mean)</p></div>`;
+  }
+  const range = (lo, hi) => `${r2(lo)}–${r2(hi)}`;
+  const FIT_BODIES = {
+    28: s => { const d = s.details; return `<dl class="kv"><div><dt>Actual total KPI</dt><dd>${num(Math.round(d.actual_total))}</dd></div>
+      <div><dt>Prior 90% range</dt><dd>${num(Math.round(d.prior_low))} – ${num(Math.round(d.prior_high))}</dd></div><div><dt>Width vs actual</dt><dd>${d.width_ratio.toFixed(1)}×</dd></div></dl>`; },
+    29: s => { const d = s.details, k = d.sampler; return `<dl class="kv"><div><dt>Sampler</dt><dd>${k.n_chains} chains · ${k.n_adapt} adapt · ${k.n_burnin} burn-in · ${k.n_keep} kept</dd></div>
+      <div><dt>Time</dt><dd>${num(d.seconds)} s</dd></div><div><dt>Held back</dt><dd>${d.holdout ? `${esc(d.holdout.start)} to ${esc(d.holdout.end)}` : "nothing"}</dd></div></dl>`; },
+    30: s => { const d = s.details, last = d.rerun || d.first; return `<dl class="kv"><div><dt>Largest R-hat</dt><dd>${r2(last.worst.rhat)} <span class="muted small mono">${esc(last.worst.parameter)}</span></dd></div>
+      <div><dt>Limit</dt><dd>${d.rhat_max}</dd></div><div><dt>Rerun</dt><dd>${d.rerun ? `yes (first try ${r2(d.first.worst.rhat)})` : "not needed"}</dd></div></dl>`; },
+    31: s => { const d = s.details, a = d.accuracy || {}; const row = k => a[k] ? `<tr><td>${k}</td><td class="num">${pct(a[k].MAPE)}</td><td class="num">${r2(a[k].R_Squared)}</td></tr>` : "";
+      return `${fitChart(d.chart)}<div class="scroll"><table style="min-width:360px"><thead><tr><th></th><th>MAPE</th><th>R²</th></tr></thead><tbody>${row("Train")}${row("Test")}${row("All Data")}
+      ${d.naive_mape != null ? `<tr><td>Same week last year</td><td class="num">${pct(d.naive_mape)}</td><td></td></tr>` : ""}</tbody></table></div>`; },
+    32: s => { const d = s.details, rows = fitResult().channels.filter(c => c.paid);
+      return `<dl class="kv"><div><dt>Baseline share of KPI</dt><dd>${pct(d.contributions.baseline_share)} <span class="muted small">(${pct(d.limits.baseline_share[0])}–${pct(d.limits.baseline_share[1])})</span></dd></div>
+        <div><dt>Contributions vs fit</dt><dd>${(Math.abs(d.contributions.reconcile_error) * 100).toFixed(3)}% apart</dd></div><div><dt>ROI unit</dt><dd>${d.roi_in_money ? "₹ per ₹" : "KPI per ₹"}</dd></div></dl>
+        <div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>ROI</th><th>90% range</th><th>Share of KPI</th><th>Badges</th></tr></thead><tbody>${rows.map(c =>
+          `<tr><td><b>${esc(c.channel)}</b></td><td class="num" ${d.roi_out_of_range[c.channel] != null ? 'style="color:var(--block)"' : ""}>${r2(c.roi_posterior_mean)}</td><td class="num">${range(c.roi_posterior_ci_lo, c.roi_posterior_ci_hi)}</td><td class="num">${pct(c.share_of_kpi)}</td><td class="small">${c.badges.map(esc).join(", ")}</td></tr>`).join("")}</tbody></table></div>`; },
+    33: s => `<div class="scroll"><table style="min-width:480px"><thead><tr><th>Channel</th><th>Prior 90%</th><th>Posterior 90%</th><th>Narrower by</th></tr></thead><tbody>${s.details.channels.map(c =>
+      `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${range(...c.prior)}</td><td class="num">${range(...c.posterior)}</td><td class="num" ${c.narrowing < s.details.min_narrowing ? 'style="color:var(--warn)"' : ""}>${pct(Math.max(0, c.narrowing))}</td></tr>`).join("")}</tbody></table></div>`,
+    34: s => s.details.skipped === true ? "" : `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th>${s.details.windows.map(w => `<th class="small">${esc(w)}</th>`).join("")}<th>CV</th></tr></thead><tbody>${s.details.channels.map(c =>
+      `<tr><td><b>${esc(c.channel)}</b></td>${s.details.windows.map(w => `<td class="num">${r2(c.roi[w])}</td>`).join("")}<td class="num" ${s.details.unstable.includes(c.channel) ? 'style="color:var(--warn)"' : ""}>${r2(c.cv)}</td></tr>`).join("")}</tbody></table></div>`,
+    35: s => s.details.skipped ? "" : `<dl class="kv"><div><dt>Shaped like</dt><dd>${esc(s.details.shaped_like)}</dd></div><div><dt>Placebo ROI</dt><dd>${r2(s.details.roi_posterior[1])} <span class="muted small">(${range(s.details.roi_posterior[0], s.details.roi_posterior[2])})</span></dd></div>
+      <div><dt>Its prior</dt><dd>${r2(s.details.roi_prior[1])} <span class="muted small">(${range(s.details.roi_prior[0], s.details.roi_prior[2])})</span></dd></div></dl>`,
+    36: s => s.details.skipped ? "" : `<dl class="kv"><div><dt>Data version</dt><dd class="mono">${esc(s.details.data_version)}</dd></div><div><dt>Weeks</dt><dd>${num(s.details.weeks)}</dd></div>
+      <div><dt>Largest R-hat</dt><dd>${r2(s.details.rhat_worst.rhat)}</dd></div><div><dt>Meridian</dt><dd>${esc(s.details.meridian)}</dd></div></dl>
+      ${s.details.path ? `<p><a class="btn" href="/api/runs/${run.run_id}/model.pkl">Download model.pkl</a> <span class="muted small">Load it with <span class="mono">meridian.model.model.load_mmm</span> and the same Meridian version.</span></p>` : ""}`,
+  };
+
+  function fitForm(f) {
+    const smp = fitSettings ? fitSettings.samplers : { quick: { label: "Quick" }, full: { label: "Full" } };
+    const opts = (f && f.options) || { sampler: "quick", stability: false, placebo: false };
+    const desc = k => smp[k].n_chains ? `${smp[k].n_chains} chains, ${smp[k].n_adapt} adapt, ${smp[k].n_burnin} burn-in, ${smp[k].n_keep} kept` : "";
+    return `<article class="card"><header><span class="n">▶</span><h3>Fit the model</h3>
+      <p class="sum">Runs in the background; you can leave this page and come back. Steps 34 and 35 add fits, so they're optional.</p></header>
+      <div class="body"><form id="fit-form" style="display:grid;gap:10px">
+        <fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px"><legend class="small muted" style="margin-bottom:4px">Sampler (step 29)</legend>
+          ${Object.keys(smp).map(k => `<label><input type="radio" name="sampler" value="${esc(k)}" ${opts.sampler === k ? "checked" : ""}> <b>${esc(smp[k].label || k)}</b> <span class="muted small">${esc(desc(k))}${k === "full" ? " · about 10 minutes for 156 weeks and 9 channels" : k === "quick" ? " · a first look, a few minutes" : ""}</span></label>`).join("")}
+        </fieldset>
+        <label><input type="checkbox" id="fit-stability" ${opts.stability ? "checked" : ""}> Stability check (step 34): three extra fits that drop the first or last 26 weeks</label>
+        <label><input type="checkbox" id="fit-placebo" ${opts.placebo ? "checked" : ""}> Placebo check (step 35): one extra fit with a random channel</label>
+        <div><button class="btn primary" type="submit">${f && f.result ? "Refit" : "Start fit"}</button></div>
+      </form></div></article>`;
+  }
+
+  function fitBanner(f, res) {
+    if (f.stale) return `<div class="card needs" style="padding:14px 16px"><b>Out of date.</b> The data or the model settings changed after this fit; its results describe the old version. Refit to update them.</div>`;
+    if (!res) return f.state === "failed" ? `<div class="error">The fit stopped: ${esc(f.message)}</div>` : f.state === "cancelled" ? `<div class="card" style="padding:14px 16px">The fit was cancelled.</div>` : "";
+    const failed = res.gates.filter(g => !g.passed);
+    const [cls, head, text] = res.status === "accepted"
+      ? ["pass", "Accepted", "Every gate passed. The final model is fitted on all weeks and saved."]
+      : res.status === "rejected"
+        ? ["fail", "Rejected", `Failed ${failed.map(g => `step ${g.step} (${esc(g.name)})`).join(" and ")}. Nothing is saved; see the reasons below.`]
+        : ["fail", "Stopped", esc(res.error || "An error stopped the fit.")];
+    return `<div class="card" style="padding:14px 16px;border-color:var(--${cls === "pass" ? "pass" : "block"})"><span class="pill ${cls}">${head}</span> ${text}
+      <div class="small muted" style="margin-top:6px">${res.gates.map(g => `${g.passed ? "✓" : "✕"} ${g.step} ${esc(g.name)}`).join(" &nbsp; ")}</div></div>`;
+  }
+
+  function renderFit() {
+    const f = run.fit, res = f && !f.stale ? fitResult() : null, active = f && FIT_ACTIVE.includes(f.state);
+    $("rail").innerHTML = railHtml();
+    const nums = PHASE_STEPS.e;
+    const statuses = nums.map(n => res ? (stepOf(n) || {}).verdict || "" : "");
+    let body;
+    if (!run.meridian_installed) {
+      body = `<article class="card"><header><span class="n">!</span><h3>Meridian isn't installed</h3>
+        <p class="sum">Phase E fits the model with google-meridian. Install it, then restart the app:</p></header>
+        <div class="body"><p class="mono">pip install -r requirements-model.txt</p></div></article>`;
+    } else if (active) {
+      const secs = Math.round(Date.now() / 1000 - f.started);
+      body = `<article class="card"><header><span class="n">${f.step || "…"}</span><h3>${f.step ? esc(STEP_NAMES[f.step - 1]) : "Starting"}</h3><span class="pill warn">Running</span>
+        <p class="sum">${esc(f.message)}</p></header><div class="body">
+        <div style="height:10px;border-radius:5px;background:var(--line);overflow:hidden" role="progressbar" aria-valuenow="${Math.round((f.fraction || 0) * 100)}" aria-valuemin="0" aria-valuemax="100">
+          <div style="height:100%;width:${Math.max(2, (f.fraction || 0) * 100)}%;background:var(--accent)"></div></div>
+        <p class="muted small">${Math.round((f.fraction || 0) * 100)}% · ${Math.floor(secs / 60)} min ${secs % 60} s so far · ${esc(f.options.sampler)} sampler</p>
+        <button class="btn" id="fit-cancel">Cancel</button></div></article>`;
+    } else {
+      const cards = res ? nums.map(n => { const s = stepOf(n); if (!s) return card(n, null);
+        try { return card(n, s, FIT_BODIES[n](s)); } catch (e) { console.error(e); return card(n, s, ""); } }).join("") : "";
+      body = (f ? fitBanner(f, res) : "") + cards + fitForm(f);
+    }
+    const badges = Object.entries(res ? res.badges : (run.result_d || {}).badges || {});
+    const chip = !f ? "Not fitted yet" : active ? "Fitting…" : f.stale ? "Out of date" : res ? res.status[0].toUpperCase() + res.status.slice(1) : f.state;
+    $("main").innerHTML = `
+      <div class="runhead"><div><span class="eyebrow">Phase E · steps 28–36</span><h1>Fit and validate</h1></div>
+        <div class="chips"><span class="chip mono">${esc(run.file)}</span><span class="chip">run ${esc(run.run_id)}</span><span class="chip">${esc(chip)}</span></div></div>
+      <div class="progress" aria-hidden="true" style="grid-template-columns:repeat(${nums.length},1fr)">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
+      <div class="cols">
+        <div class="steps">${body}<div class="nextbar"><span class="muted small">${res && res.status === "accepted" ? "The model is accepted. Phase F, the Model Summary screen, reads it." : "A model is accepted only if it passes steps 30, 31 and 32."}</span>
+          <button class="btn primary" disabled>Continue to F · Model Summary (not built yet)</button></div></div>
+        <aside class="side">
+          ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div></div>` : ""}
+          <div class="card"><h4>Gates</h4><div class="log">${[[28, "warning"], [30, "gate"], [31, "gate"], [32, "gate"], [33, "badge"], [34, "badge, optional"], [35, "warning, optional"]].map(([n, k]) => `<div>${n} ${esc(STEP_NAMES[n - 1])} <span class="muted">(${k})</span></div>`).join("")}</div></div>
+          ${res && res.timings ? `<div class="card"><h4>Fit times</h4><div class="log">${Object.entries(res.timings).map(([k, v]) => `<div>${esc(k.replace(/_/g, " "))}: ${num(v)} s</div>`).join("")}</div></div>` : ""}
+        </aside>
+      </div>`;
+    wire();
+    wireFit();
+    clearTimeout(fitPoll);
+    if (active) fitPoll = setTimeout(pollFit, 3000);
+  }
+
+  async function pollFit() {
+    if (view !== "e" || !run) return;
+    try {
+      const st = await fetch(`/api/runs/${run.run_id}/fit`).then(r => r.json());
+      if (FIT_ACTIVE.includes(st.state)) { run.fit = { ...st, stale: false }; renderFit(); }
+      else show(await api("GET", `/api/runs/${run.run_id}`));  // finished: reload with the result
+    } catch (e) { fitPoll = setTimeout(pollFit, 6000); }
+  }
+
+  function wireFit() {
+    if (!fitSettings) api("GET", "/api/fit-settings").then(x => { fitSettings = x; if (view === "e" && !(run.fit && FIT_ACTIVE.includes(run.fit.state))) renderFit(); }).catch(() => {});
+    const form = $("fit-form");
+    if (form) form.onsubmit = async e => {
+      e.preventDefault();
+      const body = { sampler: form.querySelector("[name=sampler]:checked").value, stability: $("fit-stability").checked, placebo: $("fit-placebo").checked };
+      try { run.fit = { ...(await api("POST", `/api/runs/${run.run_id}/fit`, body)), stale: false }; renderFit(); window.scrollTo(0, 0); }
+      catch (err) { alert(err.message); }
+    };
+    const cancel = $("fit-cancel");
+    if (cancel) cancel.onclick = async () => { await api("DELETE", `/api/runs/${run.run_id}/fit`).catch(() => {}); show(await api("GET", `/api/runs/${run.run_id}`)); };
   }
 
   const hashFor = v => `#run=${run.run_id}${v === "a" ? "" : "/" + v}`;
@@ -1027,7 +1186,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcd]))?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcde]))?$/);
   if (m) {
     view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);

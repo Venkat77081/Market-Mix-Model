@@ -23,6 +23,9 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from .. import samples
+from ..fit import job
+from ..fit.context import settings as fit_settings
+from ..fit.model import meridian_installed
 from ..pipeline import run_pipeline
 from ..ingest.keywords import KeywordError, load_keywords
 from ..ingest.memory import RoleMemory
@@ -38,6 +41,12 @@ app = FastAPI(title="Meridian MMM Tool")
 
 class AnswersIn(BaseModel):
     answers: dict[str, Any]
+
+
+class FitIn(BaseModel):
+    sampler: str = "quick"
+    stability: bool = False
+    placebo: bool = False
 
 
 def _clean(x: Any) -> Any:
@@ -111,11 +120,17 @@ def _evaluate(d: Path) -> dict:
             out_d["table_preview"] = _preview(run.d.table)
             run.d.table.to_csv(d / "model_data.csv", index=False)
             (d / "model_config.json").write_text(json.dumps(_clean(run.d.config), indent=2))
+    fit = job.status(d)
+    if fit is not None:
+        built_from = (fit.get("result") or {}).get("inputs") or fit.get("inputs")
+        fit["stale"] = bool(built_from and run.d is not None and run.d.status == "complete"
+                            and built_from != job.inputs_hash(run.d))
     final = run.last
     meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
     (d / "meta.json").write_text(json.dumps(meta))
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
-            "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d)}
+            "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d),
+            "fit": _clean(fit), "meridian_installed": meridian_installed()}
 
 
 def _new_run(filename: str) -> Path:
@@ -243,6 +258,55 @@ def download_model_data(run_id: str) -> Response:
 def download_model_config(run_id: str) -> Response:
     """Phase D's model configuration: carryover, knots, priors, calibration, holdout."""
     return _phase_d_file(run_id, "model_config.json", "application/json", "model_config.json")
+
+
+@app.get("/api/fit-settings")
+def get_fit_settings() -> dict:
+    """Sampler presets and gate thresholds (fit.yaml), for the Phase E screen."""
+    return _clean(fit_settings())
+
+
+@app.post("/api/runs/{run_id}/fit")
+def start_fit(run_id: str, body: FitIn) -> dict:
+    """Start Phase E as a background job. Poll GET .../fit for progress."""
+    d = _run_dir(run_id)
+    if not meridian_installed():
+        raise HTTPException(503, "Phase E needs google-meridian: pip install -r requirements-model.txt, then restart.")
+    if body.sampler not in fit_settings()["samplers"]:
+        raise HTTPException(400, f"Unknown sampler '{body.sampler}'.")
+    res = _evaluate(d)["result_d"]
+    if not res or res["status"] != "complete":
+        raise HTTPException(409, "Phase D is not complete yet.")
+    memory = os.environ.get("MMM_ROLE_MEMORY") or str(RUNS_DIR / "role_memory.json")
+    try:
+        return _clean(job.start(d, body.model_dump(), memory=memory))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/runs/{run_id}/fit")
+def fit_status(run_id: str) -> dict:
+    """The fit's state and progress; the result once it has finished."""
+    st = job.status(_run_dir(run_id))
+    if st is None:
+        raise HTTPException(404, "No fit has been started for this run.")
+    return _clean(st)
+
+
+@app.delete("/api/runs/{run_id}/fit")
+def cancel_fit(run_id: str) -> dict:
+    return _clean(job.cancel(_run_dir(run_id)) or {})
+
+
+@app.get("/api/runs/{run_id}/model.pkl")
+def download_model(run_id: str) -> Response:
+    """The accepted model from step 36 (load it with meridian's load_mmm)."""
+    d = _run_dir(run_id)
+    path = job.fit_dir(d) / "model.pkl"
+    if not path.exists():
+        raise HTTPException(404, "No saved model: the fit hasn't finished, or a gate failed.")
+    stem = Path(_meta(d)["file"]).stem
+    return FileResponse(path, media_type="application/octet-stream", filename=f"{stem}_model.pkl")
 
 
 @app.get("/api/role-memory")

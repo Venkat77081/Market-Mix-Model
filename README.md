@@ -1,7 +1,8 @@
 # Meridian MMM Tool
 
 Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)**, **Phase C,
-Profile (steps 14–20)** and **Phase D, Configure (steps 21–27)** from the roadmap, a web UI for all four, and a clickable design mock of the later screens in `mock/` (sample data only,
+Profile (steps 14–20)**, **Phase D, Configure (steps 21–27)** and **Phase E, Fit and validate
+(steps 28–36)** from the roadmap, a web UI for all five, and a clickable design mock of the later screens in `mock/` (sample data only,
 not connected).
 
 ## Web UI
@@ -134,3 +135,43 @@ With Meridian installed (`pip install -r requirements-model.txt`, about 1.5 GB w
 `mmm_tool.configure.spec.build_input_data(result)` and `build_model_spec(result.config, input_data)`
 give the `InputData` and `ModelSpec` to fit. Tested with google-meridian 2.1.0: the tests build a
 `Meridian` model from them and sample its priors (they skip when Meridian isn't installed).
+
+## Phase E: fit and validate (steps 28–36)
+
+Needs google-meridian (`pip install -r requirements-model.txt`). Fitting takes minutes, so it runs
+as a background job: press **Start fit** on the Phase E screen and leave the page if you like; it
+polls for progress and shows the result when the job finishes. From the command line:
+
+```bash
+python -m mmm_tool.fit data.csv --answers answers.json --sampler quick --out fit/
+python -m mmm_tool.fit data.csv --defaults --sampler full --stability --placebo
+```
+
+A model is **accepted** only if it passes every gate (30, 31 and 32). A failed gate doesn't stop
+the other checks, so every reason shows; the final fit (36) runs only for an accepted model.
+
+| Step | What it checks | Pass rule | Kind |
+|---|---|---|---|
+| 28 Prior check | `sample_prior`: does the prior imply believable sales? | prior 90% range of total KPI covers the actual total and is at most 10× as wide as it | warning |
+| 29 Fit with holdout | `sample_posterior` with the step 27 weeks held back | quick: 2 chains, 300/300/300; full: 4 chains, 500 adapt, 500 burn-in, 1,000 kept | — |
+| 30 Convergence | R-hat for every parameter | all below 1.1; otherwise one rerun with twice the draws, then fail | gate |
+| 31 Holdout accuracy | test and train MAPE and R² (national) | test MAPE below 10% and below a same-week-last-year forecast | gate |
+| 32 Plausibility | ROI per channel, baseline share, contributions | ROI 0.05–20 (when ROI is ₹ per ₹); baseline 20–95% of the KPI; baseline + contributions = the fit | gate |
+| 33 Did the data teach anything? | each channel's ROI, posterior vs prior | 90% range at least 30% narrower than the prior's, else badge **prior-driven** | badge |
+| 34 Stability (optional) | refits without the first 26, last 26, and both | ROI CV below 0.3, else badge **unstable** | badge |
+| 35 Placebo (optional) | an extra channel: a real channel's weekly amounts in random weeks | not credited (see below) | warning |
+| 36 Final fit and save | refit on every week, `save_mmm` | saved as `model.pkl` with `model_meta.json`: data version, settings, gate results | — |
+
+Thresholds and the two sampler presets are in `mmm_tool/fit/fit.yaml`.
+
+Step 35 differs from the roadmap's wording ("its ROI range includes zero") on purpose: Meridian's
+ROI priors are LogNormal, so an ROI range can never include zero. The placebo counts as credited
+when the data pulls its ROI *up* from the prior and the low end of its range stays above 0.05.
+
+In the UI the job writes to `runs/<id>/fit/` (`status.json`, `result.json`, `model.pkl`,
+`log.txt`). If you change any answer after a fit, the fit is marked out of date until you refit.
+Download the accepted model at `/api/runs/<id>/model.pkl` and load it with
+`meridian.model.model.load_mmm` using the same Meridian version.
+
+`pytest` checks the gate rules and the job bookkeeping in seconds. The tests that really fit with
+Meridian take several minutes, so they run only with `MMM_FIT_TESTS=1 pytest tests/test_phase_e.py`.

@@ -40,6 +40,8 @@ BADGE_TEXT = {
     "season_timed": "timed with a season",
     "calibrated": "calibrated",      # Phase D step 26: a lift test sets its prior
     "model_only": "model only",      # no experiment behind it
+    "prior_driven": "prior-driven",  # Phase E step 33: the data barely narrowed the ROI prior
+    "unstable": "unstable",          # Phase E step 34: ROI moves when the window of weeks moves
 }
 
 

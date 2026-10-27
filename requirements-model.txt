@@ -1,4 +1,4 @@
-# Meridian and TensorFlow (about 1.5 GB). Needed to build and fit the model;
-# phases A-D run without it.
+# Meridian and TensorFlow (about 1.5 GB). Needed to fit and validate the model
+# (Phase E); phases A-D run without it.
 -r requirements.txt
 google-meridian==2.1.0
