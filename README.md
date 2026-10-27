@@ -122,5 +122,7 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 | 26 Lift-test calibration | none | tests: channel, dates, ROI and 90% range (`lift_tests`); several per channel are combined | prior + `roi_calibration` |
 | 27 Holdout | last 13 weeks | 8–26 (`holdout_weeks`) | `holdout` |
 
-With google-meridian installed, `mmm_tool.configure.spec.build_input_data(result)` and
-`build_model_spec(result.config, input_data)` give the `InputData` and `ModelSpec` to fit.
+With Meridian installed (`pip install -r requirements-model.txt`, about 1.5 GB with TensorFlow),
+`mmm_tool.configure.spec.build_input_data(result)` and `build_model_spec(result.config, input_data)`
+give the `InputData` and `ModelSpec` to fit. Tested with google-meridian 2.1.0: the tests build a
+`Meridian` model from them and sample its priors (they skip when Meridian isn't installed).

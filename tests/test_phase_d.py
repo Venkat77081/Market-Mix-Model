@@ -111,8 +111,11 @@ def test_lift_tests_calibrate_and_combine(clean):
     r = run(clean, {"roi_ranges": {"search": {"low": 1, "high": 2}}, "lift_tests": tests})
     p = r.d.config["roi_priors"]["search"]
     assert p["source"] == "lift_test" and 2.5 < p["median"] < 2.9  # pulled towards the more precise test
-    assert r.d.config["calibration"]["search"]["periods"] == [{"start": "2024-04-01", "end": "2024-05-26"},
-                                                              {"start": "2025-02-03", "end": "2025-03-30"}]
+    # Snapped to the data's week starts, which Meridian requires: a test ending Sunday 26 May
+    # covers the week starting Monday 20 May.
+    assert r.d.config["calibration"]["search"]["periods"] == [
+        {"start": "2024-04-01", "end": "2024-05-20", "entered": "2024-04-01 to 2024-05-26"},
+        {"start": "2025-02-03", "end": "2025-03-24", "entered": "2025-02-03 to 2025-03-30"}]
     assert r.d.badges["search"] == ["calibrated"] and r.d.badges["tv"] == ["model_only"]
     assert any("replaces" in w for w in step(r, 26).warnings)
 
@@ -150,3 +153,11 @@ def test_builds_meridian_objects(clean):
     mu = np.asarray(spec.prior.roi_m.loc if hasattr(spec.prior.roi_m, "loc") else spec.prior.roi_m.parameters["loc"])
     assert np.isclose(mu[order.index("search")], math.log(2.9), atol=0.05)
     assert spec.roi_calibration is not None and spec.holdout is not None
+
+    # Meridian accepts the spec (exact week dates, float64 priors) and samples the priors.
+    from meridian.model import model
+
+    mmm = model.Meridian(input_data=data, model_spec=spec)
+    mmm.sample_prior(30)
+    roi = mmm.inference_data.prior["roi_m"].values
+    assert roi.dtype == np.float64 and roi.shape[-1] == len(order)

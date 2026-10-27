@@ -19,6 +19,14 @@ from ..ingest.types import Answers, Decision, StepResult, Verdict
 from .context import DEFAULT_ROI_MU, DEFAULT_ROI_SIGMA, DCtx, lognormal_from_range, lognormal_summary
 
 
+def week_period(weeks: pd.DatetimeIndex, start: str, end: str) -> dict:
+    """The data weeks a test covers: from the week containing its first day to
+    the week containing its last. Meridian needs exact week starts."""
+    first = weeks[max(0, weeks.searchsorted(pd.Timestamp(start), side="right") - 1)]
+    last = weeks[max(0, weeks.searchsorted(pd.Timestamp(end), side="right") - 1)]
+    return {"start": str(first.date()), "end": str(last.date()), "entered": f"{start} to {end}"}
+
+
 def _range(v) -> tuple[float, float] | None:
     try:
         lo, hi = float(v["low"]), float(v["high"])
@@ -116,7 +124,7 @@ def lift_tests(ctx: DCtx, answers: Answers) -> StepResult:
         sigma = math.sqrt(1 / sum(w))
         replaced = priors[ch]["source"]
         priors[ch] = {**lognormal_summary(mu, sigma), "source": "lift_test", "tests": own}
-        calibrated[ch] = {"periods": [{"start": t["start"], "end": t["end"]} for t in own], "replaced": replaced}
+        calibrated[ch] = {"periods": [week_period(weeks, t["start"], t["end"]) for t in own], "replaced": replaced}
     ctx.config["calibration"] = calibrated
     for c in ctx.channels:
         ctx.badge(c.name, "calibrated" if c.name in calibrated else "model_only")

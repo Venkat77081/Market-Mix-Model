@@ -159,7 +159,7 @@ def write_messy(dir: Path) -> Path:
     halves = df.loc[10:29].copy()
     money = [c for c in df.columns if c.endswith(("_spend", "_spend_cr", "_grps", "_clicks", "_impressions", "_sends")) or c == "new_policies"]
     for c in money:
-        num = pd.to_numeric(df.loc[10:29, c], errors="coerce")
+        num = pd.to_numeric(df.loc[10:29, c], errors="coerce").copy()  # a view would change under the next line (pandas 2)
         df.loc[10:29, c] = num / 2
         halves[c] = num / 2
     df = pd.concat([df, halves]).drop(index=[40, 41, 90, 120]).sort_values("week_start", kind="stable")
