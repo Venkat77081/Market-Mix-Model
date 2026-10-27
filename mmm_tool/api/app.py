@@ -98,11 +98,17 @@ def _evaluate(d: Path) -> dict:
         if run.b.status == "complete":
             out_b["table_preview"] = _preview(run.b.table)
             run.b.table.to_csv(d / "cleaned.csv", index=False)
-    final = run.b or run.a
+    out_c = None
+    if run.c is not None:
+        out_c = run.c.to_dict()
+        if run.c.status == "complete":
+            out_c["table_preview"] = _preview(run.c.table)
+            run.c.table.to_csv(d / "profiled.csv", index=False)
+    final = run.last
     meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
     (d / "meta.json").write_text(json.dumps(meta))
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
-            "result": _clean(out_a), "result_b": _clean(out_b)}
+            "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c)}
 
 
 def _new_run(filename: str) -> Path:
@@ -198,6 +204,17 @@ def download_cleaned(run_id: str) -> Response:
         raise HTTPException(409, "Phase B is not complete yet.")
     stem = Path(_meta(d)["file"]).stem
     return FileResponse(d / "cleaned.csv", media_type="text/csv", filename=f"{stem}_phase_b.csv")
+
+
+@app.get("/api/runs/{run_id}/profiled.csv")
+def download_profiled(run_id: str) -> Response:
+    """The table after Phase C: rare channels merged, moving-together channels combined, mediators dropped."""
+    d = _run_dir(run_id)
+    c = _evaluate(d)["result_c"]
+    if not c or c["status"] != "complete":
+        raise HTTPException(409, "Phase C is not complete yet.")
+    stem = Path(_meta(d)["file"]).stem
+    return FileResponse(d / "profiled.csv", media_type="text/csv", filename=f"{stem}_phase_c.csv")
 
 
 @app.get("/api/role-memory")

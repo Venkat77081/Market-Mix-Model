@@ -24,13 +24,13 @@ MARK = {"pass": "✓", "warn": "!", "needs_input": "?", "fail": "✗"}
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="mmm-ingest", description="Phase A, ingest (steps 1-6), then Phase B, clean (steps 7-13)")
+    p = argparse.ArgumentParser(prog="mmm-ingest", description="Phases A (ingest, 1-6), B (clean, 7-13) and C (profile, 14-20)")
     p.add_argument("file", nargs="?")
     p.add_argument("--answers", help="JSON file of answers keyed by decision id")
     p.add_argument("--accept-defaults", action="store_true")
     p.add_argument("--json", action="store_true", help="print the full result as JSON")
-    p.add_argument("--out", help="write the final table (cleaned, or ingested with --phase a) to this CSV")
-    p.add_argument("--phase", choices=["a", "b"], default="b", help="stop after this phase (default b)")
+    p.add_argument("--out", help="write the table from the last phase run to this CSV")
+    p.add_argument("--phase", choices=["a", "b", "c"], default="c", help="stop after this phase (default c)")
     p.add_argument("--no-memory", action="store_true", help="don't use or update remembered column roles")
     p.add_argument("--forget", action="store_true", help="clear remembered column roles and exit")
     args = p.parse_args(argv)
@@ -48,10 +48,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_phase_a(args.file, ans, memory=memory)
         phases = [result]
-        if result.status == "complete" and args.phase == "b":
+        if result.status == "complete" and args.phase in ("b", "c"):
             from ..clean import run_phase_b
 
             result = run_phase_b(result, ans)
+            phases.append(result)
+        if result.status == "complete" and args.phase == "c":
+            from ..profile import run_phase_c
+
+            result = run_phase_c(result, ans)
             phases.append(result)
     except KeywordError as e:
         print(f"Role keywords: {e}", file=sys.stderr)

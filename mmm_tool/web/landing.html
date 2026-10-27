@@ -156,14 +156,14 @@ footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted)
   <div class="wrap">
     <span class="eyebrow">How it works</span>
     <h2>Five phases build the model once. Four screens use it.</h2>
-    <p class="intro">Fitting takes minutes, so it never runs inside a screen. The pipeline turns your upload into an approved model; the screens only read that model, so they open instantly. Phases A and B are live; the rest are being built in order.</p>
+    <p class="intro">Fitting takes minutes, so it never runs inside a screen. The pipeline turns your upload into an approved model; the screens only read that model, so they open instantly. Phases A, B and C are live; the rest are being built in order.</p>
     <div class="arch">
       <div class="arch-inner">
         <span class="label">PIPELINE · runs once per fit</span>
         <div class="arch-row">
           <a class="node" href="/app"><span class="pill pass tag">live</span><b>A · Ingest</b><span class="steps">steps 1–6</span><span class="ask">you map column roles</span></a>
           <a class="node" href="/app"><span class="pill pass tag">live</span><b>B · Clean</b><span class="steps">steps 7–13</span><span class="ask">you set gap rules</span></a>
-          <div class="node soon"><b>C · Profile</b><span class="steps">steps 14–20</span><span class="ask">gate: 104+ weeks</span></div>
+          <a class="node" href="/app"><span class="pill pass tag">live</span><b>C · Profile</b><span class="steps">steps 14–20</span><span class="ask">gate: 104+ weeks</span></a>
           <div class="node soon"><b>D · Configure</b><span class="steps">steps 21–27</span><span class="ask">you add lift tests</span></div>
           <div class="node soon gate"><b>E · Validate</b><span class="steps">steps 28–36</span><span class="ask">3 pass/fail gates</span></div>
         </div>
@@ -289,7 +289,7 @@ footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted)
     const host = document.getElementById("runlist");
     if (!runs.length) { host.innerHTML = `<div class="empty">No runs yet. <a href="/app">Upload an export</a> or try one of the sample files to start.</div>`; return; }
     host.innerHTML = `<div class="scroll"><table style="min-width:560px"><thead><tr><th>File</th><th>Run</th><th>Status</th><th>Last change</th><th></th></tr></thead><tbody>${
-      runs.map(r => `<tr><td class="mono">${esc(r.file)}</td><td class="mono muted">${esc(r.run_id)}</td><td>${status(r)}</td><td class="muted">${when(r.updated)}</td><td><a href="/app#run=${esc(r.run_id)}${r.phase === "B" ? "/b" : ""}">Open</a></td></tr>`).join("")
+      runs.map(r => `<tr><td class="mono">${esc(r.file)}</td><td class="mono muted">${esc(r.run_id)}</td><td>${status(r)}</td><td class="muted">${when(r.updated)}</td><td><a href="/app#run=${esc(r.run_id)}${r.phase && r.phase !== "A" ? "/" + r.phase.toLowerCase() : ""}">Open</a></td></tr>`).join("")
     }</tbody></table></div>`;
   }).catch(() => { document.getElementById("runlist").innerHTML = `<div class="empty">Couldn't load runs. Is the server running?</div>`; });
 })();

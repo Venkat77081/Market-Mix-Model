@@ -1,7 +1,7 @@
 # Meridian MMM Tool
 
-Built so far: **Phase A, Ingest (steps 1–6)** and **Phase B, Clean (steps 7–13)** from the roadmap,
-a web UI for both, and a clickable design mock of the later screens in `mock/` (sample data only,
+Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)** and **Phase C,
+Profile (steps 14–20)** from the roadmap, a web UI for all three, and a clickable design mock of the later screens in `mock/` (sample data only,
 not connected).
 
 ## Web UI
@@ -85,3 +85,23 @@ The words used to classify columns in step 8 and the unit words in step 13 are i
 `tests/data/phase_a_tests/` holds 19 test exports and `expected_phase_a.json`, their answer key.
 `python tests/expected_phase_a.py` prints a check-by-check report for every file; the same checks run
 in `pytest` (`tests/test_expected_phase_a.py`).
+
+## Phase C: profile and sufficiency gates (steps 14–20)
+
+Runs once Phase B is complete. Decides whether the data can support an MMM and warns about each
+channel before fitting. Channel findings become badges shown beside that channel's ROI later.
+
+| Step | Check | Threshold | Action |
+|---|---|---|---|
+| 14 Data sufficiency | weeks of history; observations per parameter | under 104 weeks or under 3 per parameter: refused; 104–155 weeks thin; 3–6 per parameter needs strong priors | refuse, or warn |
+| 15 Channel activity | weeks with spend; share of spend | under 10% of weeks or 1% of spend | merge into Other, drop, or keep (`rare_channels`) |
+| 16 Spend variation | CV of weekly spend (median across regions in a regional model) | under 0.3 | "hard to measure" badge |
+| 17 Channels moving together | correlation; VIF | above 0.7; above 10 | combine or keep, per pair (`together:a|b`) |
+| 18 Marketing-caused variables | control vs spend 1–2 weeks earlier | above 0.6 | exclude or keep (`mediator:col`) |
+| 19 Spend timed with seasons | spend vs 0/1 season flags | above 0.6 | warning and badge |
+| 20 Profile report | spend share, KPI with spend overlay, activity heatmap | | report |
+
+Parameters are counted as 3 per paid or unpaid media channel (effect, carryover, saturation), 1 per
+control or lever, one baseline knot per quarter and one intercept per region; the counts and every
+threshold are in `mmm_tool/profile/context.py`. Samples: `ins_short`, `ins_rare`, `ins_flat`,
+`ins_collinear`, `ins_mediator`, `ins_season`.

@@ -84,8 +84,10 @@ def test_phase_b_through_the_api(client):
     assert r["result_b"]["table_preview"]["rows"]
     csv = client.get(f"/api/runs/{run_id}/cleaned.csv")
     assert csv.status_code == 200 and len(csv.text.strip().splitlines()) == 157
+    assert r["phase"] == "C" and r["result_c"]["status"] == "complete"
+    assert client.get(f"/api/runs/{run_id}/profiled.csv").status_code == 200
     runs = client.get("/api/runs").json()
-    assert runs[0]["phase"] == "B" and runs[0]["status"] == "complete"
+    assert runs[0]["phase"] == "C" and runs[0]["status"] == "complete"
 
 
 def test_decisions_say_whether_they_are_pending(client):

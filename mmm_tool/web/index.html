@@ -198,8 +198,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 <script>
 (() => {
   const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity",
-    "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13] };
+    "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money",
+    "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -215,7 +216,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   let run = null;           // last API response
   let answers = {};         // answers sent with the next re-run
   let draftRoles = null;    // step 3 edits not yet applied
-  let view = null;          // "a" or "b": which phase is on screen
+  let view = null;          // "a", "b" or "c": which phase is on screen
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const num = x => typeof x === "number" ? x.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(x);
@@ -238,9 +239,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     run = data;
     answers = structuredClone(data.answers || {});
     draftRoles = null;
-    if (!view) view = data.phase === "B" ? "b" : "a";
+    if (!view) view = (data.phase || "A").toLowerCase();
+    if (view === "c" && !data.result_c) view = "b";
     if (view === "b" && !data.result_b) view = "a";
-    const hash = `#run=${data.run_id}${view === "b" ? "/b" : ""}`;
+    const hash = `#run=${data.run_id}${view === "a" ? "" : "/" + view}`;
     if (location.hash !== hash) history.replaceState(null, "", hash);
     render();
     if (keepScroll) window.scrollTo(0, y);
@@ -276,8 +278,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
 
   // ---------- helpers ----------
-  const phaseResult = v => v === "b" ? run.result_b : run.result;
-  const stepOf = n => [...run.result.steps, ...((run.result_b || {}).steps || [])].find(s => s.step === n);
+  const phaseResult = v => v === "c" ? run.result_c : v === "b" ? run.result_b : run.result;
+  const stepOf = n => [run.result, run.result_b, run.result_c].filter(Boolean).flatMap(r => r.steps).find(s => s.step === n);
   const decision = (s, id) => s && s.decisions.find(d => d.id === id);
   const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
   function seg(d, options, labels = {}) {
@@ -609,55 +611,171 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- page ----------
+  // ---------- Phase C step bodies ----------
+  const CHOICE_LABEL = { other: "Merge into Other", drop: "Drop", keep: "Keep", combine: "Combine", exclude: "Exclude" };
+  const pct = x => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
+
+  function hbars(rows, max, mark, fmt) {
+    // rows: [{label, value, flag}], mark: threshold line
+    const W = 560, rowH = 22, l = 110, r = 70, H = rows.length * rowH + 18;
+    const x = v => l + Math.min(v / max, 1) * (W - l - r);
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Bar chart">
+      ${rows.map((d, i) => `<text x="${l - 8}" y="${i * rowH + 15}" text-anchor="end" fill="var(--ink)" font-size="12">${esc(d.label)}</text>
+        <rect x="${l}" y="${i * rowH + 5}" width="${Math.max(2, x(d.value) - l)}" height="13" rx="2" fill="${d.flag ? "var(--warn)" : "var(--accent)"}"/>
+        <text x="${x(d.value) + 6}" y="${i * rowH + 15}" fill="var(--muted)" font-size="11" font-family="var(--mono)">${fmt(d.value)}</text>`).join("")}
+      ${mark != null ? `<line x1="${x(mark)}" x2="${x(mark)}" y1="0" y2="${H - 14}" stroke="var(--block)" stroke-dasharray="3 3"/><text x="${x(mark)}" y="${H - 2}" text-anchor="middle" fill="var(--block)" font-size="10">${fmt(mark)}</text>` : ""}
+    </svg></div>`;
+  }
+
+  function step14(s) {
+    const d = s.details, p = d.parameters || {};
+    const ratio = d.obs_per_parameter, t = d.thresholds || {};
+    const scaleMax = Math.max(10, Math.ceil(ratio || 0));
+    const pos = v => `${Math.min(v / scaleMax, 1) * 100}%`;
+    return `<dl class="kv">
+        <div><dt>History</dt><dd>${num(d.weeks)} weeks${d.regions > 1 ? ` × ${d.regions} regions` : ""}</dd></div>
+        <div><dt>Observations</dt><dd>${num(d.observations)}</dd></div>
+        <div><dt>Parameters (about)</dt><dd>${num(d.parameter_total)}</dd></div>
+        <div><dt>Observations per parameter</dt><dd>${ratio}</dd></div>
+      </dl>
+      <div aria-label="Observations per parameter against the thresholds" role="img" style="position:relative;height:30px;margin:4px 0 14px">
+        <div style="position:absolute;inset:8px 0 auto;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--block-soft) 0 ${pos(t.min_obs_per_parameter)},var(--warn-soft) ${pos(t.min_obs_per_parameter)} ${pos(t.comfortable)},var(--pass-soft) ${pos(t.comfortable)})"></div>
+        <div style="position:absolute;left:${pos(ratio)};top:2px;width:3px;height:22px;background:var(--ink);transform:translateX(-1px)"></div>
+        <span class="mono small muted" style="position:absolute;left:${pos(t.min_obs_per_parameter)};top:22px;transform:translateX(-50%)">${t.min_obs_per_parameter}</span>
+        <span class="mono small muted" style="position:absolute;left:${pos(t.comfortable)};top:22px;transform:translateX(-50%)">${t.comfortable}</span>
+      </div>
+      <div class="scroll"><table style="min-width:360px"><thead><tr><th>Part of the model</th><th>Parameters</th></tr></thead><tbody>
+        ${Object.entries(p).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function step15(s) {
+    const d = s.details, dec = decision(s, "rare_channels");
+    const chosen = dec ? { ...dec.default, ...(answers.rare_channels || {}) } : {};
+    const rows = (d.channels || []).map(c => {
+      const rare = (d.rare || []).includes(c.channel);
+      return `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${c.active_weeks} of ${c.weeks} (${pct(c.active_share)})</td><td class="num">${pct(c.spend_share)}</td>
+        <td>${rare && dec ? `<select data-rare="${esc(c.channel)}" aria-label="What to do with ${esc(c.channel)}">${["other", "drop", "keep"].map(o => `<option value="${o}" ${chosen[c.channel] === o ? "selected" : ""}>${CHOICE_LABEL[o]}</option>`).join("")}</select>` : rare ? '<span class="pill warn">rarely on</span>' : '<span class="pill pass">active</span>'}</td></tr>`;
+    }).join("");
+    return `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>Weeks with spend</th><th>Share of spend</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${dec ? `<div class="decide ${dec.pending ? "" : "soft"}"><p>${esc(dec.question)}</p><button class="btn ${dec.pending ? "primary" : ""}" id="apply-rare">Apply</button></div>` : ""}`;
+  }
+
+  function step16(s) {
+    const d = s.details;
+    const rows = (d.channels || []).map(c => ({ label: c.channel, value: c.cv, flag: c.cv < d.threshold }));
+    return hbars(rows, Math.max(1.5, ...rows.map(r => r.value)), d.threshold, v => v.toFixed(2))
+      + `<p class="muted small">Coefficient of variation of weekly spend. Under ${d.threshold}, a channel gets a "hard to measure" badge on every later screen.</p>`;
+  }
+
+  function step17(s) {
+    const d = s.details, names = Object.keys(d.correlation || {});
+    const cell = v => `background:color-mix(in srgb, ${v > 0.7 ? "var(--block)" : "var(--accent)"} ${Math.round(Math.abs(v) * 70)}%, transparent)`;
+    const grid = names.length ? `<div class="scroll"><table class="grid" style="width:auto"><thead><tr><th></th>${names.map(n => `<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>
+      ${names.map(a => `<tr><td><b>${esc(a)}</b></td>${names.map(b => `<td style="${a === b ? "" : cell(d.correlation[a][b])};text-align:right">${a === b ? "" : d.correlation[a][b].toFixed(2)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
+    const decs = s.decisions.filter(x => x.id.startsWith("together:")).map(x =>
+      `<div class="decide ${x.pending ? "" : "soft"}"><p>${esc(x.question)}</p>${seg(x, null, { combine: "Combine", keep: "Keep both" })}</div>`).join("");
+    const vifs = Object.entries(d.vif || {});
+    return grid + decs + (vifs.length ? `<p class="muted small">Variance inflation: ${vifs.map(([k, v]) => `${esc(k)} ${v}`).join(", ")} (over 10 means the other channels explain it).</p>` : "");
+  }
+
+  function step18(s) {
+    const d = s.details;
+    const decs = s.decisions.filter(x => x.id.startsWith("mediator:")).map(x =>
+      `<div class="decide ${x.pending ? "" : "soft"}"><p>${esc(x.question)}</p>${seg(x, null, { exclude: "Exclude it", keep: "Keep as a control" })}</div>`).join("");
+    return `<p class="muted small">Checked ${(d.checked || []).length} control(s) against each channel's spend one and two weeks earlier.</p>${decs}`;
+  }
+
+  function step19(s) {
+    const d = s.details;
+    return (d.pairs || []).length
+      ? `<div class="scroll"><table style="min-width:360px"><thead><tr><th>Channel</th><th>Season flag</th><th>Correlation</th></tr></thead><tbody>${d.pairs.map(p => `<tr><td><b>${esc(p.channel)}</b></td><td class="mono">${esc(p.flag)}</td><td class="num">${p.correlation.toFixed(2)}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted small">Season flags checked: ${(d.flags || []).map(esc).join(", ") || "none"}.</p>`;
+  }
+
+  function step20(s) {
+    const d = s.details;
+    const share = (d.spend_share || []).map(x => ({ label: x.channel, value: x.share, flag: x.badges.length > 0 }));
+    const W = 680, H = 160, l = 8, r = 8, t = 10, b = 20, n = (d.weeks || []).length;
+    const line = (arr, color) => {
+      const mx = Math.max(...arr) || 1, mn = Math.min(...arr);
+      return `<path d="${arr.map((v, i) => `${i ? "L" : "M"}${(l + i / (n - 1) * (W - l - r)).toFixed(1)} ${(t + (1 - (v - mn) / ((mx - mn) || 1)) * (H - t - b)).toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+    };
+    const overlay = n > 1 ? `<div class="chart"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="KPI with total spend overlaid">
+        ${line(d.total_spend, "var(--warn)")}${line(d.kpi, "var(--accent)")}
+        <text x="${l}" y="${H - 5}" fill="var(--muted)" font-size="11">${esc(d.weeks[0])}</text><text x="${W - r}" y="${H - 5}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(d.weeks[n - 1])}</text></svg></div>
+      <div class="legend small"><span style="color:var(--accent)">━ KPI</span> <span style="color:var(--warn)">━ total spend</span> <span class="muted">(each scaled to its own range)</span></div>` : "";
+    const heat = Object.entries(d.heatmap || {}).map(([ch, vals]) => `<div style="display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:center">
+        <span class="small" style="text-align:right">${esc(ch)}</span>
+        <span style="display:flex;height:14px">${vals.map(v => `<span style="flex:1;background:var(--accent);opacity:${v === 0 ? 0.06 : 0.2 + 0.8 * v}"></span>`).join("")}</span></div>`).join("");
+    return `<h4 style="margin:0;font-size:13px">Share of spend</h4>${hbars(share, Math.max(...share.map(x => x.value), 0.01), null, pct)}
+      <h4 style="margin:0;font-size:13px">KPI and total spend, week by week</h4>${overlay}
+      <h4 style="margin:0;font-size:13px">When each channel spends</h4><div style="display:grid;gap:3px">${heat}</div>
+      <p class="muted small">Darker = closer to that channel's highest week.</p>`;
+  }
+
+  // ---------- page ----------
+  const PHASE_INFO = {
+    a: { eyebrow: "A · steps 1–6", title: "Ingest", csv: "table", table: "Ingested table",
+      note: r => `${num(r.rows)} rows, excluded columns dropped, dates parsed. Phase B cleans and aligns it to weeks.`,
+      done: "Every column has a confirmed role.", next: "b", nextLabel: "Continue to B · Clean" },
+    b: { eyebrow: "B · steps 7–13", title: "Clean and align to weeks", csv: "cleaned", table: "Clean weekly table",
+      note: r => `${num(r.rows)} rows, one per ${r.granularity && r.granularity.geo_mode === "regional" ? "week and region" : "week"}, no empty cells.`,
+      done: "One complete row per week. Phase C checks the data can support an MMM.", next: "c", nextLabel: "Continue to C · Profile" },
+    c: { eyebrow: "C · steps 14–20", title: "Profile and sufficiency gates", csv: "profiled", table: "Profiled table",
+      note: r => `${num(r.rows)} rows; rarely-on channels merged, channels that move together combined, marketing-caused controls dropped as you chose.`,
+      done: "The data can support an MMM. Phase D configures the model.", next: null, nextLabel: "Continue to D · Configure (not built yet)" },
+  };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c };
+
   function render() {
     $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
     const r = phaseResult(view);
+    const info = PHASE_INFO[view];
     const nums = PHASE_STEPS[view];
     const statuses = nums.map(n => (stepOf(n) || {}).verdict || "");
     const done = statuses.filter(v => v === "pass" || v === "warn").length;
     const pending = r.pending.length;
-    const a = run.result, b = run.result_b;
     const dot = res => !res ? "" : res.status === "complete" ? "pass" : res.status === "failed" ? "fail" : "needs_input";
 
     $("rail").innerHTML = PHASES.map(([k, name], i) => {
       const key = k.toLowerCase();
-      const live = key === "a" || (key === "b" && b);
+      const res = RESULT_OF[key] ? RESULT_OF[key]() : null;
       const head = (i === 0 ? '<div class="group">Pipeline</div>' : i === 5 ? '<div class="group">Screens</div>' : "");
-      const status = key === "a" ? `<span class="dot ${dot(a)}"></span>` : key === "b" ? (b ? `<span class="dot ${dot(b)}"></span>` : '<span class="soon">after A</span>') : '<span class="soon">soon</span>';
-      const row = live
+      const prev = PHASES[i - 1] ? PHASES[i - 1][0] : "";
+      const status = res ? `<span class="dot ${dot(res)}"></span>` : RESULT_OF[key] ? `<span class="soon">after ${prev}</span>` : '<span class="soon">soon</span>';
+      const row = res
         ? `<a class="ph ${view === key ? "on" : ""}" href="#" data-view="${key}" style="text-decoration:none"><span class="letter">${k}</span><span>${name}</span>${status}</a>`
         : `<div class="ph"><span class="letter">${k}</span><span>${name}</span>${status}</div>`;
       const steps = view === key ? `<ol>${PHASE_STEPS[key].map(n => `<li><span class="dot ${(stepOf(n) || {}).verdict || ""}"></span><a href="#" data-jump="${n}">${n}. ${STEP_NAMES[n - 1]}</a></li>`).join("")}</ol>` : "";
       return head + row + steps;
     }).join("");
 
-    const bodies = { 1: step1, 2: step2, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, 8: step8, 9: step9, 10: step10, 11: step11, 12: step12, 13: step13 };
+    const bodies = { 1: step1, 2: step2, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, 8: step8, 9: step9, 10: step10, 11: step11, 12: step12, 13: step13,
+      14: step14, 15: step15, 16: step16, 17: step17, 18: step18, 19: step19, 20: step20 };
     const cards = nums.map(n => {
       const s = stepOf(n);
       if (!s) return card(n, null);
-      if (s.verdict === "fail") return card(n, s, "");
+      if (s.verdict === "fail" && n !== 14) return card(n, s, "");
       try { return card(n, s, bodies[n](s)); }
       catch (e) { console.error(e); return card(n, s, ""); }
     }).join("");
 
     const m = r.meridian;
     const mapping = m ? Object.entries(m.coord_to_columns).map(([k, v]) => `<div>${esc(k)} ← ${esc(Array.isArray(v) ? v.join(", ") : v)}</div>`).join("") : "";
-    const isB = view === "b";
-    const preview = r.table_preview ? `<article class="card"><header><span class="n">→</span><h3>${isB ? "Clean weekly table" : "Ingested table"}</h3><a class="btn" href="/api/runs/${run.run_id}/${isB ? "cleaned" : "table"}.csv">Download CSV</a>
-        <p class="sum">${isB ? `${num(r.rows)} rows, one per ${r.granularity && r.granularity.geo_mode === "regional" ? "week and region" : "week"}, no empty cells. This is what Meridian reads.` : `${num(r.rows)} rows, excluded columns dropped, dates parsed. Phase B cleans and aligns it to weeks.`}</p></header>
+    const preview = r.table_preview ? `<article class="card"><header><span class="n">→</span><h3>${info.table}</h3><a class="btn" href="/api/runs/${run.run_id}/${info.csv}.csv">Download CSV</a>
+        <p class="sum">${info.note(r)}</p></header>
         <div class="body"><div class="scroll"><table class="grid"><thead><tr>${r.table_preview.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>
         <tbody>${r.table_preview.rows.map(row => `<tr>${row.map(v => `<td>${esc(typeof v === "number" ? Math.round(v * 100) / 100 : v ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div></article>` : "";
 
-    const next = isB
-      ? `<span class="muted small">${r.status === "complete" ? "One complete row per week. Phase C profiles the data and checks it can support an MMM." : "Answer the highlighted decision to continue."}</span>
-         <button class="btn primary" disabled title="Phase C is not built yet">Continue to C · Profile (not built yet)</button>`
-      : `<span class="muted small">${r.status === "complete" ? "Every column has a confirmed role." : r.status === "failed" ? "Fix the file and upload it again." : "Answer the highlighted decision to continue."}</span>
-         <button class="btn primary" data-view="b" ${b ? "" : "disabled"}>Continue to B · Clean</button>`;
-    const log = (b || a).decision_log;
+    const nextRes = info.next ? RESULT_OF[info.next]() : null;
+    const next = `<span class="muted small">${r.status === "complete" ? info.done : r.status === "failed" ? (view === "a" ? "Fix the file and upload it again." : "The run stops here; see the step above.") : "Answer the highlighted decision to continue."}</span>
+      <button class="btn primary" ${info.next ? `data-view="${info.next}"` : ""} ${nextRes ? "" : "disabled"}>${info.nextLabel}</button>`;
+    const log = (run.result_c || run.result_b || run.result).decision_log;
+    const badges = Object.entries(r.badges || {});
 
     $("main").innerHTML = `
       <div class="runhead">
-        <div><span class="eyebrow">Phase ${isB ? "B · steps 7–13" : "A · steps 1–6"}</span><h1>${isB ? "Clean and align to weeks" : "Ingest"}</h1></div>
+        <div><span class="eyebrow">Phase ${info.eyebrow}</span><h1>${info.title}</h1></div>
         <div class="chips"><span class="chip mono">${esc(run.file)}</span><span class="chip">run ${esc(run.run_id)}</span>
           <span class="chip">${r.status === "complete" ? "Complete" : r.status === "failed" ? "Failed" : `${done} of ${nums.length} steps done · ${pending} decision${pending === 1 ? "" : "s"} needed`}</span></div>
       </div>
@@ -665,6 +783,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <div class="cols">
         <div class="steps">${cards}${preview}<div class="nextbar">${next}</div></div>
         <aside class="side">
+          ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div><p class="muted small">Shown beside these channels' ROI on every later screen.</p></div>` : ""}
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
           <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
           ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
@@ -675,9 +794,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (first && render.scrolled !== view) { render.scrolled = view; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
   }
 
+  const hashFor = v => `#run=${run.run_id}${v === "a" ? "" : "/" + v}`;
   function switchView(v) {
     view = v;
-    history.replaceState(null, "", `#run=${run.run_id}${v === "b" ? "/b" : ""}`);
+    history.replaceState(null, "", hashFor(v));
     render();
     window.scrollTo(0, 0);
   }
@@ -747,6 +867,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const dec = cellDecision(b.dataset.applyall);
       answer({ [dec.id]: { ...dec.default, ...(answers[dec.id] || {}) } });
     });
+    // Phase C
+    const applyRare = $("apply-rare");
+    if (applyRare) applyRare.onclick = () => answer({ rare_channels: Object.fromEntries([...main.querySelectorAll("[data-rare]")].map(x => [x.dataset.rare, x.value])) });
     const infl = $("infl");
     if (infl) {
       $("infl-on").onchange = () => { $("infl-fields").hidden = $("infl-on").value !== "on"; };
@@ -761,9 +884,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(\/b)?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bc]))?$/);
   if (m) {
-    view = m[2] ? "b" : "a";
+    view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);
   } else startScreen();
 })();

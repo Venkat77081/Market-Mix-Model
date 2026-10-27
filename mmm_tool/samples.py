@@ -183,6 +183,62 @@ def write_daily(dir: Path) -> Path:
     return path
 
 
+# Phase C test files: each plants one problem a profile step must catch.
+def _weekly_csv(df: pd.DataFrame, path: Path) -> Path:
+    df = df.copy()
+    df["week_start"] = df["week_start"].dt.strftime("%Y-%m-%d")
+    df.to_csv(path, index=False)
+    return path
+
+
+def write_short(dir: Path) -> Path:
+    """90 weeks: refused at step 14."""
+    return _weekly_csv(make_insurance(weeks=90), dir / "ins_short.csv")
+
+
+def write_flat(dir: Path) -> Path:
+    """Search and aggregator spend barely vary (CV under 0.2): hard to measure at step 16."""
+    df = make_insurance()
+    rng = np.random.default_rng(11)
+    for ch in ("search", "aggregator"):
+        df[f"{ch}_spend"] = np.round(1.2e6 * (1 + rng.normal(0, 0.08, len(df))), 0)
+    df["search_clicks"] = np.round(df["search_spend"] / 22, 0)
+    return _weekly_csv(df, dir / "ins_flat.csv")
+
+
+def write_collinear(dir: Path) -> Path:
+    """TV and YouTube always on together: combine prompt at step 17."""
+    df = make_insurance()
+    rng = np.random.default_rng(12)
+    df["youtube_spend"] = np.round(df["tv_spend"] * 0.4 * (1 + rng.normal(0, 0.1, len(df))), 0).clip(lower=0)
+    return _weekly_csv(df, dir / "ins_collinear.csv")
+
+
+def write_mediator(dir: Path) -> Path:
+    """A search-interest score that follows TV spend a week later: exclusion prompt at step 18."""
+    df = make_insurance()
+    rng = np.random.default_rng(13)
+    df["search_interest_index"] = np.round(40 + df["tv_spend"].shift(1).fillna(0) / 5e4 + rng.normal(0, 1.5, len(df)), 1)
+    return _weekly_csv(df, dir / "ins_mediator.csv")
+
+
+def write_rare(dir: Path) -> Path:
+    """Print on in 8 of 156 weeks and radio under 1% of spend: merge prompt at step 15."""
+    df = make_insurance()
+    on = np.zeros(len(df), dtype=bool)
+    on[[10, 30, 50, 70, 90, 110, 130, 150]] = True
+    df["print_spend"] = np.where(on, df["print_spend"].clip(lower=5e5), 0.0)
+    df["radio_spend"] = np.round(df["radio_spend"] / 200, 0)
+    return _weekly_csv(df, dir / "ins_rare.csv")
+
+
+def write_season(dir: Path) -> Path:
+    """Outdoor spends only in tax season: warning at step 19."""
+    df = make_insurance()
+    df["outdoor_spend"] = np.where(df["tax_season_flag"] == 1, 2.5e6, 0.0)
+    return _weekly_csv(df, dir / "ins_season.csv")
+
+
 SAMPLES = {
     "ins_clean": ("156 weeks, 9 channels, clean CSV", write_clean),
     "ins_export": ("Excel, two sheets, title lines above the header", write_excel_with_preamble),
@@ -192,4 +248,10 @@ SAMPLES = {
     "ins_rf": ("YouTube reach and frequency, print with no spend, branded search", write_rf),
     "ins_messy": ("Duplicate and missing weeks, negative spend, TV in crore, an outlier", write_messy),
     "ins_daily": ("Two years of daily data starting on a Wednesday", write_daily),
+    "ins_short": ("90 weeks: refused at step 14", write_short),
+    "ins_flat": ("Search and aggregator spend barely vary: hard to measure", write_flat),
+    "ins_collinear": ("TV and YouTube always on together", write_collinear),
+    "ins_mediator": ("A search-interest score that follows TV spend", write_mediator),
+    "ins_rare": ("Print on in 8 weeks, radio under 1% of spend", write_rare),
+    "ins_season": ("Outdoor spends only in tax season", write_season),
 }

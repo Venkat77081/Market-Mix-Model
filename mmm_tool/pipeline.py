@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .clean import PhaseBResult, run_phase_b
+from .profile import PhaseCResult, run_phase_c
 from .ingest import Answers, PhaseAResult, run_phase_a
 from .ingest.memory import RoleMemory
 
@@ -14,19 +15,24 @@ from .ingest.memory import RoleMemory
 class PipelineResult:
     a: PhaseAResult
     b: PhaseBResult | None = None
+    c: PhaseCResult | None = None
+
+    @property
+    def last(self) -> PhaseAResult:
+        return self.c or self.b or self.a
 
     @property
     def phase(self) -> str:
-        """The phase the run has reached: 'A' until A is complete, then 'B'."""
-        return "B" if self.b is not None else "A"
+        """The phase the run has reached: each starts once the one before is complete."""
+        return "C" if self.c is not None else "B" if self.b is not None else "A"
 
     @property
     def status(self) -> str:
-        return (self.b or self.a).status
+        return self.last.status
 
     @property
     def decision_log(self) -> list[dict[str, Any]]:
-        return (self.b or self.a).decision_log
+        return self.last.decision_log
 
 
 def run_pipeline(path: str | Path, answers: dict[str, Any] | None = None, accept_defaults: bool = False,
@@ -35,4 +41,7 @@ def run_pipeline(path: str | Path, answers: dict[str, Any] | None = None, accept
     a = run_phase_a(path, ans, memory=memory)
     if a.status != "complete":
         return PipelineResult(a)
-    return PipelineResult(a, run_phase_b(a, ans))
+    b = run_phase_b(a, ans)
+    if b.status != "complete":
+        return PipelineResult(a, b)
+    return PipelineResult(a, b, run_phase_c(b, ans))
