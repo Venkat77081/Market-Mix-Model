@@ -1,0 +1,55 @@
+"""API tests: the UI's calls, end to end through Phase A."""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from mmm_tool.api import app as app_module
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "RUNS_DIR", tmp_path / "runs")
+    return TestClient(app_module.app)
+
+
+def test_index_and_samples(client):
+    assert "Meridian MMM Tool" in client.get("/").text
+    names = [s["name"] for s in client.get("/api/samples").json()]
+    assert "ins_clean" in names and "ins_monthly" in names
+
+
+def test_sample_run_stops_at_roles_then_completes(client):
+    r = client.post("/api/runs/sample/ins_clean").json()
+    run_id = r["run_id"]
+    assert r["result"]["status"] == "needs_input"
+    assert r["result"]["pending"][0]["id"] == "roles"
+    roles = r["result"]["steps"][2]["details"]["roles"]
+
+    r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": roles}}).json()
+    assert r["result"]["status"] == "complete"
+    assert r["result"]["meridian"]["coord_to_columns"]["kpi"] == "new_policies"
+    assert r["result"]["table_preview"]["rows"]
+
+    assert client.get(f"/api/runs/{run_id}").json()["answers"] == {"roles": roles}
+    csv = client.get(f"/api/runs/{run_id}/table.csv")
+    assert csv.status_code == 200 and csv.text.startswith("week_start,")
+
+
+def test_upload_and_date_decision(client):
+    from mmm_tool import samples
+
+    path = samples.write_ambiguous_monthly(app_module.RUNS_DIR.parent)
+    with open(path, "rb") as f:
+        r = client.post("/api/runs", files={"file": ("monthly.csv", f, "text/csv")}).json()
+    assert r["result"]["pending"][0]["id"] == "date_order"
+    r = client.put(f"/api/runs/{r['run_id']}/answers", json={"answers": {"date_order": "dayfirst"}}).json()
+    assert r["result"]["pending"][0]["id"] == "roles"
+
+
+def test_rejects_bad_input(client):
+    assert client.post("/api/runs", files={"file": ("x.json", b"{}", "application/json")}).status_code == 400
+    assert client.get("/api/runs/../../etc").status_code == 404
+    assert client.get("/api/runs/0123456789ab").status_code == 404
+    r = client.post("/api/runs/sample/ins_clean").json()
+    assert client.get(f"/api/runs/{r['run_id']}/table.csv").status_code == 409

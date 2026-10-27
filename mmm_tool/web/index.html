@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian MMM Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Same tokens as mock/mmm_tool_mock.html: a left rail of lettered phases and a
+   column of numbered step cards, each with a verdict, evidence and any prompt. */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --sunken: #e9edf1; --ink: #15202b; --muted: #586675; --line: #d8dfe6;
+  --accent: #1d5bbf; --accent-soft: #e3ecfa; --pass: #1b7a4b; --pass-soft: #e2f3ea; --warn: #a66300; --warn-soft: #fbefd9;
+  --block: #b42a20; --block-soft: #fbe4e1;
+  --display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --r: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1; --line: #283440;
+    --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f; --warn: #e7a94a; --warn-soft: #33270f;
+    --block: #f07f74; --block-soft: #3a1a17; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+h1, h2 { font-family: var(--display); font-weight: 500; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--accent); }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.muted { color: var(--muted); }
+.small { font-size: 13.5px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+.topbar { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar .in { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 20px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); padding: 7px 14px; border-radius: var(--r); cursor: pointer; text-decoration: none; color: var(--ink); font-weight: 500; font-size: 14px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.pass { color: var(--pass); background: var(--pass-soft); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); }
+.pill.block, .pill.fail { color: var(--block); background: var(--block-soft); }
+.pill.wait { color: var(--muted); background: var(--sunken); }
+
+/* start screen */
+.start { max-width: 980px; margin: 0 auto; padding: 48px 20px 64px; display: grid; gap: 28px; }
+.start h1 { font-size: clamp(30px, 4.5vw, 44px); line-height: 1.1; }
+.start .lede { color: var(--muted); max-width: 40em; margin-top: 12px; font-size: 16.5px; }
+.drop { border: 1.5px dashed var(--line); border-radius: 10px; background: var(--surface); padding: 36px 20px; text-align: center; display: grid; gap: 10px; justify-items: center; cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop b { font-size: 17px; }
+.samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.sample { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; cursor: pointer; display: grid; gap: 2px; }
+.sample:hover { border-color: var(--accent); }
+.sample b { font: 500 13.5px var(--mono); }
+.sample span { font-size: 13.5px; color: var(--muted); }
+.error { background: var(--block-soft); color: var(--block); padding: 10px 14px; border-radius: var(--r); font-size: 14px; }
+
+/* run screen */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+.rail { border-right: 1px solid var(--line); background: var(--surface); padding: 16px 12px; position: sticky; top: 56px; align-self: start; height: calc(100vh - 56px); overflow-y: auto; }
+.rail .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 6px; }
+.rail .ph { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; padding: 6px 10px; border-radius: var(--r); font-size: 14px; color: var(--muted); }
+.rail .ph.on { background: var(--accent-soft); color: var(--ink); }
+.rail .letter { font: 600 13px var(--mono); }
+.rail .soon { font-size: 11px; }
+.rail ol { list-style: none; margin: 2px 0 8px 34px; padding: 0; font-size: 13px; }
+.rail ol li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.rail ol a { color: var(--muted); text-decoration: none; }
+.rail ol a:hover { color: var(--ink); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex: none; }
+.dot.pass { background: var(--pass); } .dot.warn { background: var(--warn); } .dot.needs_input, .dot.fail { background: var(--block); }
+
+.main { padding: 24px 20px 64px; min-width: 0; }
+.inner { max-width: 1080px; margin: 0 auto; display: grid; gap: 16px; }
+.runhead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+.runhead h1 { font-size: 32px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.chip { background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
+.progress { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.progress span { height: 4px; border-radius: 2px; background: var(--line); }
+.progress .pass { background: var(--pass); } .progress .warn { background: var(--warn); } .progress .needs_input, .progress .fail { background: var(--block); }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.steps { display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; scroll-margin-top: 72px; }
+.card.needs { border-color: var(--block); box-shadow: 0 0 0 3px var(--block-soft); }
+.card.waiting { opacity: 0.55; }
+.card > header { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 14px 16px; }
+.card .n { font: 600 14px var(--mono); color: var(--muted); }
+.card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.card .sum { grid-column: 2 / 4; color: var(--muted); font-size: 14px; margin-top: -6px; }
+.card .body { border-top: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 14px; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
+.kv dt { font-size: 12px; color: var(--muted); }
+.kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: middle; }
+.grid td, .grid th { font: 12.5px var(--mono); white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.grid tr.skipped td { color: var(--muted); text-decoration: line-through; background: var(--sunken); }
+.grid tr.hdr td { font-weight: 600; background: var(--accent-soft); }
+.grid { border: 1px solid var(--line); }
+.roles { min-width: 780px; }
+.roles td.col { font: 13px var(--mono); }
+.roles td.why { font-size: 12.5px; color: var(--muted); min-width: 220px; }
+select, input[type=number] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.conf { font: 11px var(--mono); }
+.conf.low { color: var(--warn); } .conf.medium { color: var(--muted); }
+.fmtbar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; font: 11px var(--mono); }
+.fmtbar span { display: flex; align-items: center; padding: 0 8px; white-space: nowrap; overflow: hidden; color: var(--surface); min-width: 4px; }
+.decide { background: var(--block-soft); border-radius: var(--r); padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
+.decide.soft { background: var(--sunken); }
+.decide.okay { background: var(--pass-soft); }
+.decide p { font-size: 14px; max-width: 48em; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; flex-wrap: wrap; }
+.seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.checklist { display: flex; flex-wrap: wrap; gap: 8px; }
+.warnlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.warnlist li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; }
+.warnlist .sn { font: 12px var(--mono); color: var(--warn); }
+.side { display: grid; gap: 12px; position: sticky; top: 72px; }
+.side .card { padding: 14px 16px; display: grid; gap: 10px; }
+.side h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.log { font: 12px var(--mono); color: var(--muted); display: grid; gap: 4px; overflow-wrap: anywhere; }
+.nextbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.busy { position: fixed; right: 20px; bottom: 20px; background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: var(--r); font-size: 13px; z-index: 20; }
+
+@media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail ol, .rail .group, .rail .ph:not(.on) { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="in">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" rx="6" fill="var(--accent)"/><path d="M4 19 C8 19 9 7 13 7 C17 7 18 19 22 19" stroke="var(--surface)" stroke-width="2" fill="none"/></svg>
+      Meridian MMM Tool
+    </a>
+    <div class="right"><a class="btn" href="/" id="new-run" hidden>New run</a></div>
+  </div>
+</header>
+
+<section class="start" id="start">
+  <div>
+    <span class="eyebrow">Phase A · Ingest</span>
+    <h1>Upload a spend-and-sales export</h1>
+    <p class="lede">The tool reads the file, parses the dates and suggests a role for every column. It stops only where it needs you: confirming column roles, and anything the data leaves ambiguous.</p>
+  </div>
+  <label class="drop" id="drop" for="file">
+    <b>Drop a CSV or Excel file here</b>
+    <span class="muted small">or click to choose one · .csv .tsv .txt .xlsx .xls · up to 50 MB</span>
+    <input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xls" hidden>
+  </label>
+  <div id="start-error" class="error" hidden></div>
+  <div style="display:grid;gap:10px">
+    <span class="eyebrow">Or try a sample insurance export</span>
+    <div class="samples" id="samples"></div>
+  </div>
+</section>
+
+<div class="app" id="app" hidden>
+  <nav class="rail" id="rail" aria-label="Phases"></nav>
+  <main class="main"><div class="inner" id="main"></div></main>
+</div>
+<div class="busy" id="busy" hidden>Running Phase A…</div>
+
+<script>
+(() => {
+  const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity"];
+  const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
+  const ROLE_LABEL = {
+    date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
+    media: "Paid media exposure", media_spend: "Paid media spend", reach: "Reach", frequency: "Frequency",
+    rf_spend: "Reach & frequency spend", control: "Control", non_media_treatment: "Non-media lever",
+    organic_media: "Unpaid media", excluded: "Excluded",
+  };
+  const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows" };
+  const PILL = { pass: ["pass", "Pass"], warn: ["warn", "Pass with warning"], needs_input: ["block", "Decision needed"], fail: ["fail", "Failed"] };
+
+  let run = null;           // last API response
+  let answers = {};         // answers sent with the next re-run
+  let draftRoles = null;    // step 3 edits not yet applied
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = x => typeof x === "number" ? x.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(x);
+
+  // ---------- API ----------
+  async function api(method, url, body) {
+    $("busy").hidden = false;
+    try {
+      const opts = { method };
+      if (body instanceof FormData) opts.body = body;
+      else if (body) { opts.body = JSON.stringify(body); opts.headers = { "Content-Type": "application/json" }; }
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+      return data;
+    } finally { $("busy").hidden = true; }
+  }
+  function show(data, keepScroll = true) {
+    const y = window.scrollY;
+    run = data;
+    answers = structuredClone(data.answers || {});
+    draftRoles = null;
+    if (location.hash !== "#run=" + data.run_id) history.replaceState(null, "", "#run=" + data.run_id);
+    render();
+    if (keepScroll) window.scrollTo(0, y);
+  }
+  async function answer(patch) {
+    Object.assign(answers, patch);
+    for (const k in patch) if (patch[k] === undefined) delete answers[k];
+    try { show(await api("PUT", `/api/runs/${run.run_id}/answers`, { answers })); }
+    catch (e) { alert(e.message); }
+  }
+
+  // ---------- start screen ----------
+  async function startScreen() {
+    $("start").hidden = false; $("app").hidden = true; $("new-run").hidden = true;
+    const list = await api("GET", "/api/samples").catch(() => []);
+    $("samples").innerHTML = list.map(s => `<button class="sample" data-sample="${esc(s.name)}"><b>${esc(s.name)}</b><span>${esc(s.description)}</span></button>`).join("");
+    $("samples").querySelectorAll("[data-sample]").forEach(b => b.onclick = () => startRun(() => api("POST", `/api/runs/sample/${b.dataset.sample}`)));
+  }
+  async function startRun(fn) {
+    $("start-error").hidden = true;
+    try { show(await fn(), false); }
+    catch (e) { $("start-error").textContent = e.message; $("start-error").hidden = false; }
+  }
+  function upload(file) {
+    const fd = new FormData();
+    fd.append("file", file);
+    startRun(() => api("POST", "/api/runs", fd));
+  }
+  $("file").onchange = e => e.target.files[0] && upload(e.target.files[0]);
+  const drop = $("drop");
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
+
+  // ---------- helpers ----------
+  const stepOf = n => run.result.steps.find(s => s.step === n);
+  const decision = (s, id) => s && s.decisions.find(d => d.id === id);
+  const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
+  function seg(d, options) {
+    const cur = current(d);
+    return `<div class="seg" role="group" aria-label="${esc(d.question)}">${(options || d.options).map(o =>
+      `<button data-answer="${esc(d.id)}" data-value="${esc(o)}" aria-pressed="${cur === o}">${esc(OPTION_LABEL[o] || o)}</button>`).join("")}</div>`;
+  }
+  function card(n, s, body) {
+    const waiting = !s;
+    const [cls, label] = waiting ? ["wait", "Waiting"] : PILL[s.verdict];
+    const warn = s && s.warnings.length ? `<ul class="warnlist">${s.warnings.map(w => `<li><span class="sn">!</span><span>${esc(w)}</span></li>`).join("")}</ul>` : "";
+    return `<article class="card ${s && s.blocks ? "needs" : ""} ${waiting ? "waiting" : ""}" id="step-${n}">
+      <header><span class="n">${n}</span><h3>${STEP_NAMES[n - 1]}</h3><span class="pill ${cls}">${label}</span>
+      <p class="sum">${waiting ? "Runs once the steps above are settled." : esc(s.summary)}</p></header>
+      ${waiting ? "" : `<div class="body">${body || ""}${warn}</div>`}
+    </article>`;
+  }
+
+  // ---------- step bodies ----------
+  function step1(s) {
+    const d = s.details;
+    const sheet = decision(s, "sheet");
+    const pre = (d.preamble_text || []).map((t, i) => `<tr class="skipped"><td>${i + 1}</td><td colspan="${d.columns.length}">${esc(t)}</td></tr>`).join("");
+    const hdr = `<tr class="hdr"><td>${d.header_row || 1}</td>${d.columns.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`;
+    const rows = (d.preview || []).map((r, i) => `<tr><td>${(d.header_row || 1) + i + 1}</td>${r.map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("");
+    return `<dl class="kv">
+        <div><dt>File</dt><dd class="mono">${esc(d.file)}</dd></div>
+        ${d.encoding ? `<div><dt>Encoding</dt><dd>${esc(d.encoding)}</dd></div><div><dt>Delimiter</dt><dd class="mono">${d.delimiter === "\t" ? "tab" : esc(d.delimiter)}</dd></div>` : ""}
+        ${d.sheet ? `<div><dt>Sheet</dt><dd>${esc(d.sheet)} <span class="muted">(${d.sheets.indexOf(d.sheet) + 1} of ${d.sheets.length})</span></dd></div>` : ""}
+        <div><dt>Header</dt><dd>Row ${d.header_row}</dd></div>
+        <div><dt>Lines skipped above it</dt><dd>${d.preamble_rows}</dd></div>
+        <div><dt>Size</dt><dd>${num(d.rows)} rows × ${d.columns.length} columns</dd></div>
+      </dl>
+      <div class="scroll"><table class="grid"><tbody>${pre}${hdr}${rows}</tbody></table></div>
+      ${sheet ? `<div class="decide soft"><p>${esc(sheet.question)}</p><select data-select="sheet" aria-label="Sheet">${sheet.options.map(o => `<option ${o === current(sheet) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>` : ""}`;
+  }
+
+  function step2(s) {
+    const d = s.details;
+    const f = d.formats || {};
+    const colors = { iso: "var(--accent)", dayfirst: "var(--pass)", monthfirst: "var(--pass)", ambiguous: "var(--warn)", same_either_way: "var(--muted)", text_month: "var(--accent)", datetime: "var(--accent)", excel_serial: "var(--accent)", unparseable: "var(--block)" };
+    const label = { iso: "ISO", dayfirst: "day-first", monthfirst: "month-first", ambiguous: "ambiguous", same_either_way: "same either way", text_month: "month names", datetime: "Excel dates", excel_serial: "Excel serials", unparseable: "unreadable" };
+    const bar = Object.entries(f).map(([k, v]) => `<span style="flex:${v};background:${colors[k] || "var(--muted)"}" title="${v} ${label[k] || k}">${v} ${label[k] || k}</span>`).join("");
+    let out = `<dl class="kv"><div><dt>Date column</dt><dd class="mono">${esc(d.date_column)}</dd></div>
+      ${d.first ? `<div><dt>From</dt><dd>${esc(d.first)}</dd></div><div><dt>To</dt><dd>${esc(d.last)}</dd></div>` : ""}
+      ${d.ambiguous_resolved_as ? `<div><dt>Ambiguous dates read</dt><dd>${esc(OPTION_LABEL[d.ambiguous_resolved_as])}</dd></div>` : ""}</dl>
+      ${bar ? `<div class="fmtbar" role="img" aria-label="Date formats found">${bar}</div>` : ""}`;
+    const order = decision(s, "date_order");
+    if (order) {
+      const reg = order.context.regularity || {};
+      out += `<div class="decide ${order.pending ? "" : "soft"}"><p>${esc(order.question)} <span class="muted">Spacing check: day-first ${Math.round((reg.dayfirst || 0) * 100)}% regular, month-first ${Math.round((reg.monthfirst || 0) * 100)}%.</span></p>${seg(order)}</div>`;
+    }
+    const bad = decision(s, "unparseable_dates");
+    if (bad) out += `<div class="decide ${bad.pending ? "" : "soft"}"><p>${esc(bad.question)}</p>${bad.answered ? `<span class="pill pass">Rows dropped</span>` : `<button class="btn primary" data-answer="unparseable_dates" data-value="drop_rows">Drop those rows</button>`}</div>`;
+    return out;
+  }
+
+  function roleProblems(roles) {
+    const v = Object.values(roles), n = r => v.filter(x => x === r).length, out = [];
+    if (n("date") !== 1) out.push("Set exactly one date column.");
+    if (n("kpi") !== 1) out.push(n("kpi") ? `${n("kpi")} columns are marked KPI; keep one.` : "Set a KPI column.");
+    if (n("media_spend") + n("rf_spend") === 0) out.push("Set at least one paid media spend column.");
+    ["geo", "population", "revenue_per_kpi"].forEach(r => n(r) > 1 && out.push(`Only one column can be ${ROLE_LABEL[r].toLowerCase()}.`));
+    if (n("population") && !n("geo")) out.push("A population column needs a region column.");
+    return out;
+  }
+  function step3(s) {
+    const d = decision(s, "roles");
+    const sugg = d.context.suggestions;
+    const applied = s.details.roles;
+    const roles = draftRoles || applied;
+    const dirty = draftRoles && JSON.stringify(draftRoles) !== JSON.stringify(applied);
+    const problems = roleProblems(roles);
+    const v = Object.values(roles), n = r => v.filter(x => x === r).length;
+    const opts = Object.keys(ROLE_LABEL);
+    const rows = sugg.map((g, i) => `<tr>
+        <td class="col">${esc(g.column)}</td>
+        <td style="width:200px"><select data-role="${i}" class="${roles[g.column] !== g.role ? "changed" : ""}" aria-label="Role for ${esc(g.column)}">${opts.map(o => `<option value="${o}" ${roles[g.column] === o ? "selected" : ""}>${ROLE_LABEL[o]}</option>`).join("")}</select></td>
+        <td><span class="conf ${g.confidence}">${g.confidence}</span></td>
+        <td class="why">${roles[g.column] !== g.role ? `changed (suggested: ${ROLE_LABEL[g.role]})` : esc(g.reason)}</td></tr>`).join("");
+    const low = sugg.filter(g => g.confidence === "low").map(g => g.column);
+    let msg, btn, cls;
+    if (problems.length) { msg = problems.join(" "); btn = `<button class="btn primary" disabled>Confirm roles</button>`; cls = ""; }
+    else if (!d.answered || dirty) {
+      msg = d.answered ? "You changed roles. Apply them to re-run steps 4–6." : `Check the suggested roles${low.length ? `, especially ${low.map(esc).join(", ")} (low confidence)` : ""}. The run continues once you confirm.`;
+      btn = `<button class="btn primary" id="confirm-roles">${d.answered ? "Apply changes" : "Confirm roles"}</button>`; cls = "";
+    } else { msg = "Roles confirmed. Change any role to re-run steps 4–6."; btn = ""; cls = "okay"; }
+    const check = (ok, label) => `<span class="pill ${ok ? "pass" : "block"}">${label}</span>`;
+    const nSpend = n("media_spend") + n("rf_spend");
+    return `<div class="checklist">${check(n("date") === 1, "Date set")}${check(n("kpi") === 1, "One KPI")}${check(nSpend > 0, `${nSpend} paid spend column${nSpend === 1 ? "" : "s"}`)}</div>
+      <div class="scroll"><table class="roles"><thead><tr><th>Column</th><th>Role</th><th>Confidence</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="decide ${cls}"><p>${msg}</p>${btn}</div>`;
+  }
+
+  function step4(s) {
+    const pairs = decision(s, "pairs");
+    const exposureCols = pairs.options;
+    const rows = s.details.channels.map(c => {
+      if (c.kind === "rf") return `<tr><td><b>${esc(c.name)}</b></td><td class="mono">${esc(c.spend)}</td><td class="mono">${esc(c.reach)} + ${esc(c.frequency)}</td><td><span class="pill pass">reach & freq.</span></td></tr>`;
+      const sel = `<select data-pair="${esc(c.name)}" data-spend="${esc(c.spend)}" aria-label="Exposure for ${esc(c.name)}">
+        <option value="" ${c.exposure_is_spend ? "selected" : ""}>(spend used as exposure)</option>
+        ${exposureCols.map(o => `<option ${!c.exposure_is_spend && c.exposure === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+      return `<tr><td><b>${esc(c.name)}</b></td><td class="mono">${esc(c.spend)}</td><td>${sel}</td><td>${c.exposure_is_spend ? '<span class="pill wait">spend only</span>' : '<span class="pill pass">paired</span>'}</td></tr>`;
+    }).join("");
+    const unpaired = s.decisions.filter(d => d.id.startsWith("unpaired:")).map(d =>
+      `<div class="decide soft" style="background:var(--warn-soft)"><p>${esc(d.question)}</p>${seg(d)}</div>`).join("");
+    const notes = (s.details.notes || []).map(n => `<li>${esc(n)}</li>`).join("");
+    return `<div class="scroll"><table style="min-width:560px"><thead><tr><th>Channel</th><th>Spend</th><th>Exposure</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${unpaired}${notes ? `<ul class="muted small" style="margin:0;padding-left:18px">${notes}</ul>` : ""}`;
+  }
+
+  function step5(s) {
+    const d = s.details;
+    const type = decision(s, "kpi_type");
+    const val = decision(s, "revenue_per_kpi_value");
+    return `<dl class="kv">
+        <div><dt>KPI</dt><dd class="mono">${esc(d.kpi)}</dd></div>
+        <div><dt>ROI unit</dt><dd>${esc(d.roi_units)}</dd></div>
+        ${d.revenue_per_kpi_column ? `<div><dt>Revenue per KPI</dt><dd class="mono">${esc(d.revenue_per_kpi_column)}</dd></div><div><dt>Median value</dt><dd>₹${num(Math.round(d.revenue_per_kpi_median))}</dd></div>` : ""}
+        ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>₹${num(d.revenue_per_kpi_value)}</dd></div>` : ""}
+      </dl>
+      <div class="decide soft"><p>${esc(type.question)}</p>${seg(type)}</div>
+      ${val ? `<div class="decide soft"><p>${esc(val.question)}</p>
+        <form id="rpk" style="display:flex;gap:8px;align-items:center"><span>₹</span><input type="number" id="rpk-value" min="1" step="any" value="${esc(val.answer ?? "")}" placeholder="e.g. 14500" style="width:130px" aria-label="Value per KPI unit">
+        <button class="btn" type="submit">Apply</button>${val.answered ? `<button class="btn" type="button" id="rpk-clear">Clear</button>` : ""}</form></div>` : ""}`;
+  }
+
+  function step6(s) {
+    const d = s.details;
+    const geo = decision(s, "geo_mode");
+    return `<dl class="kv">
+        <div><dt>Frequency</dt><dd>${esc(d.frequency)}${d.week_start ? `, ${esc(d.week_start)} start` : ""}</dd></div>
+        <div><dt>Periods</dt><dd>${num(d.periods)}</dd></div>
+        <div><dt>History</dt><dd>~${num(d.weeks_of_history)} weeks</dd></div>
+        <div><dt>Regions</dt><dd>${d.regions.length ? esc(d.regions.join(", ")) : "One national series"}</dd></div>
+      </dl>
+      ${geo ? `<div class="decide ${geo.pending ? "" : "soft"}"><p>${esc(geo.question)}${geo.context.has_population ? "" : " There is no population column, which a regional model needs."}</p>${seg(geo)}</div>` : ""}`;
+  }
+
+  // ---------- page ----------
+  function render() {
+    $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
+    const r = run.result;
+    const statuses = STEP_NAMES.map((_, i) => (stepOf(i + 1) || {}).verdict || "");
+    const done = statuses.filter(v => v === "pass" || v === "warn").length;
+    const pending = r.pending.length;
+
+    $("rail").innerHTML = PHASES.map(([k, name], i) =>
+      (i === 0 ? '<div class="group">Pipeline</div>' : i === 5 ? '<div class="group">Screens</div>' : "") +
+      `<div class="ph ${k === "A" ? "on" : ""}"><span class="letter">${k}</span><span>${name}</span>${k === "A" ? `<span class="dot ${r.status === "complete" ? "pass" : r.status === "failed" ? "fail" : "needs_input"}"></span>` : '<span class="soon">soon</span>'}</div>` +
+      (k === "A" ? `<ol>${STEP_NAMES.map((n, j) => `<li><span class="dot ${statuses[j]}"></span><a href="#step-${j + 1}" data-jump="${j + 1}">${j + 1}. ${n}</a></li>`).join("")}</ol>` : "")
+    ).join("");
+
+    const body = [step1, step2, step3, step4, step5, step6];
+    const cards = STEP_NAMES.map((_, i) => {
+      const s = stepOf(i + 1);
+      if (!s) return card(i + 1, null);
+      if (s.verdict === "fail") return card(i + 1, s, "");
+      try { return card(i + 1, s, body[i](s)); }
+      catch (e) { console.error(e); return card(i + 1, s, ""); }
+    }).join("");
+
+    const m = r.meridian;
+    const mapping = m ? Object.entries(m.coord_to_columns).map(([k, v]) => `<div>${esc(k)} ← ${esc(Array.isArray(v) ? v.join(", ") : v)}</div>`).join("") : "";
+    const preview = r.table_preview ? `<article class="card"><header><span class="n">→</span><h3>Ingested table</h3><a class="btn" href="/api/runs/${run.run_id}/table.csv">Download CSV</a>
+        <p class="sum">${num(r.rows)} rows, excluded columns dropped, dates parsed. Phase B cleans and aligns it to weeks.</p></header>
+        <div class="body"><div class="scroll"><table class="grid"><thead><tr>${r.table_preview.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+        <tbody>${r.table_preview.rows.map(row => `<tr>${row.map(v => `<td>${esc(v ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div></article>` : "";
+
+    $("main").innerHTML = `
+      <div class="runhead">
+        <div><span class="eyebrow">Phase A · steps 1–6</span><h1>Ingest</h1></div>
+        <div class="chips"><span class="chip mono">${esc(run.file)}</span><span class="chip">run ${esc(run.run_id)}</span>
+          <span class="chip">${r.status === "complete" ? "Complete" : r.status === "failed" ? "Failed" : `${done} of 6 steps done · ${pending} decision${pending === 1 ? "" : "s"} needed`}</span></div>
+      </div>
+      <div class="progress" aria-hidden="true">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
+      <div class="cols">
+        <div class="steps">${cards}${preview}
+          <div class="nextbar"><span class="muted small">${r.status === "complete" ? "Every column has a confirmed role." : r.status === "failed" ? "Fix the file and upload it again." : "Answer the highlighted decision to continue."}</span>
+            <button class="btn primary" disabled title="Phase B is not built yet">Continue to B · Clean (not built yet)</button></div>
+        </div>
+        <aside class="side">
+          <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
+          <div class="card"><h4>Decision log</h4>${r.decision_log.length ? `<div class="log">${r.decision_log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
+          ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
+        </aside>
+      </div>`;
+    wire();
+    const first = r.steps.find(s => s.blocks);
+    if (first && !render.scrolled) { render.scrolled = true; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
+  }
+
+  function wire() {
+    const main = $("main");
+    main.querySelectorAll("[data-answer]").forEach(b => b.onclick = () => answer({ [b.dataset.answer]: b.dataset.value }));
+    main.querySelectorAll("[data-select]").forEach(s => s.onchange = () => answer({ [s.dataset.select]: s.value }));
+    const s3 = stepOf(3);
+    main.querySelectorAll("[data-role]").forEach(sel => sel.onchange = () => {
+      const g = decision(s3, "roles").context.suggestions[+sel.dataset.role];
+      draftRoles = { ...(draftRoles || s3.details.roles), [g.column]: sel.value };
+      const y = window.scrollY; render(); window.scrollTo(0, y);
+    });
+    const confirm = $("confirm-roles");
+    if (confirm) confirm.onclick = () => answer({ roles: draftRoles || s3.details.roles });
+    main.querySelectorAll("[data-pair]").forEach(sel => sel.onchange = () => {
+      const pairs = { ...(answers.pairs || {}) };
+      pairs[sel.dataset.pair] = { kind: "media", spend: sel.dataset.spend, exposure: sel.value || null };
+      answer({ pairs });
+    });
+    const rpk = $("rpk");
+    if (rpk) rpk.onsubmit = e => { e.preventDefault(); const v = parseFloat($("rpk-value").value); if (v > 0) answer({ revenue_per_kpi_value: v }); };
+    const clear = $("rpk-clear");
+    if (clear) clear.onclick = () => answer({ revenue_per_kpi_value: undefined });
+  }
+
+  // ---------- boot ----------
+  const m = location.hash.match(/^#run=([0-9a-f]{12})$/);
+  if (m) api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);
+  else startScreen();
+})();
+</script>
+</body>
+</html>

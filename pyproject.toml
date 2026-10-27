@@ -11,13 +11,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+ui = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+dev = ["pytest>=8", "httpx>=0.27", "mmm-tool[ui]"]
 
 [project.scripts]
 mmm-ingest = "mmm_tool.ingest.cli:main"
+mmm-ui = "mmm_tool.api.app:main"
 
 [tool.setuptools.packages.find]
 include = ["mmm_tool*"]
+
+[tool.setuptools.package-data]
+mmm_tool = ["web/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

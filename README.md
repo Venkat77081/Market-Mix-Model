@@ -1,10 +1,24 @@
 # Meridian MMM Tool
 
-Built so far: **Phase A, Ingest (steps 1–6)** from the roadmap, plus a clickable UI mock in `mock/`.
+Built so far: **Phase A, Ingest (steps 1–6)** from the roadmap, a web UI for it, and a clickable
+design mock of the later screens in `mock/` (sample data only, not connected).
+
+## Web UI
+
+```bash
+pip install -e '.[ui]'
+mmm-ui                     # then open http://127.0.0.1:8000
+```
+
+Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
+ingested table when all six steps pass. Runs and answers are saved under `./runs/` (set `MMM_RUNS_DIR`
+to change it), so a page reload keeps your place. The API is under `/api/` (docs at `/docs`).
+
+## Command line and tests
 
 ```bash
 pip install -e '.[dev]'
-pytest                                      # 32 tests on synthetic insurance exports
+pytest                                      # Phase A and API tests on synthetic insurance exports
 python -m mmm_tool.ingest data.xlsx         # stops at the first decision prompt
 python -m mmm_tool.ingest data.xlsx --answers answers.json
 python -m mmm_tool.ingest data.xlsx --accept-defaults --json

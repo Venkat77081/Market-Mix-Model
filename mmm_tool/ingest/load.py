@@ -183,6 +183,7 @@ def load_file(path: str | Path, answers: Answers) -> tuple[pd.DataFrame | None, 
         ],
         rows=len(table),
         columns=list(table.columns),
+        preview=[["" if is_null_token(v) else str(v) for v in r] for r in table.head(5).itertuples(index=False)],
     )
     if table.empty or len(table.columns) < 2:
         return None, StepResult(STEP, NAME, Verdict.FAIL, "No data table found below the header row.", details)
