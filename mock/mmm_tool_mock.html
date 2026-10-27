@@ -1,0 +1,1074 @@
+<title>Meridian MMM Tool</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a lab notebook for one model. Landing page explains the pipeline;
+   the app is a left rail of lettered phases and a column of numbered step cards,
+   each with a verdict, its evidence, and a prompt only where the data is ambiguous. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --sunken: #e9edf1;
+  --ink: #15202b;
+  --muted: #586675;
+  --line: #d8dfe6;
+  --accent: #1d5bbf;
+  --accent-soft: #e3ecfa;
+  --pass: #1b7a4b;
+  --pass-soft: #e2f3ea;
+  --warn: #a66300;
+  --warn-soft: #fbefd9;
+  --block: #b42a20;
+  --block-soft: #fbe4e1;
+  --baseline: #b9c4cf;
+  --display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1;
+    --line: #283440; --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f;
+    --warn: #e7a94a; --warn-soft: #33270f; --block: #f07f74; --block-soft: #3a1a17; --baseline: #45535f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1;
+  --line: #283440; --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f;
+  --warn: #e7a94a; --warn-soft: #33270f; --block: #f07f74; --block-soft: #3a1a17; --baseline: #45535f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3 { font-family: var(--display); font-weight: 500; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+p { margin: 0; }
+a { color: var(--accent); }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* top bar */
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; color: var(--ink); white-space: nowrap; }
+.brand svg { flex: none; }
+.topnav { display: flex; gap: 4px; margin-left: auto; align-items: center; }
+.topnav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: var(--r); font-size: 14px; }
+.topnav a:hover, .topnav a[aria-current="page"] { color: var(--ink); background: var(--sunken); }
+.mock-tag { font: 500 11px var(--mono); color: var(--warn); background: var(--warn-soft); padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: var(--r); cursor: pointer; text-decoration: none; color: var(--ink); font-weight: 500; font-size: 14px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+/* pills and badges */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; white-space: nowrap; line-height: 1.6; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.pass { color: var(--pass); background: var(--pass-soft); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); }
+.pill.block { color: var(--block); background: var(--block-soft); }
+.pill.wait { color: var(--muted); background: var(--sunken); }
+.badge { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+.badge.cal { color: var(--pass); border-color: currentColor; }
+.badge.model { color: var(--muted); border-color: var(--line); }
+.badge.hard { color: var(--warn); border-color: currentColor; }
+.badge.prior { color: var(--block); border-color: currentColor; }
+.badge.unstable { color: var(--warn); border-color: currentColor; border-style: dashed; }
+
+/* ---------- landing ---------- */
+.hero { padding-block: 56px 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: center; }
+.hero h1 { font-size: clamp(34px, 5vw, 54px); line-height: 1.06; margin-top: 14px; }
+.hero .lede { font-size: 17px; color: var(--muted); margin-top: 18px; max-width: 34em; }
+.hero .ctas { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 26px; }
+.hero .fine { margin-top: 14px; font-size: 13px; color: var(--muted); }
+.roi-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 20px 14px; min-width: 0; }
+.roi-card header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.roi-card h3 { font-size: 19px; }
+.roi-chart { width: 100%; overflow-x: auto; }
+.roi-chart svg { display: block; width: 100%; min-width: 440px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; align-items: center; }
+
+section.band { padding-block: 56px; border-top: 1px solid var(--line); }
+.band h2 { font-size: clamp(26px, 3.4vw, 34px); max-width: 22em; }
+.band .intro { color: var(--muted); max-width: 40em; margin-top: 10px; }
+
+.arch { margin-top: 32px; overflow-x: auto; }
+.arch-inner { min-width: 760px; display: grid; gap: 14px; }
+.arch-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; position: relative; }
+.arch-row.screens { grid-template-columns: repeat(4, 1fr); }
+.node { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; text-decoration: none; color: var(--ink); display: block; }
+.node:hover { border-color: var(--accent); }
+.node b { font-weight: 600; display: block; }
+.node .steps { font: 12px var(--mono); color: var(--muted); }
+.node .ask { font-size: 13px; color: var(--muted); margin-top: 6px; display: block; }
+.node.gate .ask { color: var(--block); }
+.arch-mid { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted); }
+.arch-mid .line { flex: 1; height: 1px; background: var(--line); }
+.approved { border: 1.5px solid var(--accent); background: var(--accent-soft); color: var(--ink); border-radius: var(--r); padding: 10px 22px; font-weight: 600; white-space: nowrap; }
+.arrowrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; font: 12px var(--mono); color: var(--muted); }
+
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 30px; }
+.three h3 { font-size: 20px; margin: 8px 0 6px; }
+.three p { color: var(--muted); font-size: 14.5px; }
+.three .ref { font: 12px var(--mono); color: var(--accent); }
+
+.gates { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 40px; margin-top: 30px; align-items: start; }
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+.table-scroll { overflow-x: auto; }
+.badgelist { display: grid; gap: 12px; }
+.badgelist div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: start; font-size: 14px; }
+.badgelist .badge { justify-self: start; }
+
+.registry td:first-child { font-weight: 500; }
+footer.site { border-top: 1px solid var(--line); padding-block: 28px; color: var(--muted); font-size: 13px; }
+
+/* ---------- app ---------- */
+.app { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+.rail { border-right: 1px solid var(--line); background: var(--surface); padding: 18px 12px; position: sticky; top: calc(56px + env(safe-area-inset-top, 0px)); align-self: start; height: calc(100vh - 56px); overflow-y: auto; }
+.rail .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 14px 10px 6px; }
+.rail a.ph { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 4px; padding: 7px 10px; border-radius: var(--r); text-decoration: none; color: var(--ink); font-size: 14px; }
+.rail a.ph:hover { background: var(--sunken); }
+.rail a.ph[aria-current="page"] { background: var(--accent-soft); }
+.rail .letter { font: 600 13px var(--mono); color: var(--muted); }
+.rail .st { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.rail .st.pass { background: var(--pass); } .rail .st.warn { background: var(--warn); } .rail .st.block { background: var(--block); }
+.rail ol { list-style: none; margin: 2px 0 8px 36px; padding: 0; font-size: 13px; }
+.rail ol li { display: flex; align-items: center; gap: 8px; padding: 3px 0; color: var(--muted); }
+.rail ol li .st { width: 6px; height: 6px; }
+
+.main { padding-block: 24px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); min-width: 0; }
+.main-inner { max-width: 1060px; margin: 0 auto; display: grid; gap: 18px; }
+.runhead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+.runhead h1 { font-size: 32px; }
+.runmeta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.chip { background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
+.progress { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.progress span { height: 4px; border-radius: 2px; background: var(--line); }
+.progress span.pass { background: var(--pass); } .progress span.warn { background: var(--warn); } .progress span.block { background: var(--block); }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+.steps { display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.card.needs { border-color: var(--block); box-shadow: 0 0 0 3px var(--block-soft); }
+.card > header { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 14px 16px; }
+.card .n { font: 600 14px var(--mono); color: var(--muted); }
+.card h3 { font-family: var(--body); font-weight: 600; font-size: 15px; }
+.card .sum { grid-column: 2 / 4; color: var(--muted); font-size: 14px; margin-top: -6px; }
+.card .body { border-top: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 14px; }
+.card.waiting { opacity: 0.6; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; }
+.kv div { min-width: 0; }
+.kv dt { font-size: 12px; color: var(--muted); }
+.kv dd { margin: 0; font-weight: 500; }
+dl { margin: 0; }
+
+.preview { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.preview table { min-width: 640px; }
+.preview th, .preview td { font: 12.5px var(--mono); padding: 6px 10px; white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.preview tr.skipped td { color: var(--muted); text-decoration: line-through; background: var(--sunken); }
+.preview tr.hdr td { font-weight: 600; background: var(--accent-soft); }
+
+.fmtbar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; font: 11px var(--mono); }
+.fmtbar span { display: flex; align-items: center; padding: 0 8px; white-space: nowrap; overflow: hidden; color: var(--surface); }
+
+.roles { min-width: 860px; }
+.roles td.why { min-width: 230px; }
+.roles td { vertical-align: middle; padding: 7px 10px; }
+.roles td.col { font: 13px var(--mono); }
+.roles select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); width: 100%; }
+.roles select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.roles .why { font-size: 12.5px; color: var(--muted); }
+.conf { font: 11px var(--mono); }
+.conf.low { color: var(--warn); }
+.spark { display: block; }
+.checklist { display: flex; flex-wrap: wrap; gap: 8px; }
+.decide { background: var(--block-soft); border-radius: var(--r); padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
+.decide p { font-size: 14px; max-width: 46em; }
+.decide.done { background: var(--pass-soft); }
+
+.pairs { display: grid; gap: 6px; }
+.pair { display: grid; grid-template-columns: 110px minmax(0, 1fr) 24px minmax(0, 1fr) auto; gap: 8px; align-items: center; font: 13px var(--mono); padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.pair .ch { font-family: var(--body); font-weight: 600; font-size: 14px; }
+.pair .arrow { color: var(--muted); text-align: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+
+.side { display: grid; gap: 12px; position: sticky; top: calc(76px + env(safe-area-inset-top, 0px)); }
+.side .card { padding: 14px 16px; display: grid; gap: 10px; }
+.side h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.warnlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; }
+.warnlist li { display: grid; grid-template-columns: 30px 1fr; gap: 6px; }
+.warnlist .sn { font: 12px var(--mono); color: var(--warn); }
+.log { font: 12px var(--mono); color: var(--muted); display: grid; gap: 4px; }
+.nextbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+
+/* summary */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.panel h3 { font-family: var(--body); font-size: 15px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.panel h3 .n { font: 500 12px var(--mono); color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat b { display: block; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font: 11px var(--body); }
+.roitable { min-width: 760px; }
+.roitable td { vertical-align: middle; }
+.roitable td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.smalls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.smalls figure { margin: 0; }
+.smalls figcaption { font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; gap: 6px; }
+
+/* what-if */
+.wi { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.slider { display: grid; grid-template-columns: 96px minmax(0, 1fr) 64px 86px; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.slider input[type=range] { width: 100%; accent-color: var(--accent); }
+.slider .pct { font: 13px var(--mono); text-align: right; }
+.slider .amt { font: 12px var(--mono); color: var(--muted); text-align: right; }
+.slider.out .pct { color: var(--block); }
+.result { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.result b { display: block; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.result small { font-size: 12px; color: var(--muted); }
+.delta.up { color: var(--pass); } .delta.down { color: var(--block); }
+.callout { border-left: 3px solid var(--block); background: var(--block-soft); padding: 10px 12px; font-size: 13.5px; border-radius: 0 var(--r) var(--r) 0; }
+.callout.info { border-color: var(--accent); background: var(--accent-soft); }
+
+.stub { display: grid; gap: 14px; }
+
+@media (max-width: 960px) {
+  .hero, .gates { grid-template-columns: minmax(0, 1fr); }
+  .three { grid-template-columns: minmax(0, 1fr); }
+  .cols, .wi, .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; }
+  .smalls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; gap: 4px; padding: 8px 12px; }
+  .rail .group, .rail ol { display: none; }
+  .rail a.ph { grid-template-columns: auto auto auto; white-space: nowrap; }
+  .topnav a.hide-sm, .topnav a[data-nav="app"], .mock-tag { display: none; }
+  .topbar .wrap { gap: 12px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .smalls { grid-template-columns: minmax(0, 1fr); }
+  .slider { grid-template-columns: 80px minmax(0, 1fr) 56px; }
+  .slider .amt { display: none; }
+  .pair { grid-template-columns: 90px minmax(0, 1fr); }
+  .pair .arrow, .pair .exp-wrap { display: none; }
+  .badgelist div { grid-template-columns: 1fr; gap: 4px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card, .btn, select { transition: border-color .15s, box-shadow .15s, opacity .2s; }
+}
+</style>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" rx="6" fill="var(--accent)"/><path d="M4 19 C8 19 9 7 13 7 C17 7 18 19 22 19" stroke="var(--surface)" stroke-width="2" fill="none"/><line x1="13" y1="5" x2="13" y2="21" stroke="var(--surface)" stroke-width="1" stroke-dasharray="2 2"/></svg>
+      Meridian MMM Tool
+    </a>
+    <span class="mock-tag">MOCK · sample data</span>
+    <nav class="topnav" aria-label="Main">
+      <a href="#home" data-nav="home" class="hide-sm">Overview</a>
+      <a href="#run" data-nav="app">Current run</a>
+      <a href="#summary" data-nav="screens" class="hide-sm">Model summary</a>
+      <a class="btn primary" href="#run">Start a run</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ================= LANDING ================= -->
+<div id="view-home" data-view>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <span class="eyebrow">Marketing mix modelling · built on Google Meridian</span>
+        <h1>What caused sales, and what is each channel worth?</h1>
+        <p class="lede">Upload a raw spend-and-sales export and answer a few prompts. You get back a validated Bayesian model, a model summary, what-if scenarios and an optimized budget plan.</p>
+        <div class="ctas">
+          <a class="btn primary" href="#run">Upload an export</a>
+          <a class="btn" href="#summary">See a finished model</a>
+        </div>
+        <p class="fine">CSV or Excel · weekly, daily or monthly · one region or several · at least 104 weeks of history</p>
+      </div>
+      <div class="roi-card">
+        <header>
+          <h3>ROI per channel, with the 90% range</h3>
+          <span class="muted" style="font-size:13px">Motor · v14 · data to 22 Dec 2025</span>
+        </header>
+        <div class="roi-chart" id="hero-roi"></div>
+        <div class="legend">
+          <span>₹ premium returned per ₹ spent</span>
+          <span><span class="badge cal">calibrated</span> lift test behind it</span>
+          <span><span class="badge prior">prior-driven</span> data taught little</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="band">
+    <div class="wrap">
+      <span class="eyebrow">How it works</span>
+      <h2>Five phases build the model once. Four screens use it.</h2>
+      <p class="intro">Fitting takes minutes, so it never runs inside a screen. The pipeline turns your upload into an approved model; the screens only read that model, so they open instantly.</p>
+      <div class="arch">
+        <div class="arch-inner">
+          <div class="arrowrow"><span>PIPELINE · runs once per fit</span></div>
+          <div class="arch-row">
+            <a class="node" href="#run"><b>A · Ingest</b><span class="steps">steps 1–6</span><span class="ask">you map column roles</span></a>
+            <a class="node" href="#phase-b"><b>B · Clean</b><span class="steps">steps 7–13</span><span class="ask">you set gap rules</span></a>
+            <a class="node" href="#phase-c"><b>C · Profile</b><span class="steps">steps 14–20</span><span class="ask">gate: 104+ weeks</span></a>
+            <a class="node" href="#phase-d"><b>D · Configure</b><span class="steps">steps 21–27</span><span class="ask">you add lift tests</span></a>
+            <a class="node gate" href="#phase-e"><b>E · Validate</b><span class="steps">steps 28–36</span><span class="ask">3 pass/fail gates</span></a>
+          </div>
+          <div class="arch-mid"><span class="line"></span><span class="approved">Approved model</span><span class="line"></span></div>
+          <div class="arch-row screens">
+            <a class="node" href="#summary"><b>F · Model Summary</b><span class="steps">steps 37–42</span><span class="ask">what drove sales</span></a>
+            <a class="node" href="#whatif"><b>G · What-If</b><span class="steps">steps 43–47</span><span class="ask">you move spend</span></a>
+            <a class="node" href="#plan"><b>H · Plan, Optimize</b><span class="steps">steps 48–54</span><span class="ask">best split within limits</span></a>
+            <a class="node" href="#export"><b>I · Export, refit</b><span class="steps">steps 55–58</span><span class="ask">bundle and registry; new weeks refit from A</span></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <span class="eyebrow">Your part</span>
+      <h2>You decide at three points. Every other step reports a verdict.</h2>
+      <div class="three">
+        <div>
+          <span class="ref">Step 3</span>
+          <h3>Column roles</h3>
+          <p>The tool suggests a role for every column: KPI, spend, exposure, control, unpaid media. You confirm or change each one, and exclude anything marketing itself causes, such as branded search.</p>
+        </div>
+        <div>
+          <span class="ref">Steps 8, 10, 12</span>
+          <h3>Rules for gaps and duplicates</h3>
+          <p>A zero is never treated as missing. Flags take the maximum, never the sum. When the KPI has gaps or spend goes negative, you choose: interpolate, trim, correct or keep.</p>
+        </div>
+        <div>
+          <span class="ref">Step 26</span>
+          <h3>Past lift tests</h3>
+          <p>Enter geo or holdout experiments you have run. Each becomes that channel's ROI prior and earns it a <span class="badge cal">calibrated</span> badge on every later screen.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <span class="eyebrow">Trust before results</span>
+      <h2>A model is accepted only if it passes every gate.</h2>
+      <p class="intro">An MMM is never graded by reality the way a forecast is, so the main risk is a confident ROI that is wrong. More steps go into checking the model than fitting it, and a failed gate is shown with its reason.</p>
+      <div class="gates">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Step</th><th>Gate</th><th>Pass rule</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">14</td><td>Enough history</td><td>104+ weeks; 3+ observations per parameter</td></tr>
+              <tr><td class="mono">30</td><td>Convergence</td><td>R-hat below 1.1 for every parameter</td></tr>
+              <tr><td class="mono">31</td><td>Holdout accuracy</td><td>Test MAPE below 10% and better than a seasonal-naive forecast</td></tr>
+              <tr><td class="mono">32</td><td>Plausibility</td><td>ROI between 0.05 and 20; baseline 20–95% of KPI; contributions reconcile exactly</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="badgelist">
+          <div><span class="badge cal">calibrated</span><span>A lift test sets this channel's prior (step 26).</span></div>
+          <div><span class="badge model">model only</span><span>No experiment behind it; the estimate comes from the data alone.</span></div>
+          <div><span class="badge hard">hard to measure</span><span>Spend barely varies (coefficient of variation under 0.3, step 16).</span></div>
+          <div><span class="badge prior">prior-driven</span><span>Posterior range less than 30% narrower than the prior (step 33).</span></div>
+          <div><span class="badge unstable">unstable</span><span>ROI moves when the first or last 26 weeks are dropped (step 34).</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <span class="eyebrow">Model registry</span>
+      <h2>Every version is kept. Screens always use the approved one.</h2>
+      <div class="table-scroll" style="margin-top:24px">
+        <table class="registry" style="min-width:640px">
+          <thead><tr><th>Product line</th><th>Approved version</th><th>Data to</th><th>Gates</th><th>Channels</th><th>Last refit</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#summary">Motor</a></td><td class="mono">v14</td><td>22 Dec 2025</td><td><span class="pill pass">3 of 3 passed</span></td><td class="num">9</td><td>ROI moved inside its range on all channels</td></tr>
+            <tr><td>Health</td><td class="mono">v6</td><td>15 Dec 2025</td><td><span class="pill pass">3 of 3 passed</span></td><td class="num">7</td><td>Search flagged: ROI moved beyond its 90% range</td></tr>
+            <tr><td>Term life</td><td class="mono">v2 draft</td><td>8 Dec 2025</td><td><span class="pill block">Holdout failed</span></td><td class="num">6</td><td>Test MAPE 13.8%; not approved</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site"><div class="wrap">Mock of the Meridian MMM Tool, drawn from the roadmap of 27 Oct 2026. All figures are sample data.</div></footer>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="view-app" class="app" data-view hidden>
+  <nav class="rail" aria-label="Phases" id="rail"></nav>
+  <main class="main"><div class="main-inner" id="app-main"></div></main>
+</div>
+
+<script>
+(() => {
+  // ---------- sample data ----------
+  // Annual spend in ₹ Cr; ROI as ₹ premium per ₹; sat = spend / half-saturation scale.
+  const CH = [
+    { id: "tv", name: "TV", spend: 28, roi: 1.9, lo: 1.3, hi: 2.6, badges: ["cal"], sat: 1.3, decay: 0.72 },
+    { id: "search", name: "Search", spend: 16, roi: 2.7, lo: 1.1, hi: 4.6, badges: ["prior", "hard"], sat: 0.9, decay: 0.15 },
+    { id: "aggregator", name: "Aggregator", spend: 20, roi: 1.1, lo: 0.4, hi: 2.2, badges: ["prior", "hard"], sat: 1.1, decay: 0.2 },
+    { id: "youtube", name: "YouTube", spend: 12, roi: 1.4, lo: 0.9, hi: 2.0, badges: ["model"], sat: 0.8, decay: 0.45 },
+    { id: "meta", name: "Meta", spend: 9, roi: 1.6, lo: 1.0, hi: 2.3, badges: ["model"], sat: 0.7, decay: 0.3 },
+    { id: "outdoor", name: "Outdoor", spend: 4, roi: 1.2, lo: 0.5, hi: 2.1, badges: ["unstable"], sat: 0.6, decay: 0.6 },
+    { id: "display", name: "Display", spend: 4, roi: 0.8, lo: 0.4, hi: 1.3, badges: ["model"], sat: 1.0, decay: 0.25 },
+    { id: "radio", name: "Radio", spend: 2, roi: 0.9, lo: 0.3, hi: 1.7, badges: ["model"], sat: 0.5, decay: 0.4 },
+    { id: "print", name: "Print", spend: 1, roi: 0.6, lo: 0.1, hi: 1.4, badges: ["model"], sat: 0.5, decay: 0.35 },
+  ];
+  const BADGE = { cal: "calibrated", model: "model only", hard: "hard to measure", prior: "prior-driven", unstable: "unstable" };
+  const PREMIUM_PER_POLICY = 14527;
+  const TOTAL_PREMIUM_CR = 316;
+  const NS = "http://www.w3.org/2000/svg";
+
+  // Response curve r(s) = c(1 - e^(-s/k)); at current spend r = ROI·s.
+  CH.forEach(c => {
+    c.k = c.spend / c.sat;
+    c.c = c.roi * c.spend / (1 - Math.exp(-c.sat));
+    c.mroi = c.c / c.k * Math.exp(-c.sat);
+  });
+  const resp = (c, s) => c.c * (1 - Math.exp(-s / c.k));
+
+  const crore = x => "₹" + (x >= 100 ? x.toFixed(0) : x.toFixed(1)) + " Cr";
+  const inr = x => { // Indian digit grouping
+    const s = Math.round(x).toString();
+    if (s.length <= 3) return s;
+    let head = s.slice(0, -3), tail = s.slice(-3), parts = [];
+    while (head.length > 2) { parts.unshift(head.slice(-2)); head = head.slice(0, -2); }
+    if (head) parts.unshift(head);
+    return parts.join(",") + "," + tail;
+  };
+  const badges = c => c.badges.map(b => `<span class="badge ${b}">${BADGE[b]}</span>`).join(" ");
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const txt = (parent, x, y, s, attrs = {}) => { const t = el("text", { x, y, ...attrs }, parent); t.textContent = s; return t; };
+
+  // ---------- ROI interval chart (hero + summary) ----------
+  function roiChart(host, opts = {}) {
+    const W = 560, rowH = 30, top = 22, left = 92, right = 150, H = top + CH.length * rowH + 26;
+    const max = 5;
+    const x = v => left + (v / max) * (W - left - right);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "ROI per channel with 90% credible interval" });
+    for (let t = 0; t <= max; t++) {
+      el("line", { x1: x(t), x2: x(t), y1: top - 6, y2: H - 22, stroke: "var(--line)", "stroke-width": 1 }, svg);
+      txt(svg, x(t), H - 8, t.toFixed(0), { "text-anchor": "middle", fill: "var(--muted)", "font-size": 11, "font-family": "var(--mono)" });
+    }
+    el("line", { x1: x(1), x2: x(1), y1: top - 10, y2: H - 22, stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "3 3" }, svg);
+    txt(svg, x(1) + 4, top - 10, "break-even", { fill: "var(--muted)", "font-size": 10.5 });
+    CH.forEach((c, i) => {
+      const y = top + i * rowH + rowH / 2;
+      const prior = c.badges.includes("prior");
+      txt(svg, left - 10, y + 4, c.name, { "text-anchor": "end", fill: "var(--ink)", "font-size": 13 });
+      el("rect", { x: x(c.lo), y: y - 4, width: x(c.hi) - x(c.lo), height: 8, rx: 4, fill: prior ? "var(--block-soft)" : "var(--accent-soft)", stroke: prior ? "var(--block)" : "var(--accent)", "stroke-width": 1 }, svg);
+      el("circle", { cx: x(c.roi), cy: y, r: 4.5, fill: prior ? "var(--block)" : "var(--accent)" }, svg);
+      txt(svg, x(max) + 10, y + 4, c.roi.toFixed(1), { fill: "var(--ink)", "font-size": 12.5, "font-family": "var(--mono)", "font-weight": 500 });
+      txt(svg, x(max) + 38, y + 4, `${c.lo.toFixed(1)}–${c.hi.toFixed(1)}`, { fill: "var(--muted)", "font-size": 11.5, "font-family": "var(--mono)" });
+      if (opts.badges !== false && c.badges[0] !== "model") {
+        const b = c.badges[0];
+        txt(svg, x(max) + 96, y + 4, BADGE[b] === "prior-driven" ? "prior" : BADGE[b] === "calibrated" ? "calib." : BADGE[b] === "unstable" ? "unstable" : "", { fill: b === "cal" ? "var(--pass)" : b === "prior" ? "var(--block)" : "var(--warn)", "font-size": 11, "font-family": "var(--mono)" });
+      }
+    });
+    host.innerHTML = "";
+    host.appendChild(svg);
+  }
+  roiChart(document.getElementById("hero-roi"));
+
+  // ---------- app state ----------
+  const COLUMNS = [
+    { col: "week_start", role: "date", conf: "high", why: "parsed as dates in step 2", sample: "2023-01-02" },
+    { col: "region", role: "geo", conf: "high", why: "text column with 5 repeating values", sample: "North" },
+    { col: "adult_population", role: "population", conf: "high", why: "population by name; one value per region", sample: "3,10,00,000" },
+    { col: "new_policies", role: "kpi", conf: "high", why: "count of outcomes by name", sample: "4,212", spark: 1 },
+    { col: "avg_premium", role: "revenue_per_kpi", conf: "high", why: "value of one KPI unit", sample: "14,527", spark: 2 },
+    { col: "tv_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "12,40,000", spark: 3 },
+    { col: "tv_grps", role: "media", conf: "high", why: "exposure metric by name", sample: "137.8", spark: 3 },
+    { col: "youtube_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "4,85,000", spark: 4 },
+    { col: "youtube_reach", role: "reach", conf: "high", why: "reach by name", sample: "3,88,000", spark: 4 },
+    { col: "youtube_frequency", role: "frequency", conf: "high", why: "frequency by name", sample: "2.14", spark: 5 },
+    { col: "search_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "6,02,000", spark: 6 },
+    { col: "search_clicks", role: "media", conf: "high", why: "exposure metric by name", sample: "27,363", spark: 6 },
+    { col: "aggregator_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "7,70,000", spark: 7 },
+    { col: "meta_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "3,45,000", spark: 8 },
+    { col: "meta_impressions", role: "media", conf: "high", why: "exposure metric by name", sample: "10,69,500", spark: 8 },
+    { col: "display_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "1,52,000", spark: 9 },
+    { col: "outdoor_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "0", spark: 10 },
+    { col: "radio_spend", role: "media_spend", conf: "high", why: "spend by name", sample: "0", spark: 11 },
+    { col: "print_impressions", role: "media", conf: "high", why: "exposure metric by name", sample: "88,000", spark: 12 },
+    { col: "premium_index", role: "control", conf: "high", why: "outside factor by name", sample: "100.42", spark: 13 },
+    { col: "competitor_spend", role: "control", conf: "high", why: "outside factor by name", sample: "15,10,000", spark: 14 },
+    { col: "vehicle_registrations", role: "control", conf: "medium", why: "outside factor by name", sample: "2,08,400", spark: 15 },
+    { col: "tax_season_flag", role: "control", conf: "high", why: "0/1 flag", sample: "1", spark: 16 },
+    { col: "discount_pct", role: "non_media_treatment", conf: "medium", why: "a lever you control that isn't media", sample: "5", spark: 17 },
+    { col: "email_sends", role: "organic_media", conf: "medium", why: "unpaid channel by name", sample: "1,21,000", spark: 18 },
+    { col: "branded_search_queries", role: "excluded", conf: "medium", why: "rises because of other marketing; modelling it would steal their credit", sample: "21,540", spark: 3 },
+    { col: "gross_written_premium", role: "excluded", conf: "medium", why: "second outcome column; new_policies is the KPI", sample: "6,11,85,700", spark: 1 },
+    { col: "unnamed_28", role: "control", conf: "low", why: "numeric column with an unrecognised name; assumed an outside factor", sample: "0.31", spark: 19 },
+  ];
+  const ROLE_LABEL = {
+    date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
+    media: "Paid media exposure", media_spend: "Paid media spend", reach: "Reach", frequency: "Frequency",
+    rf_spend: "Reach & frequency spend", control: "Control", non_media_treatment: "Non-media lever",
+    organic_media: "Unpaid media", excluded: "Excluded",
+  };
+  const state = {
+    roles: Object.fromEntries(COLUMNS.map(c => [c.col, c.role])),
+    confirmed: false,
+    geoMode: "regional",
+    printChoice: "organic_media",
+    log: [
+      ["1", "sheet", "Weekly data", "default"],
+      ["2", "date_order", "day-first (235 rows have a day above 12)", "auto"],
+    ],
+  };
+
+  // ---------- rail ----------
+  const PHASES = [
+    { k: "A", name: "Ingest", route: "run", steps: ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity"], start: 1, group: "Pipeline" },
+    { k: "B", name: "Clean", route: "phase-b", steps: ["Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money"], start: 7 },
+    { k: "C", name: "Profile", route: "phase-c", steps: ["Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report"], start: 14 },
+    { k: "D", name: "Configure", route: "phase-d", steps: ["Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout"], start: 21 },
+    { k: "E", name: "Validate", route: "phase-e", steps: ["Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save"], start: 28 },
+    { k: "F", name: "Model Summary", route: "summary", steps: ["Fit health", "Sales breakdown", "ROI table", "Trust badges", "Response curves", "Carryover"], start: 37, group: "Screens" },
+    { k: "G", name: "What-If", route: "whatif", steps: ["Enter a scenario", "Quick result", "Exact result", "Extrapolation warning", "Save and compare"], start: 43 },
+    { k: "H", name: "Plan, Optimize", route: "plan", steps: ["Period", "Budget", "Budget type", "Channel limits", "Locks and ₹ floors", "Review", "Optimize"], start: 48 },
+    { k: "I", name: "Export, refit", route: "export", steps: ["Model bundle", "Reports", "Model registry", "Refit"], start: 55 },
+  ];
+  function phaseAStatus() {
+    const s = stepStatus();
+    if (s.includes("block")) return "block";
+    if (s.includes("wait")) return "";
+    return s.includes("warn") ? "warn" : "pass";
+  }
+  function renderRail(route) {
+    const rail = document.getElementById("rail");
+    let html = "";
+    PHASES.forEach(p => {
+      if (p.group) html += `<div class="group">${p.group}</div>`;
+      const st = p.k === "A" ? phaseAStatus() : "";
+      html += `<a class="ph" href="#${p.route}" ${route === p.route ? 'aria-current="page"' : ""}><span class="letter">${p.k}</span><span>${p.name}</span><span class="st ${st}"></span></a>`;
+      if (p.k === "A" && route === "run") {
+        const ss = stepStatus();
+        html += "<ol>" + p.steps.map((n, i) => `<li><span class="st ${ss[i] === "wait" ? "" : ss[i]}"></span>${i + 1}. ${n}</li>`).join("") + "</ol>";
+      }
+    });
+    rail.innerHTML = html;
+  }
+
+  // ---------- Phase A ----------
+  function roleProblems() {
+    const v = Object.values(state.roles);
+    const n = r => v.filter(x => x === r).length;
+    const out = [];
+    if (n("date") !== 1) out.push("Set exactly one date column.");
+    if (n("kpi") !== 1) out.push(n("kpi") ? `${n("kpi")} columns are marked KPI; keep one.` : "Set a KPI column.");
+    if (n("media_spend") + n("rf_spend") === 0) out.push("Set at least one paid media spend column.");
+    if (n("revenue_per_kpi") > 1) out.push("Only one column can be revenue per KPI.");
+    return out;
+  }
+  function stepStatus() {
+    const s3 = state.confirmed && !roleProblems().length ? (lowKept() ? "warn" : "pass") : "block";
+    const after = s3 === "block" ? "wait" : null;
+    return ["pass", "pass", s3, after || "warn", after || "pass", after || "pass"];
+  }
+  const lowKept = () => COLUMNS.some(c => c.conf === "low" && state.roles[c.col] === c.role && c.role !== "excluded");
+
+  function spark(seed) {
+    let v = 50, pts = [];
+    let r = seed * 9301 + 49297;
+    for (let i = 0; i < 40; i++) {
+      r = (r * 9301 + 49297) % 233280;
+      const u = r / 233280;
+      v = seed === 16 ? (i % 13 < 3 ? 90 : 10) : seed === 10 || seed === 11 ? (u < 0.4 ? 10 : 30 + u * 60) : Math.max(5, Math.min(95, v + (u - 0.5) * 30));
+      pts.push(v);
+    }
+    const d = pts.map((p, i) => `${i ? "L" : "M"}${(i * 80 / 39).toFixed(1)} ${(22 - p * 0.2).toFixed(1)}`).join(" ");
+    return `<svg class="spark" width="80" height="24" viewBox="0 0 80 24" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--muted)" stroke-width="1.2"/></svg>`;
+  }
+
+  function stepCard(n, title, status, summary, body, extra = "") {
+    const pill = { pass: '<span class="pill pass">Pass</span>', warn: '<span class="pill warn">Pass with warning</span>', block: '<span class="pill block">Decision needed</span>', wait: '<span class="pill wait">Waiting on step 3</span>' }[status];
+    return `<article class="card ${status === "block" ? "needs" : ""} ${status === "wait" ? "waiting" : ""}" id="step-${n}" ${extra}>
+      <header><span class="n">${n}</span><h3>${title}</h3>${pill}<p class="sum">${summary}</p></header>
+      ${status === "wait" ? "" : `<div class="body">${body}</div>`}
+    </article>`;
+  }
+
+  function renderPhaseA() {
+    const ss = stepStatus();
+    const problems = roleProblems();
+    const roles = state.roles;
+    const pending = ss.filter(s => s === "block").length;
+    const passed = ss.filter(s => s === "pass" || s === "warn").length;
+
+    const s1 = `
+      <dl class="kv">
+        <div><dt>File</dt><dd class="mono">motor_media_weekly.xlsx</dd></div>
+        <div><dt>Sheet</dt><dd>Weekly data <span class="muted">(1 of 2)</span></dd></div>
+        <div><dt>Header</dt><dd>Row 4</dd></div>
+        <div><dt>Preamble skipped</dt><dd>2 lines</dd></div>
+        <div><dt>Size</dt><dd class="num">780 rows × 28 columns</dd></div>
+      </dl>
+      <div class="preview"><table>
+        <tbody>
+          <tr class="skipped"><td>1</td><td colspan="6">Weekly media and sales report</td></tr>
+          <tr class="skipped"><td>2</td><td colspan="6">Generated 2026-01-05</td></tr>
+          <tr class="skipped"><td>3</td><td colspan="6"></td></tr>
+          <tr class="hdr"><td>4</td><td>week_start</td><td>new_policies</td><td>avg_premium</td><td>tv_spend</td><td>tv_grps</td><td>search_spend</td></tr>
+          <tr><td>5</td><td>02/01/2023</td><td>4,212</td><td>14,527</td><td>12,40,000</td><td>137.8</td><td>6,02,000</td></tr>
+          <tr><td>6</td><td>09/01/2023</td><td>4,486</td><td>14,610</td><td>0</td><td>0.0</td><td>5,88,000</td></tr>
+          <tr><td>7</td><td>16/01/2023</td><td>4,390</td><td>14,402</td><td>9,15,000</td><td>101.7</td><td>N/A</td></tr>
+        </tbody>
+      </table></div>`;
+
+    const s2 = `
+      <div class="fmtbar" role="img" aria-label="395 ISO, 235 day-first, 150 ambiguous resolved day-first">
+        <span style="flex:395;background:var(--accent)">395 ISO</span>
+        <span style="flex:235;background:var(--pass)">235 day-first</span>
+        <span style="flex:150;background:var(--warn)">150 ambiguous → day-first</span>
+      </div>
+      <p class="muted" style="font-size:14px">Rows like <span class="mono">03/04/2023</span> read either way. 235 other rows have a day above 12 (<span class="mono">16/01/2023</span>), so the column is day-first. Result: 156 Mondays per region, 2 Jan 2023 to 22 Dec 2025.</p>`;
+
+    const options = Object.keys(ROLE_LABEL).map(r => `<option value="${r}">${ROLE_LABEL[r]}</option>`).join("");
+    const rows = COLUMNS.map(c => `
+      <tr>
+        <td class="col">${c.col}</td>
+        <td>${c.spark ? spark(c.spark) : `<span class="mono muted">${c.sample}</span>`}</td>
+        <td style="width:180px"><select id="role-${c.col.replace(/\W/g, "_")}" data-col="${c.col}" class="${roles[c.col] !== c.role ? "changed" : ""}" aria-label="Role for ${c.col}">${options.replace(`value="${roles[c.col]}"`, `value="${roles[c.col]}" selected`)}</select></td>
+        <td><span class="conf ${c.conf}">${c.conf}</span></td>
+        <td class="why">${roles[c.col] !== c.role ? "changed by you" : c.why}</td>
+      </tr>`).join("");
+    const has = r => Object.values(roles).includes(r);
+    const nSpend = Object.values(roles).filter(r => r === "media_spend" || r === "rf_spend").length;
+    const check = (ok, label) => `<span class="pill ${ok ? "pass" : "block"}">${label}</span>`;
+    const s3 = `
+      <div class="checklist">
+        ${check(has("date"), "Date set")}
+        ${check(Object.values(roles).filter(r => r === "kpi").length === 1, "One KPI")}
+        ${check(nSpend > 0, `${nSpend} paid channel${nSpend === 1 ? "" : "s"}`)}
+      </div>
+      <div class="table-scroll"><table class="roles">
+        <thead><tr><th>Column</th><th>Values</th><th>Role</th><th>Confidence</th><th>Why</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="decide ${state.confirmed && !problems.length ? "done" : ""}">
+        <p>${problems.length ? problems.join(" ") : state.confirmed ? "Roles confirmed. Change any role to re-run steps 4–6." : "Check the suggested roles, especially <span class=\"mono\">unnamed_28</span> (low confidence). The run continues once you confirm."}</p>
+        <button class="btn primary" id="confirm-roles" ${problems.length || state.confirmed ? "disabled" : ""}>${state.confirmed && !problems.length ? "Confirmed" : "Confirm roles"}</button>
+      </div>`;
+
+    const pairRow = (ch, spendCol, arrow, exp, tag) => `<div class="pair"><span class="ch">${ch}</span><span>${spendCol}</span><span class="arrow">${arrow}</span><span class="exp-wrap">${exp}</span>${tag}</div>`;
+    const s4 = `
+      <div class="pairs">
+        ${pairRow("TV", "tv_spend", "↔", "tv_grps", '<span class="pill pass">paired</span>')}
+        ${pairRow("Search", "search_spend", "↔", "search_clicks", '<span class="pill pass">paired</span>')}
+        ${pairRow("Meta", "meta_spend", "↔", "meta_impressions", '<span class="pill pass">paired</span>')}
+        ${pairRow("YouTube", "youtube_spend", "↔", "youtube_reach + youtube_frequency", '<span class="pill pass">reach & freq.</span>')}
+        ${pairRow("Aggregator", "aggregator_spend", "→", '<span class="muted">spend used as exposure</span>', '<span class="pill wait">spend only</span>')}
+        ${pairRow("Display", "display_spend", "→", '<span class="muted">spend used as exposure</span>', '<span class="pill wait">spend only</span>')}
+        ${pairRow("Outdoor", "outdoor_spend", "→", '<span class="muted">spend used as exposure</span>', '<span class="pill wait">spend only</span>')}
+        ${pairRow("Radio", "radio_spend", "→", '<span class="muted">spend used as exposure</span>', '<span class="pill wait">spend only</span>')}
+      </div>
+      <div class="decide" style="background:var(--warn-soft)">
+        <p><span class="mono">print_impressions</span> has no matching spend column, so it can't get an ROI.</p>
+        <div class="seg" role="group" aria-label="What to do with print_impressions">
+          <button data-print="organic_media" aria-pressed="${state.printChoice === "organic_media"}">Model as unpaid media</button>
+          <button data-print="excluded" aria-pressed="${state.printChoice === "excluded"}">Drop it</button>
+        </div>
+      </div>`;
+
+    const s5 = `
+      <dl class="kv">
+        <div><dt>KPI</dt><dd class="mono">new_policies</dd></div>
+        <div><dt>Type</dt><dd>Non-revenue (a count)</dd></div>
+        <div><dt>Revenue per KPI</dt><dd class="mono">avg_premium</dd></div>
+        <div><dt>Median value</dt><dd class="num">₹${inr(PREMIUM_PER_POLICY)} per policy</dd></div>
+      </dl>
+      <p class="muted" style="font-size:14px">ROI is reported as ₹ of new premium per ₹ of spend. Without a revenue column you could enter a fixed value, or keep ROI in policies per ₹.</p>`;
+
+    const s6 = `
+      <dl class="kv">
+        <div><dt>Frequency</dt><dd>Weekly, Monday start</dd></div>
+        <div><dt>History</dt><dd class="num">156 weeks</dd></div>
+        <div><dt>Regions</dt><dd>North, South, East, West, Central</dd></div>
+        <div><dt>Population</dt><dd class="mono">adult_population</dd></div>
+      </dl>
+      <div class="decide done" style="background:var(--sunken)">
+        <p>5 regions with a population column. A regional model uses 5× the observations; a national one is simpler and faster to fit.</p>
+        <div class="seg" role="group" aria-label="Regional or national model">
+          <button data-geo="regional" aria-pressed="${state.geoMode === "regional"}">Regional</button>
+          <button data-geo="national" aria-pressed="${state.geoMode === "national"}">National</button>
+        </div>
+      </div>`;
+
+    const warnings = [
+      ["1", "Column 28 has no header; named unnamed_28."],
+      ...(ss[3] !== "wait" ? [["4", `print_impressions has no spend column; set to ${state.printChoice === "organic_media" ? "unpaid media" : "excluded"}.`]] : []),
+      ...(ss[2] === "warn" ? [["3", "Low-confidence role kept: unnamed_28 as a control."]] : []),
+    ];
+    const log = [...state.log, ...(state.confirmed ? [["3", "roles", "confirmed (" + COLUMNS.filter(c => roles[c.col] !== c.role).length + " changed)", "you"], ["4", "unpaired:print_impressions", state.printChoice, "you"], ["6", "geo_mode", state.geoMode, "you"]] : [])];
+    const done = !ss.includes("block") && !ss.includes("wait");
+
+    document.getElementById("app-main").innerHTML = `
+      <div class="runhead">
+        <div>
+          <span class="eyebrow">Phase A · steps 1–6</span>
+          <h1>Ingest</h1>
+        </div>
+        <div class="runmeta">
+          <span class="chip">Motor · run 15</span>
+          <span class="chip mono">motor_media_weekly.xlsx</span>
+          <span class="chip">${passed} of 6 steps done${pending ? " · 1 decision needed" : ""}</span>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true">${ss.map(s => `<span class="${s === "wait" ? "" : s}"></span>`).join("")}</div>
+      <div class="cols">
+        <div class="steps">
+          ${stepCard(1, "Load file", ss[0], "780 rows × 28 columns; sheet ‘Weekly data’; header on row 4, 2 preamble lines skipped.", s1)}
+          ${stepCard(2, "Parse dates", ss[1], "week_start: mixed ISO and dd/mm/yyyy; 150 ambiguous dates read day-first.", s2)}
+          ${stepCard(3, "Map column roles", ss[2], ss[2] === "block" ? "28 roles suggested, 1 low-confidence. Confirm them to continue." : `KPI new_policies, ${nSpend} paid spend columns, ${Object.values(roles).filter(r => r === "control").length} controls, ${Object.values(roles).filter(r => r === "excluded").length} excluded.`, s3)}
+          ${stepCard(4, "Pair spend with exposure", ss[3], "8 paid channels: 3 paired, 1 reach-and-frequency, 4 spend-only.", s4)}
+          ${stepCard(5, "Set KPI type", ss[4], "new_policies is a count; avg_premium turns it into ₹ for ROI.", s5)}
+          ${stepCard(6, "Detect granularity", ss[5], `Weekly, 156 weeks, 5 regions modelled ${state.geoMode === "regional" ? "regionally" : "as one national series"}.`, s6)}
+          <div class="nextbar">
+            <span class="muted" style="font-size:14px">${done ? "Every column has a confirmed role. Phase B cleans and aligns the table to weeks." : "Phase B starts when step 3 is confirmed."}</span>
+            <a class="btn primary" href="#phase-b" ${done ? "" : 'aria-disabled="true" tabindex="-1" style="opacity:.45;pointer-events:none"'}>Continue to B · Clean</a>
+          </div>
+        </div>
+        <aside class="side">
+          <div class="card">
+            <h4>Run-level warnings</h4>
+            <ul class="warnlist">${warnings.map(([s, w]) => `<li><span class="sn">#${s}</span><span>${w}</span></li>`).join("")}</ul>
+            <p class="muted" style="font-size:12.5px">Shown again beside the ROI numbers they affect.</p>
+          </div>
+          <div class="card">
+            <h4>Decision log</h4>
+            <div class="log">${log.map(([s, id, a, src]) => `<div>#${s} ${id} = ${a} <span>(${src})</span></div>`).join("")}</div>
+          </div>
+          <div class="card">
+            <h4>Meridian mapping</h4>
+            <div class="log">
+              <div>time ← week_start</div>
+              <div>geo ← region${state.geoMode === "national" ? " (summed to national)" : ""}</div>
+              <div>kpi ← new_policies</div>
+              <div>revenue_per_kpi ← avg_premium</div>
+              <div>media ← ${nSpend - 1} channels</div>
+              <div>reach, frequency ← youtube</div>
+              <div>controls ← ${Object.values(roles).filter(r => r === "control").length} columns</div>
+            </div>
+          </div>
+        </aside>
+      </div>`;
+
+    const main = document.getElementById("app-main");
+    main.querySelectorAll("select[data-col]").forEach(sel => sel.addEventListener("change", e => {
+      state.roles[e.target.dataset.col] = e.target.value;
+      state.confirmed = false;
+      rerender("step-3");
+    }));
+    const btn = document.getElementById("confirm-roles");
+    if (btn) btn.addEventListener("click", () => { state.confirmed = true; rerender("step-4"); });
+    main.querySelectorAll("[data-print]").forEach(b => b.addEventListener("click", () => { state.printChoice = b.dataset.print; rerender(); }));
+    main.querySelectorAll("[data-geo]").forEach(b => b.addEventListener("click", () => { state.geoMode = b.dataset.geo; rerender(); }));
+  }
+  function rerender(scrollTo) {
+    const y = window.scrollY;
+    renderPhaseA();
+    renderRail("run");
+    window.scrollTo(0, y);
+    if (scrollTo === "step-4") document.getElementById("step-4")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---------- Model Summary ----------
+  function fitChart() {
+    const W = 640, H = 210, l = 44, r = 10, t = 12, b = 26, N = 156, hold = 13;
+    let s = 7;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const actual = [], pred = [];
+    for (let i = 0; i < N; i++) {
+      const season = 600 * Math.sin((i / 52) * 2 * Math.PI - 1.2) + (i % 52 < 13 ? 700 : 0);
+      const base = 3900 + i * 3 + season;
+      const p = base + 250 * Math.sin(i / 3);
+      pred.push(p);
+      actual.push(p + (rnd() - 0.5) * (i >= N - hold ? 520 : 380));
+    }
+    const lo = 2800, hi = 6000;
+    const x = i => l + (i / (N - 1)) * (W - l - r);
+    const y = v => t + (1 - (v - lo) / (hi - lo)) * (H - t - b);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Actual and predicted weekly new policies" });
+    el("rect", { x: x(N - hold), y: t, width: x(N - 1) - x(N - hold), height: H - t - b, fill: "var(--sunken)" }, svg);
+    txt(svg, x(N - hold) + 4, t + 12, "holdout", { "font-size": 10.5 });
+    [3000, 4000, 5000, 6000].forEach(v => {
+      el("line", { x1: l, x2: W - r, y1: y(v), y2: y(v), stroke: "var(--line)" }, svg);
+      txt(svg, l - 6, y(v) + 4, inr(v), { "text-anchor": "end" });
+    });
+    ["2023", "2024", "2025"].forEach((yr, k) => txt(svg, x(k * 52), H - 8, yr));
+    const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+    el("path", { d: path(actual), fill: "none", stroke: "var(--muted)", "stroke-width": 1.2 }, svg);
+    el("path", { d: path(pred), fill: "none", stroke: "var(--accent)", "stroke-width": 1.8 }, svg);
+    el("circle", { cx: x(N - 1), cy: y(pred[N - 1]), r: 3.5, fill: "var(--accent)" }, svg);
+    return svg;
+  }
+  function contribChart() {
+    const items = CH.map(c => ({ name: c.name, v: c.roi * c.spend })).sort((a, b) => b.v - a.v);
+    const incr = items.reduce((a, b) => a + b.v, 0);
+    const rows = [{ name: "Baseline", v: TOTAL_PREMIUM_CR - incr, base: true }, ...items];
+    const W = 460, rowH = 22, l = 84, r = 112, H = rows.length * rowH + 8;
+    const max = rows[0].v;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Premium by source" });
+    rows.forEach((d, i) => {
+      const y = 4 + i * rowH;
+      txt(svg, l - 8, y + 14, d.name, { "text-anchor": "end", fill: "var(--ink)", "font-size": 12 });
+      el("rect", { x: l, y: y + 4, width: Math.max(2, (d.v / max) * (W - l - r)), height: 13, rx: 2, fill: d.base ? "var(--baseline)" : "var(--accent)" }, svg);
+      txt(svg, l + (d.v / max) * (W - l - r) + 6, y + 15, `${crore(d.v)} · ${(100 * d.v / TOTAL_PREMIUM_CR).toFixed(0)}%`, { "font-size": 11, "font-family": "var(--mono)" });
+    });
+    return svg;
+  }
+  function curveChart(c, opts = {}) {
+    const W = 220, H = 120, l = 6, r = 6, t = 8, b = 16;
+    const smax = c.spend * 2.2, rmax = resp(c, smax) * 1.1;
+    const x = s => l + (s / smax) * (W - l - r), y = v => t + (1 - v / rmax) * (H - t - b);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${c.name} response curve` });
+    el("rect", { x: x(c.spend * 0.5), y: t, width: x(c.spend * 2) - x(c.spend * 0.5), height: H - t - b, fill: "var(--sunken)" }, svg);
+    el("line", { x1: l, x2: W - r, y1: H - b, y2: H - b, stroke: "var(--line)" }, svg);
+    let d = "";
+    for (let i = 0; i <= 60; i++) { const s = smax * i / 60; d += `${i ? "L" : "M"}${x(s).toFixed(1)} ${y(resp(c, s)).toFixed(1)}`; }
+    el("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 1.8 }, svg);
+    el("circle", { cx: x(c.spend), cy: y(resp(c, c.spend)), r: 4, fill: "var(--ink)" }, svg);
+    if (opts.to != null) el("circle", { cx: x(opts.to), cy: y(resp(c, opts.to)), r: 4, fill: "var(--surface)", stroke: "var(--accent)", "stroke-width": 2 }, svg);
+    txt(svg, x(c.spend), H - 3, "now", { "text-anchor": "middle", "font-size": 10 });
+    return svg;
+  }
+  function decayBars(c) {
+    const W = 140, H = 34, n = 10, bw = W / n - 2;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, "aria-hidden": "true" });
+    for (let i = 0; i < n; i++) {
+      const h = Math.pow(c.decay, i) * (H - 2);
+      el("rect", { x: i * (bw + 2), y: H - h, width: bw, height: Math.max(h, 0.5), fill: "var(--accent)", opacity: 0.85 }, svg);
+    }
+    return svg;
+  }
+
+  function renderSummary() {
+    const totalSpend = CH.reduce((a, c) => a + c.spend, 0);
+    const main = document.getElementById("app-main");
+    main.innerHTML = `
+      <div class="runhead">
+        <div><span class="eyebrow">Screen F · steps 37–42</span><h1>Model Summary</h1></div>
+        <div class="runmeta"><span class="chip">Motor · v14 approved</span><span class="chip">Data to 22 Dec 2025</span><span class="chip">156 weeks · 5 regions</span><a class="btn" href="#whatif">Open in What-If</a></div>
+      </div>
+      <div class="panel">
+        <h3><span class="n">37</span>Fit health <span class="pill pass">All gates passed</span></h3>
+        <div class="stats">
+          <div class="stat"><b>4.1%</b><span>Train MAPE</span></div>
+          <div class="stat"><b>6.8%</b><span>Test MAPE (gate: under 10%)</span></div>
+          <div class="stat"><b>0.91</b><span>Test R²</span></div>
+          <div class="stat"><b>1.04</b><span>Highest R-hat (gate: under 1.1)</span></div>
+        </div>
+        <div class="chart" id="fit"></div>
+        <div class="legend"><span style="color:var(--accent)">━ predicted</span><span>━ actual weekly new policies</span><span>last 13 weeks held out, then refit on all data</span></div>
+      </div>
+      <div class="panel">
+        <h3><span class="n">40</span>Trust badges</h3>
+        <div class="table-scroll"><table style="min-width:560px"><tbody>
+          ${CH.filter(c => c.badges[0] !== "model").map(c => `<tr><td style="width:110px;font-weight:500">${c.name}</td><td>${badges(c)}</td><td class="muted">${c.badges.includes("prior") ? "Spend barely varies, so the posterior stayed close to the prior. A lift test would firm this up." : c.badges.includes("cal") ? "Prior set from the Q3 2024 geo test (ROI 1.8, range 1.2–2.4)." : "ROI shifts when the first or last 26 weeks are dropped."}</td></tr>`).join("")}
+        </tbody></table></div>
+      </div>
+      <div class="panel">
+        <h3><span class="n">39</span>ROI table <span class="muted" style="font-weight:400;font-size:13px">₹ premium per ₹ spent, 90% range · last 52 weeks</span></h3>
+        <div class="table-scroll"><table class="roitable">
+          <thead><tr><th>Channel</th><th style="text-align:right">Spend</th><th style="text-align:right">ROI</th><th style="text-align:right">90% range</th><th style="text-align:right">Next-₹ ROI</th><th style="text-align:right">Policies driven</th><th style="text-align:right">Cost per policy</th><th>Trust</th></tr></thead>
+          <tbody>${CH.map(c => {
+            const pol = c.roi * c.spend * 1e7 / PREMIUM_PER_POLICY;
+            return `<tr><td style="font-weight:500">${c.name}</td><td class="r">${crore(c.spend)}</td><td class="r">${c.roi.toFixed(2)}</td><td class="r muted">${c.lo.toFixed(1)}–${c.hi.toFixed(1)}</td><td class="r">${c.mroi.toFixed(2)}</td><td class="r">${inr(pol)}</td><td class="r">₹${inr(c.spend * 1e7 / pol)}</td><td>${badges(c)}</td></tr>`;
+          }).join("")}
+          <tr><td style="font-weight:600">All paid media</td><td class="r">${crore(totalSpend)}</td><td class="r">${(CH.reduce((a, c) => a + c.roi * c.spend, 0) / totalSpend).toFixed(2)}</td><td></td><td></td><td class="r">${inr(CH.reduce((a, c) => a + c.roi * c.spend, 0) * 1e7 / PREMIUM_PER_POLICY)}</td><td></td><td></td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><h3><span class="n">38</span>Sales breakdown <span class="muted" style="font-weight:400;font-size:13px">new premium, last 52 weeks</span></h3><div class="chart" id="contrib"></div></div>
+        <div class="panel"><h3><span class="n">42</span>Carryover <span class="muted" style="font-weight:400;font-size:13px">share of effect left, weeks 0–9</span></h3>
+          <div class="table-scroll"><table style="min-width:340px"><tbody>${CH.slice(0, 6).map(c => `<tr><td style="font-weight:500;width:96px">${c.name}</td><td class="dec" data-id="${c.id}"></td><td class="mono muted">half-life ${(Math.log(0.5) / Math.log(c.decay)).toFixed(1)} wk</td></tr>`).join("")}</tbody></table></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3><span class="n">41</span>Response curves <span class="muted" style="font-weight:400;font-size:13px">premium against annual spend · shaded: 50–200% of current</span></h3>
+        <div class="smalls">${CH.slice(0, 6).map(c => `<figure><figcaption><span>${c.name}</span><span class="mono muted">next ₹: ${c.mroi.toFixed(2)}</span></figcaption><div class="chart" data-curve="${c.id}"></div></figure>`).join("")}</div>
+      </div>`;
+    main.querySelector("#fit").appendChild(fitChart());
+    main.querySelector("#contrib").appendChild(contribChart());
+    main.querySelectorAll("[data-curve]").forEach(h => h.appendChild(curveChart(CH.find(c => c.id === h.dataset.curve))));
+    main.querySelectorAll(".dec").forEach(h => h.appendChild(decayBars(CH.find(c => c.id === h.dataset.id))));
+  }
+
+  // ---------- What-If ----------
+  const wi = { pct: Object.fromEntries(CH.map(c => [c.id, 0])), saved: [] };
+  function scenario() {
+    let spend = 0, prem = 0, base = 0, baseSpend = 0;
+    CH.forEach(c => {
+      const s = c.spend * (1 + wi.pct[c.id] / 100);
+      spend += s; prem += resp(c, s); baseSpend += c.spend; base += resp(c, c.spend);
+    });
+    return { spend, prem, base, baseSpend, policies: prem * 1e7 / PREMIUM_PER_POLICY, basePolicies: base * 1e7 / PREMIUM_PER_POLICY };
+  }
+  function renderWhatIf() {
+    const main = document.getElementById("app-main");
+    main.innerHTML = `
+      <div class="runhead">
+        <div><span class="eyebrow">Screen G · steps 43–47</span><h1>What-If</h1></div>
+        <div class="runmeta"><span class="chip">Motor · v14 approved</span><span class="chip">Period: last 52 weeks</span></div>
+      </div>
+      <div class="wi">
+        <div class="panel">
+          <h3><span class="n">43</span>Change spend per channel</h3>
+          <div id="sliders">${CH.map(c => `
+            <div class="slider" id="row-${c.id}">
+              <label for="s-${c.id}">${c.name}</label>
+              <input type="range" id="s-${c.id}" min="-100" max="150" step="5" value="${wi.pct[c.id]}">
+              <span class="pct" id="p-${c.id}"></span>
+              <span class="amt" id="a-${c.id}"></span>
+            </div>`).join("")}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" id="reset">Reset to current</button>
+            <button class="btn" id="tv-search">Example: move ₹4 Cr TV → Search</button>
+          </div>
+        </div>
+        <div style="display:grid;gap:12px">
+          <div class="panel">
+            <h3><span class="n">44</span>Quick result <span class="muted" style="font-weight:400;font-size:13px">from stored curves</span></h3>
+            <div class="result" id="result"></div>
+            <div id="warn46"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn primary" id="exact">Run exact result</button>
+              <button class="btn" id="save">Save scenario</button>
+            </div>
+            <div id="exact-out"></div>
+          </div>
+          <div class="panel">
+            <h3><span class="n">47</span>Saved scenarios <span class="muted" style="font-weight:400;font-size:13px">up to 3, against the current plan</span></h3>
+            <div id="saved"></div>
+          </div>
+        </div>
+      </div>`;
+    CH.forEach(c => document.getElementById(`s-${c.id}`).addEventListener("input", e => { wi.pct[c.id] = +e.target.value; updateWhatIf(); }));
+    document.getElementById("reset").onclick = () => { CH.forEach(c => wi.pct[c.id] = 0); renderWhatIf(); };
+    document.getElementById("tv-search").onclick = () => { CH.forEach(c => wi.pct[c.id] = 0); wi.pct.tv = -15; wi.pct.search = 25; renderWhatIf(); };
+    document.getElementById("exact").onclick = () => {
+      const r = scenario();
+      document.getElementById("exact-out").innerHTML = `<div class="callout info">Exact result on the saved model: <b>${inr(r.policies)}</b> policies from paid media (90%: ${inr(r.policies * 0.88)}–${inr(r.policies * 1.11)}); premium ${crore(r.prem)} (90%: ${crore(r.prem * 0.88)}–${crore(r.prem * 1.11)}).</div>`;
+    };
+    document.getElementById("save").onclick = () => {
+      const r = scenario();
+      if (wi.saved.length >= 3) wi.saved.shift();
+      wi.count = (wi.count || 0) + 1;
+      wi.saved.push({ name: `Scenario ${wi.count}`, ...r });
+      renderSaved();
+    };
+    updateWhatIf();
+    renderSaved();
+  }
+  function updateWhatIf() {
+    const out = [];
+    CH.forEach(c => {
+      const p = wi.pct[c.id], s = c.spend * (1 + p / 100);
+      const ratio = s / c.spend;
+      document.getElementById(`p-${c.id}`).textContent = (p > 0 ? "+" : "") + p + "%";
+      document.getElementById(`a-${c.id}`).textContent = crore(s);
+      const outside = ratio < 0.5 || ratio > 2;
+      document.getElementById(`row-${c.id}`).classList.toggle("out", outside);
+      if (outside) out.push(c.name);
+    });
+    const r = scenario();
+    const dP = r.policies - r.basePolicies, dS = r.spend - r.baseSpend;
+    const sign = v => (v >= 0 ? "+" : "−");
+    document.getElementById("result").innerHTML = `
+      <div><small>Policies from paid media</small><b>${inr(r.policies)}</b><small class="delta ${dP >= 0 ? "up" : "down"}">${sign(dP)}${inr(Math.abs(dP))} vs current</small></div>
+      <div><small>New premium from paid media</small><b>${crore(r.prem)}</b><small class="delta ${dP >= 0 ? "up" : "down"}">${sign(r.prem - r.base)}${crore(Math.abs(r.prem - r.base))}</small></div>
+      <div><small>Total spend</small><b>${crore(r.spend)}</b><small>${sign(dS)}${crore(Math.abs(dS))}</small></div>
+      <div><small>ROI · cost per policy</small><b>${(r.prem / r.spend).toFixed(2)} · ₹${inr(r.spend * 1e7 / r.policies)}</b><small>current ${(r.base / r.baseSpend).toFixed(2)}</small></div>`;
+    document.getElementById("warn46").innerHTML = out.length
+      ? `<div class="callout"><b>Beyond what the model has seen:</b> ${out.join(", ")} ${out.length > 1 ? "are" : "is"} outside 50–200% of historical spend. Treat ${out.length > 1 ? "these results" : "this result"} as a guess.</div>`
+      : "";
+    document.getElementById("exact-out").innerHTML = "";
+  }
+  function renderSaved() {
+    const host = document.getElementById("saved");
+    if (!host) return;
+    if (!wi.saved.length) { host.innerHTML = `<p class="muted" style="font-size:14px">Save a scenario to compare it with the current plan. Try the TV → Search example, then save.</p>`; return; }
+    const r0 = scenario();
+    const cur = { name: "Current plan", spend: r0.baseSpend, prem: r0.base, policies: r0.basePolicies };
+    const rows = [cur, ...wi.saved];
+    host.innerHTML = `<div class="table-scroll"><table style="min-width:380px"><thead><tr><th></th><th style="text-align:right">Spend</th><th style="text-align:right">Policies</th><th style="text-align:right">ROI</th></tr></thead><tbody>${rows.map(s => `<tr><td>${s.name}</td><td class="num" style="text-align:right">${crore(s.spend)}</td><td class="num" style="text-align:right">${inr(s.policies)}</td><td class="num" style="text-align:right">${(s.prem / s.spend).toFixed(2)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  // ---------- stubs ----------
+  const STUB = {
+    "phase-b": ["Built in stage 2 · about 1 week", "One complete row per week (per region). A zero is never treated as missing; flags take the maximum when duplicate weeks collapse."],
+    "phase-c": ["Built in stage 3 · about 1 week", "Refuses under 104 weeks of history. Warns before fitting about channels that are rarely on, barely vary, or move together."],
+    "phase-d": ["Built in stage 4 · about 1.5 weeks", "Builds Meridian's ModelSpec from defaults: India insurance calendar, 8-week carryover, one knot per quarter, 13-week holdout. You add past lift tests."],
+    "phase-e": ["Built in stages 4, 5 and 7", "Fits twice: once with the holdout to test it, then on all the data. Accepted only if convergence, holdout accuracy and plausibility all pass."],
+    plan: ["Built in stage 6 · with screens F and G", "Every Plan field maps to an argument of Meridian's BudgetOptimizer.optimize(). Optimize shows current vs optimized spend with 90% ranges."],
+    export: ["Built in stage 9 · about 1 week", "Each run ends in a bundle that reproduces the model and every decision. Refits compare ROI with the approved version and flag any channel that moves beyond its 90% range."],
+  };
+  function renderStub(route) {
+    const p = PHASES.find(x => x.route === route);
+    const [when, what] = STUB[route];
+    document.getElementById("app-main").innerHTML = `
+      <div class="runhead"><div><span class="eyebrow">${p.k} · steps ${p.start}–${p.start + p.steps.length - 1}</span><h1>${p.name}</h1></div><div class="runmeta"><span class="chip">${when}</span></div></div>
+      <div class="panel stub">
+        <p>${what}</p>
+        <div class="table-scroll"><table style="min-width:360px"><tbody>${p.steps.map((s, i) => `<tr><td class="mono" style="width:48px">${p.start + i}</td><td>${s}</td><td><span class="pill wait">Not in this mock</span></td></tr>`).join("")}</tbody></table></div>
+      </div>
+      <p class="muted" style="font-size:14px">This mock covers the landing page, Phase A in full, and screens F and G. <a href="#run">Back to Phase A</a></p>`;
+  }
+
+  // ---------- router ----------
+  const APP_ROUTES = ["run", "summary", "whatif", "phase-b", "phase-c", "phase-d", "phase-e", "plan", "export"];
+  function route() {
+    const r = (location.hash || "#home").slice(1);
+    const inApp = APP_ROUTES.includes(r);
+    document.getElementById("view-home").hidden = inApp;
+    document.getElementById("view-app").hidden = !inApp;
+    document.querySelectorAll(".topnav a[data-nav]").forEach(a => a.removeAttribute("aria-current"));
+    const nav = !inApp ? "home" : r === "run" ? "app" : "screens";
+    document.querySelector(`.topnav a[data-nav="${nav}"]`)?.setAttribute("aria-current", "page");
+    if (inApp) {
+      renderRail(r);
+      if (r === "run") renderPhaseA();
+      else if (r === "summary") renderSummary();
+      else if (r === "whatif") renderWhatIf();
+      else renderStub(r);
+    }
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>

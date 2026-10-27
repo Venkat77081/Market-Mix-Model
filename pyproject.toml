@@ -1,0 +1,23 @@
+[project]
+name = "mmm-tool"
+version = "0.1.0"
+description = "Meridian MMM tool: pipeline phases A-E and screens F-I"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "charset-normalizer>=3.0",
+    "python-dateutil>=2.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+mmm-ingest = "mmm_tool.ingest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mmm_tool*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
