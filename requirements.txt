@@ -1,0 +1,8 @@
+# Runtime: Phase A pipeline and the web UI.
+pandas>=2.0
+openpyxl>=3.1
+charset-normalizer>=3.0
+python-dateutil>=2.8
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9

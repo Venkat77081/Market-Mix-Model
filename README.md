@@ -6,9 +6,12 @@ design mock of the later screens in `mock/` (sample data only, not connected).
 ## Web UI
 
 ```bash
-pip install -e '.[ui]'
-mmm-ui                     # then open http://127.0.0.1:8000
+pip install -r requirements.txt
+python -m mmm_tool.api     # then open http://127.0.0.1:8000
 ```
+
+Or install it as a package, which also adds the `mmm-ui` and `mmm-ingest` commands:
+`pip install -e ".[ui]"` then `mmm-ui`.
 
 `/` is the landing page (what the tool does, the phases, the validation gates, and your recent runs);
 `/app` is the Phase A screen. Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
@@ -18,7 +21,7 @@ to change it), so a page reload keeps your place. The API is under `/api/` (docs
 ## Command line and tests
 
 ```bash
-pip install -e '.[dev]'
+pip install -r requirements-dev.txt
 pytest                                      # Phase A and API tests on synthetic insurance exports
 python -m mmm_tool.ingest data.xlsx         # stops at the first decision prompt
 python -m mmm_tool.ingest data.xlsx --answers answers.json
