@@ -1,0 +1,27 @@
+# Phase B thresholds. These are judgment calls, not facts about any file:
+# change them here, not in the code.
+
+media_gaps:
+  # A spend or exposure column with no literal zeros whose blanks cover at
+  # least this share of its active weeks writes "no spend" as a blank:
+  # its blanks are suggested as 0 (and asked). Below it, blanks in that
+  # column are missing values and are interpolated.
+  blank_as_zero_share: 0.2
+
+jumps:
+  # A level (index, price, rate) this many times the week before, or an
+  # amount (spend, exposure) this many times both neighbouring weeks.
+  ratio: 10
+  # "10x" in practice: a value multiplied by 10 rarely lands exactly on 10.0x.
+  near: 0.9
+
+level_shift:
+  # A money column whose level changes by close to a power of 10 at one
+  # week (lakhs before, rupees after) is offered a conversion.
+  min_weeks: 8          # weeks on each side of the change
+  tolerance: 0.15       # largest distance from a whole power of 10, in log10 units
+  min_power: 1          # 10x or more
+
+short_weeks:
+  # Daily data: a week with fewer days than this (inside the period) is incomplete.
+  full_days: 7

@@ -149,7 +149,8 @@ def test_a01_premium_is_revenue_for_kpi():
     assert decisions(r)["kpi_choice"].options == ["count", "revenue"]
     assert r.kpi["kpi_type"] == "non_revenue" and r.kpi["revenue_per_kpi_column"] == "revenue_per_kpi"
     assert 9300 < r.table["revenue_per_kpi"].median() < 11100  # per policy, never the total
-    assert "new_premium_inr" not in r.table.columns
+    # The total is set aside: Phase B cleans it and rebuilds revenue per KPI from cleaned totals, then drops it.
+    assert r.roles["new_premium_inr"] == "excluded" and r.kpi["revenue_column"] == "new_premium_inr"
     assert "new_premium_inr" not in r.coord_to_columns()["coord_to_columns"].get("controls", [])
 
 

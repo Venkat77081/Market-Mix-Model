@@ -120,8 +120,12 @@ CHECKED_ROLES = {"control", "non_media_treatment", "needs_role"}
 
 
 def _cv(x: pd.Series) -> float:
-    m = x.mean()
-    return float(x.std() / m) if m else float("inf")
+    """Robust coefficient of variation: 1.4826 x MAD / median, so a few odd
+    weeks (an outage, a duplicated row) don't hide an otherwise steady ratio."""
+    med = x.median()
+    if not med:
+        return float("inf")
+    return float(1.4826 * (x - med).abs().median() / abs(med))
 
 
 def value_checks(df: pd.DataFrame, out: list[RoleSuggestion], kpi: RoleSuggestion, second_kpis: set[str]) -> None:

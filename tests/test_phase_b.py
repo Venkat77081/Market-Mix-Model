@@ -119,7 +119,12 @@ def test_unclassified_column_blocks_only_when_rows_merge(files, tmp_path):
     r = run_pipeline(p, known, accept_defaults=True)
     assert r.status == "complete"  # nothing merges, so no rule is needed
 
-    pd.concat([df, df.iloc[[5]]]).to_csv(p, index=False)
+    pd.concat([df, df.iloc[[5]]]).to_csv(p, index=False)  # an exact copy is dropped: still nothing to merge
+    assert run_pipeline(p, {**DUP, **known}, accept_defaults=False).b.steps[1].details["exact_copies"] == 1
+
+    split = df.iloc[[5]].copy()
+    split["mystery_metric"] += 0.5  # a split row differs from its partner
+    pd.concat([df, split]).to_csv(p, index=False)
     known = {**DUP, "roles": {"mystery_metric": "control"}}
     r = run_pipeline(p, known, accept_defaults=False)
     s8 = step(r, 8)
@@ -210,8 +215,9 @@ def test_media_holes_can_be_interpolated(tmp_path):
     df.loc[50, "meta_spend"] = ""
     p = tmp_path / "hole.csv"
     df.to_csv(p, index=False)
-    zero = run_pipeline(p, accept_defaults=True).b.table
-    interp = run_pipeline(p, {"media_gaps": "interpolate"}, accept_defaults=True).b.table
+    # One blank in a channel that spends every week is a missing value: interpolated by default.
+    interp = run_pipeline(p, accept_defaults=True).b.table
+    zero = run_pipeline(p, {"media_gaps": {"meta_spend": "zero"}}, accept_defaults=True).b.table
     assert zero.loc[50, "meta_spend"] == 0
     assert np.isclose(interp.loc[50, "meta_spend"], (df.loc[49, "meta_spend"] + df.loc[51, "meta_spend"]) / 2)
 
@@ -237,7 +243,7 @@ def test_outlier_can_be_kept(files, messy):
 # Step 12 -----------------------------------------------------------------
 
 def test_negative_spend_blocks_then_is_fixed(files):
-    answers = {**DUP, "roles": {}, "kpi_gaps": "interpolate"}
+    answers = {**DUP, "roles": {}, "kpi_gaps": "interpolate", "media_gaps": "interpolate"}
     r = run_pipeline(files["messy"], answers)
     assert r.status == "needs_input" and r.b.pending[0]["id"] == "negative_values"
     cells = {c["key"]: c for c in r.b.pending[0]["context"]["cells"]}

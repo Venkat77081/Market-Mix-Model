@@ -1,0 +1,355 @@
+{
+  "_about": {
+    "seed": 11,
+    "base": "insurance_mmm_sample.csv, 156 weeks, Monday starts 2023-01-02 to 2025-12-22",
+    "truth": "truth/<file>_truth.csv is the correctly cleaned weekly table"
+  },
+  "B01_text_and_number_formats.csv": {
+    "steps": "7",
+    "conversions": {
+      "tv_spend": "'-' -> 0 in 71 cells (accounting dash in a money column)",
+      "search_spend": "Indian grouping 12,13,000",
+      "aggregator_spend": "₹ prefix + Indian grouping",
+      "ooh_spend": "'12.6 L' = 12.6 lakh = 1,260,000; '0' stays 0",
+      "new_premium_inr": "'3.88 Cr' = 38,800,000",
+      "print_spend": "scientific 9.940e+05",
+      "new_policies": "'3836', '3836.0' and ' 3,836 ' all -> 3836",
+      "tax_season": "Yes/No -> 1/0",
+      "festive_flag": "TRUE/FALSE -> 1/0",
+      "fy_end": "Y/N -> 1/0",
+      "regulatory_event": "'1.0'/'0.0' -> 1/0"
+    },
+    "missing_after_step_7": {
+      "social_spend": {
+        "2023-03-13": "N/A",
+        "2023-10-02": "NULL",
+        "2023-12-04": "#N/A",
+        "2024-10-28": "nan",
+        "2025-04-07": " "
+      },
+      "competitor_spend_index": {
+        "2023-12-11": "'-' is missing here, not zero: not a money column"
+      }
+    },
+    "trap": "'-' means 0 only in money columns; in an index it means not available",
+    "blocks": false
+  },
+  "B02_exact_duplicate_rows.csv": {
+    "steps": "8",
+    "rows_in": 168,
+    "rows_out": 156,
+    "exact_duplicate_weeks": [
+      "2023-06-12",
+      "2023-10-30",
+      "2024-03-11",
+      "2024-03-25",
+      "2024-07-08",
+      "2024-07-29",
+      "2024-09-30",
+      "2024-12-02",
+      "2025-03-03",
+      "2025-10-13",
+      "2025-10-20",
+      "2025-10-27"
+    ],
+    "expected": "drop the 12 exact copies (never sum them: that doubles spend and KPI); sort the shuffled rows by date",
+    "blocks": false
+  },
+  "B03_split_rows_aggregation.csv": {
+    "steps": "8",
+    "rows_in": 166,
+    "rows_out": 156,
+    "split_weeks": [
+      "2023-04-03",
+      "2023-06-19",
+      "2023-08-07",
+      "2023-09-25",
+      "2023-10-02",
+      "2025-01-13",
+      "2025-02-10",
+      "2025-04-14",
+      "2025-07-07",
+      "2025-08-04"
+    ],
+    "rules": {
+      "sum (values differ, money or count)": [
+        "new_policies",
+        "new_premium_inr",
+        "tv_grps",
+        "tv_spend",
+        "radio_spend",
+        "print_spend",
+        "ooh_spend",
+        "search_spend",
+        "social_spend",
+        "youtube_ott_spend",
+        "aggregator_spend",
+        "affiliate_spend"
+      ],
+      "keep the value (identical in both rows; summing doubles it)": [
+        "avg_premium_index",
+        "competitor_spend_index",
+        "brand_search_index",
+        "new_vehicle_registrations"
+      ],
+      "max (flags)": [
+        "tax_season",
+        "fy_end",
+        "festive_flag",
+        "regulatory_event"
+      ],
+      "ask the user (values differ, role unknown)": [
+        "active_agents -> correct answer: mean"
+      ]
+    },
+    "traps": [
+      "new_vehicle_registrations is a count by name but must not be summed: both rows repeat the same market figure",
+      "a flag summed or averaged gives 0.5 or 2; it must be the max"
+    ],
+    "prompts": [
+      "aggregation rule for active_agents"
+    ],
+    "blocks": true
+  },
+  "B04_daily_to_weekly.csv": {
+    "steps": "9",
+    "daily_rows": 720,
+    "weeks_out": 104,
+    "week_start": "Monday",
+    "aggregation": {
+      "sum": [
+        "policies",
+        "tv_spend",
+        "search_spend"
+      ],
+      "mean": [
+        "avg_premium_index"
+      ],
+      "max": [
+        "promo_flag"
+      ]
+    },
+    "partial_weeks": {
+      "first": "2024-01-01 (Wed-Sun, 5 days)",
+      "last": "2025-12-22 (Mon-Sat, 6 days)",
+      "missing_day_inside": {
+        "2024-02-05": "2024-02-05",
+        "2024-06-24": "2024-06-27",
+        "2024-10-07": "2024-10-09",
+        "2024-11-04": "2024-11-08",
+        "2025-03-17": "2025-03-20"
+      }
+    },
+    "expected": "7 incomplete weeks flagged, never silently summed as if complete. Edge weeks: drop (default) or keep flagged. Inner weeks with one missing day: scale sums by 7/6 or interpolate the day, and add a flag column. The truth file holds the full-week totals from complete daily data; a 7/6-scaled estimate lands within about 5%.",
+    "prompts": [
+      "edge partial weeks: drop or keep",
+      "inner incomplete weeks: scale, interpolate, or keep"
+    ],
+    "blocks": false
+  },
+  "B05_sunday_week_starts.csv": {
+    "steps": "9, 6",
+    "expected": "weekly with Sunday starts. Already weekly, so no resampling: values must be unchanged and 156 weeks kept. Relabelling to the following Monday is acceptable if the tool standardises on Monday; binning into Monday-start weeks is not (it relabels every week to the previous Monday).",
+    "blocks": false
+  },
+  "B06_week_start_changes.csv": {
+    "steps": "9, 10",
+    "change_point": "rows 1-52 are Sundays (2023-01-01 .. 2023-12-24); from 2024-01-01 Mondays",
+    "gap_at_change": "8 days between the last Sunday and the first Monday: not a missing week",
+    "expected": "detect the weekday change, shift the Sunday labels forward one day, end with 156 continuous Monday weeks: 0 missing, 0 duplicates",
+    "traps": [
+      "reporting a missing week at the change point",
+      "binning by Monday-start weeks: all of 2023 moves one week earlier and a fake empty week appears at 2023-12-25"
+    ],
+    "blocks": false
+  },
+  "B07_missing_weeks.csv": {
+    "steps": "10",
+    "rows_in": 150,
+    "rows_out": 156,
+    "missing_weeks": [
+      "2023-08-14",
+      "2023-08-21",
+      "2023-08-28",
+      "2024-07-01",
+      "2024-09-23",
+      "2025-03-17"
+    ],
+    "runs": {
+      "3-week run": [
+        "2023-08-14",
+        "2023-08-21",
+        "2023-08-28"
+      ],
+      "single weeks": [
+        "2024-07-01",
+        "2024-09-23",
+        "2025-03-17"
+      ]
+    },
+    "expected": "insert the 6 weeks; KPI and controls interpolated with an 'imputed' flag; spend in missing weeks is UNKNOWN, not zero: ask (interpolate always-on channels, 0 only if the user confirms the channel was off). Interpolated KPI must equal expected_interpolated_kpi (linear between neighbours); the truth file holds the real values for reference only (noise puts them 5-20% away).",
+    "expected_interpolated_kpi": {
+      "2023-08-14": 3628.8,
+      "2023-08-21": 3722.5,
+      "2023-08-28": 3816.2,
+      "2024-07-01": 3653.0,
+      "2024-09-23": 3683.5,
+      "2025-03-17": 4118.5
+    },
+    "trap": "filling missing-week spend with 0 invents a dark period that the model will read as a media effect",
+    "prompts": [
+      "KPI gaps: interpolate + flag, or trim",
+      "spend in missing weeks"
+    ],
+    "blocks": true
+  },
+  "B08_zero_vs_missing.csv": {
+    "steps": "10",
+    "categories": {
+      "tv_spend": "71 literal zeros: genuine zero, leave unchanged",
+      "radio_spend": "94 blanks, no literal zeros, blanks fall in runs between bursts: probably zero. Suggest 0 and ask.",
+      "social_spend": "4 blanks in an always-on channel (2024-03-04, 2024-04-08, 2024-04-22, 2025-09-29): missing. Interpolate + flag; targets in expected_interpolated_social.",
+      "ctv_spend": "blank before first value (2024-07-01): channel not started. Fill 0.",
+      "print_spend": "blank after 2025-03-31: channel stopped. Fill 0, keep literal zeros before."
+    },
+    "expected_interpolated_social": {
+      "2024-03-04": 600500.0,
+      "2024-04-08": 610500.0,
+      "2024-04-22": 648500.0,
+      "2025-09-29": 789000.0
+    },
+    "trap": "one rule for every blank (all zero or all missing) gets at least three of these five columns wrong",
+    "prompts": [
+      "radio blanks = zero?"
+    ],
+    "blocks": false
+  },
+  "B09_kpi_gaps.csv": {
+    "steps": "10",
+    "leading_gap": [
+      "2023-01-02",
+      "2023-01-09",
+      "2023-01-16",
+      "2023-01-23"
+    ],
+    "inner_gaps": [
+      "2023-05-22",
+      "2023-10-16",
+      "2024-09-30",
+      "2025-10-20",
+      "2025-10-27"
+    ],
+    "expected": "trim the 4 leading weeks (nothing before them to interpolate from): 152 rows remain. Interpolate the 5 inner weeks (pass test: expected_interpolated_kpi; truth values are reference only) and add a kpi_imputed flag column. Never fill KPI gaps with 0.",
+    "expected_interpolated_kpi": {
+      "2023-05-22": 3866.5,
+      "2023-10-16": 4175.0,
+      "2024-09-30": 3797.5,
+      "2025-10-20": 3960.7,
+      "2025-10-27": 3929.3
+    },
+    "prompts": [
+      "trim leading KPI gap",
+      "interpolate inner KPI gaps"
+    ],
+    "blocks": true
+  },
+  "B10_kpi_outliers.csv": {
+    "steps": "11",
+    "flagged": {
+      "2023-09-11": "0.2x (outage), robust z -7.6",
+      "2023-11-27": "1.8x (spike), robust z 7.7"
+    },
+    "not_flagged": {
+      "2024-08-05": "1.2x, robust z 0.8 (below 3.5)"
+    },
+    "max_other_abs_z": 2.08,
+    "expected": "flag exactly 2 weeks; default action adds an event_flag column. No row is deleted and no KPI value is changed.",
+    "blocks": false
+  },
+  "B11_impossible_values.csv": {
+    "steps": "12",
+    "findings": {
+      "negative spend (blocks)": {
+        "2024-12-23": "affiliate_spend -24000",
+        "2025-04-14": "affiliate_spend -43000",
+        "2025-05-19": "aggregator_spend -51000"
+      },
+      "KPI zero in a trading week": {
+        "2023-03-06": "new_policies 0 while premium is 41,074,000 (inconsistent)",
+        "2024-01-01": "new_policies 0 while premium is 45,026,000 (inconsistent)"
+      },
+      "10x jump": {
+        "2024-09-23": "avg_premium_index 11.07 (neighbours about 1.107)"
+      },
+      "100x jump": {
+        "2024-04-22": "tv_spend 478,700,000 (true 4,787,000: units slip)"
+      }
+    },
+    "expected": "list all 7 cells with their values; negatives block until the user corrects, zeroes or confirms them; truth file has the corrected values",
+    "blocks": true
+  },
+  "B12_unit_change.csv": {
+    "steps": "12, 13",
+    "change": "search_spend is in lakhs for 2023-01-02 .. 2023-12-25, rupees from 2024-01-01",
+    "level_ratio": "median after / median before = 98,133 (about 1e5)",
+    "expected": "detect the level shift and its ratio close to a power of 10; offer to multiply the 2023 rows by 100,000; do not treat it as a real spend change",
+    "inflation": "no detection expected; step 13 offers an optional adjustment to a chosen base year",
+    "prompts": [
+      "convert lakhs rows to rupees"
+    ],
+    "blocks": false
+  },
+  "B13_end_to_end.csv": {
+    "steps": "1-13",
+    "preamble_lines": 3,
+    "rows_in": 162,
+    "column_names": {
+      "week_start": "Week Commencing",
+      "new_policies": "Policies Issued",
+      "new_premium_inr": "NB Premium (INR)",
+      "tv_spend": "TV Spend",
+      "search_spend": "Google Search Cost",
+      "social_spend": "Meta Spend",
+      "aggregator_spend": "PolicyBazaar Fees",
+      "affiliate_spend": "Affiliate Payout",
+      "festive_flag": "Diwali/Festive"
+    },
+    "dates": "alternating ISO and dd/mm/yyyy; rows shuffled",
+    "exact_duplicates": [
+      "2023-07-03",
+      "2024-04-15",
+      "2025-07-21",
+      "2025-08-11",
+      "2025-09-29"
+    ],
+    "split_weeks": [
+      "2023-02-13",
+      "2023-04-24",
+      "2023-09-25",
+      "2024-12-09"
+    ],
+    "missing_weeks": [
+      "2023-05-08",
+      "2024-02-05",
+      "2024-09-23"
+    ],
+    "kpi_outliers": [
+      "2024-01-22",
+      "2024-08-26"
+    ],
+    "negative_spend": {
+      "2025-05-12": "affiliate_spend -35,000"
+    },
+    "social_nulls": [
+      "2023-06-12",
+      "2023-07-10",
+      "2024-02-19"
+    ],
+    "formats": {
+      "Google Search Cost": "Indian grouping",
+      "NB Premium (INR)": "₹ + Indian grouping"
+    },
+    "expected": "after Phases A and B: 156 weekly rows matching the truth file, with social nulls and missing weeks interpolated linearly (truth values for those cells are reference only), event_flag on the 2 outlier weeks, and the negative resolved by the user",
+    "blocks": true
+  }
+}

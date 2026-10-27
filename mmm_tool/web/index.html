@@ -211,7 +211,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   };
   const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
     interpolate: "Interpolate", trim: "Trim the period", merge: "Merge them in Phase B",
-    reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, ₹ per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹" };
+    reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, ₹ per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹",
+    scale: "Scale up to a full week", fill: "Carry the nearest value" };
   const PILL = { pass: ["pass", "Pass"], warn: ["warn", "Pass with warning"], needs_input: ["block", "Decision needed"], fail: ["fail", "Failed"] };
 
   let run = null;           // last API response
@@ -288,6 +289,17 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const cur = current(d);
     return `<div class="seg" role="group" aria-label="${esc(d.question)}">${(options || d.options).map(o =>
       `<button data-answer="${esc(d.id)}" data-value="${esc(o)}" aria-pressed="${cur === o}">${esc(labels[o] || OPTION_LABEL[o] || o)}</button>`).join("")}</div>`;
+  }
+  // A per-key answer may also be one choice for every key ("interpolate").
+  const keyMap = (d, a) => typeof a === "string" ? Object.fromEntries(Object.keys(d.default).map(k => [k, a])) : (a && typeof a === "object" ? a : {});
+  const findDecision = id => [run.result, run.result_b, run.result_c, run.result_d].filter(Boolean).flatMap(r => r.steps).flatMap(s => s.decisions).find(d => d.id === id);
+  // One row per key of a decision whose answer is a {key: choice} map.
+  function keyChoices(d, names = {}) {
+    const chosen = { ...d.default, ...keyMap(d, d.answered ? d.answer : null), ...keyMap(d, answers[d.id]) };
+    const rows = Object.keys(d.default).map(k => `<tr><td class="mono">${esc(names[k] || k)}</td><td><div class="seg">${d.options.map(o =>
+      `<button data-keychoice="${esc(d.id)}" data-key="${esc(k)}" data-value="${esc(o)}" aria-pressed="${chosen[k] === o}">${esc(OPTION_LABEL[o] || o)}</button>`).join("")}</div></td></tr>`).join("");
+    return `<div class="scroll"><table style="min-width:420px"><tbody>${rows}</tbody></table></div>
+      ${d.pending ? `<button class="btn primary" data-keyall="${esc(d.id)}">Use these</button>` : ""}`;
   }
   function card(n, s, body) {
     const waiting = !s;
@@ -495,6 +507,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     }).join("");
     const why = d.why || [];
     let out = `<dl class="kv">
+        ${d.exact_copies ? `<div><dt>Exact copies dropped</dt><dd>${num(d.exact_copies)}</dd></div>` : ""}
+        ${(d.repeated_columns || []).length ? `<div><dt>Repeated on split rows, kept once</dt><dd class="mono small">${d.repeated_columns.map(esc).join(", ")}</dd></div>` : ""}
         <div><dt>Duplicate rows</dt><dd>${num(d.duplicate_rows ?? 0)}${d.duplicate_dates ? ` on ${num(d.duplicate_dates)} dates` : ""}</dd></div>
         ${d.regions_rolled_up ? `<div><dt>Regions added up</dt><dd>${num(d.regions_rolled_up)} → national</dd></div>` : ""}
         ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
@@ -508,7 +522,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function step9(s) {
     const d = s.details;
     const dec = decision(s, "week_start");
-    const part = decision(s, "partial_weeks");
+    const part = decision(s, "partial_weeks"), short = decision(s, "short_weeks");
     return `<dl class="kv">
         <div><dt>Data came in</dt><dd>${esc(d.frequency_in || d.frequency)}</dd></div>
         ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
@@ -517,7 +531,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       </dl>
       ${dec ? `<div class="decide soft"><p>${esc(dec.question)} <span class="muted">Found in the data: ${esc(dec.context.detected)}.</span></p>
         <select data-select="week_start" aria-label="Week start">${WEEKDAYS.map(w => `<option ${w === current(dec) ? "selected" : ""}>${w}</option>`).join("")}</select></div>` : ""}
-      ${part ? `<div class="decide soft"><p>${esc(part.question)}</p>${seg(part, null, { keep: "Keep", drop: "Drop" })}</div>` : ""}`;
+      ${part ? `<div class="decide soft"><p>${esc(part.question)}</p>${seg(part, null, { keep: "Keep", drop: "Drop" })}</div>` : ""}
+      ${short ? `<div class="decide soft"><p>${esc(short.question)}</p>${seg(short, null, { interpolate: "Interpolate from neighbouring weeks" })}</div>` : ""}`;
   }
 
   function step10(s) {
@@ -525,7 +540,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const gaps = (d.columns || []).filter(c => c.not_started || c.ended || c.missing);
     const rows = gaps.map(c => `<tr><td class="mono">${esc(c.column)}</td><td class="num">${c.not_started || ""}</td><td class="num">${c.ended || ""}</td>
         <td class="num">${c.missing || ""}</td><td class="num">${num(c.zeros)}</td><td class="why">${esc(c.fill)}</td></tr>`).join("");
-    const kg = decision(s, "kpi_gaps"), mg = decision(s, "media_gaps");
+    const kg = decision(s, "kpi_gaps"), ke = decision(s, "kpi_edge_gaps"), mg = decision(s, "media_gaps");
     const zeros = (d.columns || []).reduce((a, c) => a + c.zeros, 0);
     return `<dl class="kv">
         <div><dt>Weeks absent from the export</dt><dd>${(d.missing_weeks || []).length ? `${d.missing_weeks.length} <span class="muted mono small">${d.missing_weeks.slice(0, 4).map(esc).join(", ")}${d.missing_weeks.length > 4 ? "…" : ""}</span>` : "none"}</dd></div>
@@ -534,8 +549,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         ${(d.trimmed_weeks || []).length ? `<div><dt>Weeks trimmed</dt><dd>${d.trimmed_weeks.length}</dd></div>` : ""}
       </dl>
       ${gaps.length ? `<div class="scroll"><table style="min-width:620px"><thead><tr><th>Column</th><th>Not started</th><th>Ended</th><th>Missing</th><th>Zeros</th><th>Filled with</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      ${ke ? `<div class="decide soft"><p>${esc(ke.question)}</p>${seg(ke, null, { trim: "Trim those weeks" })}</div>` : ""}
       ${kg ? `<div class="decide ${kg.pending ? "" : "soft"}"><p>${esc(kg.question)}</p>${seg(kg)}</div>` : ""}
-      ${mg ? `<div class="decide soft"><p>${esc(mg.question)}</p>${seg(mg)}</div>` : ""}`;
+      ${mg ? `<div class="decide ${mg.pending ? "" : "soft"}"><p>${esc(mg.question)}</p>${keyChoices(mg, { missing_weeks: "Weeks absent from the export" })}</div>` : ""}`;
   }
 
   function kpiChart(series, outliers) {
@@ -585,21 +601,23 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const neg = decision(s, "negative_values"), zero = decision(s, "kpi_zero_weeks"), jump = decision(s, "control_jumps");
     if (neg) out += `<div class="decide ${neg.pending ? "" : "soft"}"><p>${esc(neg.question)}</p>${neg.pending ? `<button class="btn primary" data-applyall="negative_values">Set all to 0</button>` : ""}</div>${cellTable(neg, neg.context.cells, "", () => "")}`;
     if (zero) out += `<div class="decide soft"><p>${esc(zero.question)}</p></div>${cellTable(zero, zero.context.cells, "", () => "")}`;
-    if (jump) out += `<div class="decide soft"><p>${esc(jump.question)}</p></div>${cellTable(jump, jump.context.cells, "<th>Week before</th>", c => `<td class="num">${num(c.previous)}</td>`)}`;
+    if (jump) out += `<div class="decide soft"><p>${esc(jump.question)}</p></div>${cellTable(jump, jump.context.cells, "<th>Weeks around it</th>", c => `<td class="num">${num(c.previous)}${c.next != null ? ` · ${num(c.next)}` : ""}</td>`)}`;
     return out;
   }
 
   function step13(s) {
     const d = s.details;
-    const units = decision(s, "money_units"), infl = decision(s, "inflation");
+    const units = decision(s, "money_units"), infl = decision(s, "inflation"), shifts = decision(s, "level_shifts");
     const cur = infl ? current(infl) : "none";
     const on = cur && typeof cur === "object";
     const years = infl ? infl.context.years : [];
     return `<dl class="kv">
         <div><dt>Money columns</dt><dd>${(d.money_columns || []).length}</dd></div>
+        ${(d.level_shifts || []).length ? `<div><dt>Level shifts converted</dt><dd class="mono small">${d.level_shifts.map(u => `${esc(u.column)} ×${num(u.multiplied_by)} (${num(u.weeks)} weeks)`).join(", ")}</dd></div>` : ""}
         ${(d.units_converted || []).length ? `<div><dt>Converted to ₹</dt><dd class="mono small">${d.units_converted.map(u => `${esc(u.column)} ×${num(u.multiplied_by)}`).join(", ")}</dd></div>` : ""}
         <div><dt>Inflation</dt><dd>${d.inflation ? `${esc(d.inflation.base_year)} prices, ${esc(d.inflation.annual_rate_pct)}% a year` : "as recorded"}</dd></div>
       </dl>
+      ${shifts ? `<div class="decide soft"><p>${esc(shifts.question)}</p>${keyChoices(shifts)}</div>` : ""}
       ${units ? `<div class="decide soft"><p>${esc(units.question)}</p>${seg(units)}</div>` : ""}
       ${infl ? `<div class="decide soft"><p>${esc(infl.question)}</p>
         <form id="infl" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
@@ -928,6 +946,14 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     main.querySelectorAll("[data-outlier]").forEach(b => b.onclick = () => {
       const dec = decision(stepOf(11), "outliers");
       answer({ outliers: { ...dec.default, ...(answers.outliers || {}), [b.dataset.outlier]: b.dataset.value } });
+    });
+    main.querySelectorAll("[data-keychoice]").forEach(b => b.onclick = () => {
+      const dec = findDecision(b.dataset.keychoice);
+      answer({ [dec.id]: { ...dec.default, ...keyMap(dec, answers[dec.id]), [b.dataset.key]: b.dataset.value } });
+    });
+    main.querySelectorAll("[data-keyall]").forEach(b => b.onclick = () => {
+      const dec = findDecision(b.dataset.keyall);
+      answer({ [dec.id]: { ...dec.default, ...keyMap(dec, answers[dec.id]) } });
     });
     const cellDecision = id => decision(stepOf(12), id);
     main.querySelectorAll("[data-cell]").forEach(sel => sel.onchange = () => {

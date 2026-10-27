@@ -8,6 +8,8 @@ binary columns never default to sum, and a zero is never treated as missing.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,8 +18,19 @@ import pandas as pd
 from ..ingest.keywords import load_keywords, words_of
 from ..ingest.pairing import Channel
 
+SETTINGS_FILE = Path(__file__).with_name("cleaning.yaml")
+
+
+@lru_cache(maxsize=1)
+def settings() -> dict[str, Any]:
+    """Phase B thresholds from cleaning.yaml."""
+    import yaml
+
+    return yaml.safe_load(SETTINGS_FILE.read_text(encoding="utf-8"))
+
+
 RULES = ("sum", "mean", "max")
-SUMMED_ROLES = {"kpi", "media", "media_spend", "rf_spend", "reach", "organic_media"}
+SUMMED_ROLES = {"kpi", "revenue_for_kpi", "media", "media_spend", "rf_spend", "reach", "organic_media"}
 MEDIA_ROLES = {"media", "media_spend", "rf_spend", "reach", "organic_media"}
 SPEND_ROLES = {"media_spend", "rf_spend"}
 
@@ -42,6 +55,9 @@ class Ctx:
         self.date = role("date")
         self.kpi_col = role("kpi")
         self.geo = role("geo") if self.granularity.get("geo_mode") == "regional" else None
+        rev = self.kpi.get("revenue_column")
+        if rev in self.df.columns and self.roles.get(rev) == "excluded":
+            self.roles[rev] = "revenue_for_kpi"  # cleaned like the KPI; step 13 rebuilds revenue per KPI from it
 
     @property
     def keys(self) -> list[str]:
@@ -93,17 +109,41 @@ def default_rule(col: str, role: str, s: pd.Series) -> tuple[str | None, str]:
     return None, "can't tell whether to add or average this column"
 
 
-def aggregate(df: pd.DataFrame, keys: list[str], rules: dict[str, str]) -> pd.DataFrame:
+def aggregate(df: pd.DataFrame, keys: list[str], rules: dict[str, str],
+              weights: dict[str, str] | None = None) -> pd.DataFrame:
     """Group by keys and combine each column by its rule. An all-missing group
-    stays missing (a sum of nothing is not zero)."""
+    stays missing (a sum of nothing is not zero). "first" keeps a value that
+    every merged row repeats. weights maps a per-unit column to the column it
+    is per (revenue per KPI → KPI): it is averaged weighted by that column, so
+    the merged value is total ÷ total, not an average of ratios."""
     funcs = {
         "sum": lambda x: x.sum(min_count=1),
         "mean": "mean",
         "max": "max",
+        "first": "first",
     }
+    work = df
+    weighted = {c: w for c, w in (weights or {}).items() if c in df.columns and w in df.columns and c in rules}
+    if weighted:
+        work = df.copy()
+        for c, w in weighted.items():
+            ok = work[c].notna() & work[w].notna()
+            work[f"_num_{c}"] = (work[c] * work[w]).where(ok)
+            work[f"_den_{c}"] = work[w].where(ok)
     agg = {c: funcs[rules[c]] for c in df.columns if c not in keys and c in rules}
-    out = df.groupby(keys, as_index=False, sort=True).agg(agg)
+    for c in weighted:
+        agg[f"_num_{c}"] = agg[f"_den_{c}"] = funcs["sum"]
+    out = work.groupby(keys, as_index=False, sort=True).agg(agg)
+    for c in weighted:
+        den = out.pop(f"_den_{c}")
+        num = out.pop(f"_num_{c}")
+        out[c] = (num / den.where(den > 0)).fillna(out[c])
     return out[[c for c in df.columns if c in out.columns]]
+
+
+def per_unit_weights(ctx: "Ctx") -> dict[str, str]:
+    """Revenue per KPI is merged weighted by the KPI."""
+    return {c: ctx.kpi_col for c, r in ctx.roles.items() if r == "revenue_per_kpi" and ctx.kpi_col}
 
 
 def cell_key(date: pd.Timestamp, geo: Any = None) -> str:

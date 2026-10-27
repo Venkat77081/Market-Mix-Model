@@ -25,7 +25,7 @@ mmm-ui = "mmm_tool.api.app:main"
 include = ["mmm_tool*"]
 
 [tool.setuptools.package-data]
-mmm_tool = ["web/*.html", "ingest/*.yaml", "configure/*.yaml"]
+mmm_tool = ["web/*.html", "ingest/*.yaml", "clean/*.yaml", "configure/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

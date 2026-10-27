@@ -75,7 +75,10 @@ def test_phase_b_through_the_api(client):
     assert r["phase"] == "B" and r["result_b"]["pending"][0]["id"] == "kpi_gaps"
     assert client.get(f"/api/runs/{run_id}/cleaned.csv").status_code == 409
 
-    neg = {"duplicate_dates": "merge", "roles": {}, "kpi_gaps": "interpolate"}
+    r = client.put(f"/api/runs/{run_id}/answers",
+                   json={"answers": {"duplicate_dates": "merge", "roles": {}, "kpi_gaps": "interpolate"}}).json()
+    assert r["result_b"]["pending"][0]["id"] == "media_gaps"  # spend in the weeks absent from the export
+    neg = {"duplicate_dates": "merge", "roles": {}, "kpi_gaps": "interpolate", "media_gaps": "interpolate"}
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": neg}).json()
     cells = r["result_b"]["pending"][0]["context"]["cells"]
     r = client.put(f"/api/runs/{run_id}/answers",

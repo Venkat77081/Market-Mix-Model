@@ -1,7 +1,8 @@
 """Step 7: coerce types.
 
 Text nulls (N/A, NULL, blank) become missing; a lone "-" is the accounting
-zero; number formats such as 1,20,000, ₹4,500, (250), ₹1.17 Cr and 12.6 L
+zero in money and media columns but "not available" anywhere else (an index,
+a price); number formats such as 1,20,000, ₹4,500, (250), ₹1.17 Cr and 12.6 L
 become numbers; yes/no flags become 1/0. Nothing
 for the user to decide. Cells that still can't be read are listed.
 """
@@ -13,8 +14,8 @@ import numpy as np
 import pandas as pd
 
 from ..ingest.types import StepResult, Verdict
-from ..ingest.values import is_null_token, to_number, value_units
-from .context import Ctx
+from ..ingest.values import ZERO_TOKENS, is_null_token, to_number, value_units
+from .context import MEDIA_ROLES, SPEND_ROLES, Ctx
 
 STEP = 7
 NAME = "Coerce types"
@@ -25,6 +26,13 @@ CURRENCIES = [("₹", re.compile(r"₹|\brs\b\.?|\binr\b", re.I)), ("$", re.comp
 
 def currency_of(text: str) -> str | None:
     return next((sym for sym, pat in CURRENCIES if pat.search(text)), None)
+
+
+def dash_is_zero(ctx: Ctx, role: str | None) -> bool:
+    """Accounting formats write zero as "-"; that only applies to money and media amounts."""
+    if role in SPEND_ROLES | MEDIA_ROLES | {"revenue_for_kpi", "revenue_per_kpi"}:
+        return True
+    return role == "kpi" and ctx.kpi.get("kpi_type") == "revenue"
 
 
 def coerce_types(ctx: Ctx) -> StepResult:
@@ -48,11 +56,15 @@ def coerce_types(ctx: Ctx) -> StepResult:
 
         text = s.map(lambda v: None if v is None or (isinstance(v, float) and np.isnan(v)) else str(v).strip())
         blank = text.isna() | (text == "")
+        dash = ~blank & text.isin(ZERO_TOKENS)
         text_null = ~blank & text.map(lambda v: v is not None and is_null_token(v))
+        if not dash_is_zero(ctx, role):
+            text_null |= dash
         low = text.str.lower()
         yes_no = ~blank & ~text_null & low.isin(YES_NO)
         numbers = s.map(lambda v: to_number(v, units))
         numbers[yes_no] = low[yes_no].map(YES_NO)
+        numbers[text_null] = np.nan
         formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,₹$€£()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
         unreadable = ~blank & ~text_null & numbers.isna()
         symbols = sorted({sym for v in text.dropna() if (sym := currency_of(v))})

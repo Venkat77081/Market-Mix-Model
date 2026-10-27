@@ -160,8 +160,8 @@ def write_messy(dir: Path) -> Path:
     money = [c for c in df.columns if c.endswith(("_spend", "_spend_cr", "_grps", "_clicks", "_impressions", "_sends")) or c == "new_policies"]
     for c in money:
         num = pd.to_numeric(df.loc[10:29, c], errors="coerce").copy()  # a view would change under the next line (pandas 2)
-        df.loc[10:29, c] = num / 2
-        halves[c] = num / 2
+        df.loc[10:29, c] = num * 0.4  # split rows differ; identical rows would be exact copies, dropped not summed
+        halves[c] = num * 0.6
     df = pd.concat([df, halves]).drop(index=[40, 41, 90, 120]).sort_values("week_start", kind="stable")
     df["week_start"] = df["week_start"].dt.strftime("%Y-%m-%d")
     df.to_csv(path, index=False)

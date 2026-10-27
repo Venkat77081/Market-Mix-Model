@@ -76,6 +76,7 @@ def choose_revenue_kpi(df: pd.DataFrame, roles: dict[str, str], answers: Answers
 def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> tuple[dict, StepResult, pd.DataFrame]:
     decisions: list[Decision] = []
     notes: list[str] = []
+    rev_col = next((c for c, r in roles.items() if r == "revenue_for_kpi"), None)
     df, forced = choose_revenue_kpi(df, roles, answers, decisions, notes)
     kpi_col = next(c for c, r in roles.items() if r == "kpi")
     rpk_col = next((c for c, r in roles.items() if r == "revenue_per_kpi"), None)
@@ -94,6 +95,8 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
         kpi_type = answers.ask(d_type) or guess
     warnings: list[str] = []
     out = {"kpi": kpi_col, "kpi_type": kpi_type, "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": "₹ per ₹"}
+    if forced == "non_revenue" and rev_col:
+        out["revenue_column"] = rev_col  # Phase B cleans the total and rebuilds the ratio from it
 
     if kpi_type == "revenue":
         if rpk_col:

@@ -154,5 +154,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         return stop(step)
     steps.append(step)
 
-    table = table.drop(columns=[c for c, r in roles.items() if r == "excluded"])
+    # The revenue total behind a derived revenue per KPI stays (set aside) so
+    # Phase B can clean it and rebuild the ratio from cleaned totals.
+    table = table.drop(columns=[c for c, r in roles.items() if r == "excluded" and c != kpi.get("revenue_column")])
     return PhaseAResult("complete", steps, table, roles, channels, kpi, gran, ans.log)

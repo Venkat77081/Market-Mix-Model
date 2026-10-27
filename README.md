@@ -69,22 +69,30 @@ regional model) with no empty cells, which is what Meridian reads. Download it f
 
 | Step | What it does | You decide | Blocks |
 |---|---|---|---|
-| 7 Coerce types | `N/A`, `NULL`, `-`, blanks → missing; `1,20,000`, `₹4,500`, `(250)` → numbers; yes/no → 1/0 | nothing | no |
-| 8 Collapse duplicate weeks | merges rows on the same date (and adds regions up for a national model): spend, exposure, KPI summed; indexes, prices averaged; flags take the maximum | the rule for a column it can't classify (`aggregation_rules`) | only if rows merge |
-| 9 Resample to weeks | days → weeks; weeks aligned to one start day; partial edge weeks dropped | week start (`week_start`) | no |
-| 10 Label every gap | adds absent weeks; labels empty cells not started, ended or missing; a zero stays zero | KPI gaps: interpolate + `kpi_imputed` flag, or trim (`kpi_gaps`); media holes: 0 or interpolate (`media_gaps`) | KPI gaps |
+| 7 Coerce types | `N/A`, `NULL`, blanks → missing; `-` → 0 in money and media columns, missing elsewhere; `1,20,000`, `₹4,500`, `(250)`, `12.6 L` → numbers; yes/no → 1/0 | nothing | no |
+| 8 Collapse duplicate weeks | drops exact copy rows; merges split rows on the same date (and adds regions up for a national model): spend, exposure, KPI summed; indexes, prices averaged; flags take the maximum; a value repeated on every split row is kept once | the rule for a column it can't classify (`aggregation_rules`) | only if rows merge |
+| 9 Resample to weeks | days → weeks; weekly dates moved to the nearest week start; partial edge weeks kept or dropped; weeks with days missing inside the period scaled, interpolated or kept, and flagged in `partial_week_flag` | `week_start`, `partial_weeks`, `short_weeks` | no |
+| 10 Label every gap | adds absent weeks; labels empty cells not started, ended or missing; a zero stays zero. KPI gaps at the edges are trimmed; inside, interpolated + `kpi_imputed` flag. Media blanks are judged per column: a column that never records 0 and is often blank gets 0 suggested, other blanks are interpolated; spend in absent weeks is interpolated unless you say the channels were off | `kpi_edge_gaps`, `kpi_gaps`, `media_gaps` (one answer, or one per column plus `missing_weeks`) | KPI gaps inside; absent weeks |
 | 11 Flag outliers | robust z-score on the KPI, weeks above 3.5 | event flag or keep, per week (`outliers`) | no |
-| 12 Check impossible values | negative spend, KPI zero in a trading week, an index or price jumping 10x | zero, keep, interpolate or a corrected number, per cell (`negative_values`, `kpi_zero_weeks`, `control_jumps`) | negative values |
-| 13 Normalise money | crore/lakh columns → ₹; mixed currency warning; optional inflation restatement; a fixed value per KPI unit becomes a column | `money_units`, `inflation` (`{"base_year": 2025, "annual_rate_pct": 5}`) | no |
+| 12 Check impossible values | negative spend, KPI zero in a trading week, an index or price jumping 10x, a spend or exposure cell 10x the weeks around it | zero, keep, interpolate or a corrected number, per cell (`negative_values`, `kpi_zero_weeks`, `control_jumps`) | negative values |
+| 13 Normalise money | a level change close to a power of 10 (lakhs, then rupees) converted; crore/lakh columns → ₹; mixed currency warning; optional inflation restatement; revenue per KPI rebuilt from the cleaned revenue total; a fixed value per KPI unit becomes a column | `level_shifts`, `money_units`, `inflation` (`{"base_year": 2025, "annual_rate_pct": 5}`) | no |
 
 The words used to classify columns in step 8 and the unit words in step 13 are in
-`role_keywords.yaml`; add your own in `roles.yaml`.
+`role_keywords.yaml`; add your own in `roles.yaml`. The thresholds Phase B uses (when blanks count as
+zero spend, the 10x jump ratio, how close to a power of 10 a level shift must be) are in
+`mmm_tool/clean/cleaning.yaml`.
 
-## Phase A answer key
+## Answer keys
 
 `tests/data/phase_a_tests/` holds 19 test exports and `expected_phase_a.json`, their answer key.
 `python tests/expected_phase_a.py` prints a check-by-check report for every file; the same checks run
 in `pytest` (`tests/test_expected_phase_a.py`).
+
+`tests/data/phase_b_tests/` holds 13 Phase B exports, `expected_phase_b.json` and a cleaned `truth/`
+file for each. `python tests/expected_phase_b.py` reports on them (`tests/test_expected_phase_b.py`
+in `pytest`). To test on data the code has never seen, make a fresh set with
+`python gen_phase_b.py --seed N --out DIR` (run from `tests/data/phase_b_tests/`) and point the checks
+at it with `PHASE_B_DIR=DIR`.
 
 ## Phase C: profile and sufficiency gates (steps 14–20)
 
