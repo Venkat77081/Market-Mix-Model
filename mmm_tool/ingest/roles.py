@@ -7,38 +7,18 @@ paid media channel are set and the mapping has been confirmed.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import asdict, dataclass
 
 import pandas as pd
 
+from .keywords import Keywords, load_keywords, words_of
+from .memory import RoleMemory
 from .types import ROLES, Answers, Decision, StepResult, Verdict
 from .values import is_null_token, numeric_share, numeric_view
 
 STEP = 3
 NAME = "Map column roles"
-
-# Tokens stripped from a column name to find its channel ("tv_spend" -> "tv").
-METRIC_TOKENS = {
-    "spend", "spends", "cost", "costs", "investment", "inr", "rs", "cr", "lakh", "lakhs", "amount",
-    "grp", "grps", "trp", "trps", "impressions", "impression", "impr", "imps", "clicks", "click",
-    "views", "view", "reach", "frequency", "freq", "rf", "sends", "send", "opens", "posts",
-    "media", "paid", "weekly", "total",
-}
-CHANNEL_ALIASES = {"yt": "youtube", "fb": "facebook", "sem": "search", "paid_search": "search", "dooh": "outdoor", "ooh": "outdoor"}
-
-KPI_COUNT = re.compile(r"\b(kpi|policies|policy count|conversions?|leads?|applications?|orders?|units?|sign_?ups?|acquisitions?|customers?|quotes?)\b")
-KPI_MONEY = re.compile(r"\b(revenue|sales|gwp|gross written premium|premium income|total premium|gmv|turnover|bookings)\b")
-REV_PER_KPI = re.compile(r"(revenue_per|per_policy|per_kpi|per_unit|avg_premium|average_premium|avg_ticket|aov|arpu)")
-GEO = re.compile(r"\b(geo|region|state|zone|dma|market|territory|city|province|area|cluster)\b")
-POPULATION = re.compile(r"\b(population|pop|households|adult_pop)\b")
-SPEND = re.compile(r"\b(spend|spends|cost|costs|investment|budget|outlay)\b")
-EXPOSURE = re.compile(r"\b(grps?|trps?|impressions?|impr|imps|clicks?|views?|insertions|spots)\b")
-REACH = re.compile(r"\breach\b")
-FREQUENCY = re.compile(r"\b(frequency|freq)\b")
-ORGANIC = re.compile(r"\b(email|emails|whatsapp|sms|push|newsletter|organic|owned|seo|crm)\b")
-NON_MEDIA = re.compile(r"\b(discount|discounts|promo|promotion|offer|cashback|incentive|incentives|commission)\b")
-CONTROL = re.compile(r"\b(index|price|rate|competitor|competition|registrations?|holiday|season|festive|diwali|flag|temperature|cpi|inflation|gdp|unemployment|event|covid|lockdown|trend)\b")
-MEDIATOR = re.compile(r"\bbrand(ed)?\b.*\b(search|queries|query|volume|clicks|traffic)\b|\b(search|queries)\b.*\bbrand(ed)?\b")
 
 
 @dataclass
@@ -48,23 +28,19 @@ class RoleSuggestion:
     confidence: str  # high | medium | low
     reason: str
     channel: str | None = None
+    source: str = "built-in words"  # memory | your words | built-in words | values
 
 
 def tokens(name: str) -> str:
     """Normalise a column name to lowercase words joined by underscores."""
-    s = re.sub(r"[₹$€£()\[\]%#]", " ", name)
-    s = re.sub(r"([a-z])([A-Z])", r"\1_\2", s).lower()
-    return "_".join(re.findall(r"[a-z0-9]+", s))
+    return words_of(name).replace(" ", "_")
 
 
-def _words(name: str) -> str:
-    return tokens(name).replace("_", " ")
-
-
-def channel_of(name: str) -> str:
-    parts = [p for p in tokens(name).split("_") if p not in METRIC_TOKENS]
+def channel_of(name: str, kw: Keywords | None = None) -> str:
+    kw = kw or load_keywords()
+    parts = [p for p in words_of(name).split() if p not in kw.strip]
     stem = "_".join(parts) or tokens(name)
-    return CHANNEL_ALIASES.get(stem, stem)
+    return kw.aliases.get(stem, stem)
 
 
 def _is_binary(values: pd.Series) -> bool:
@@ -72,52 +48,48 @@ def _is_binary(values: pd.Series) -> bool:
     return len(v) > 0 and set(v) <= {0.0, 1.0}
 
 
-def suggest_role(col: str, series: pd.Series, date_col: str) -> RoleSuggestion:
-    w = _words(col)
-    t = tokens(col)
+def _when(ts: float) -> str:
+    return time.strftime("%d %b %Y", time.localtime(ts))
+
+
+def suggest_role(col: str, series: pd.Series, date_col: str, kw: Keywords | None = None,
+                 memory: RoleMemory | None = None) -> RoleSuggestion:
+    kw = kw or load_keywords()
     if col == date_col:
-        return RoleSuggestion(col, "date", "high", "parsed as dates in step 2")
+        return RoleSuggestion(col, "date", "high", "parsed as dates in step 2", source="values")
+
+    remembered = memory.recall(col) if memory else None
+    if remembered and remembered["role"] != "date":
+        role = remembered["role"]
+        channel = channel_of(col, kw) if role in ("media", "media_spend", "reach", "frequency", "rf_spend", "organic_media") else None
+        reason = f"you confirmed this on {_when(remembered['confirmed_at'])} ({remembered['file']})"
+        return RoleSuggestion(col, role, "high", reason, channel, source="memory")
 
     if numeric_share(series) < 0.8:
         distinct = series[~series.map(is_null_token)].nunique()
-        if GEO.search(w) or (distinct <= 60 and distinct < 0.2 * len(series)):
-            return RoleSuggestion(col, "geo", "high" if GEO.search(w) else "medium", f"text column with {distinct} repeating values")
-        return RoleSuggestion(col, "excluded", "low", "text column that isn't a region")
+        rule = kw.match(col, text=True)
+        if rule is not None:
+            return RoleSuggestion(col, "geo", "high", rule.reason, source=f"{rule.origin} words")
+        if distinct <= 60 and distinct < 0.2 * len(series):
+            return RoleSuggestion(col, "geo", "medium", f"text column with {distinct} repeating values", source="values")
+        return RoleSuggestion(col, "excluded", "low", "text column that isn't a region", source="values")
 
     values = numeric_view(series)
-    if POPULATION.search(w):
-        return RoleSuggestion(col, "population", "high", "population by name")
-    if MEDIATOR.search(w) and not SPEND.search(w):
-        return RoleSuggestion(col, "excluded", "medium", "branded search rises because of other marketing; modelling it would steal their credit")
-    if REV_PER_KPI.search(t):
-        return RoleSuggestion(col, "revenue_per_kpi", "high", "value of one KPI unit")
-    if REACH.search(w):
-        return RoleSuggestion(col, "reach", "high", "reach by name", channel_of(col))
-    if FREQUENCY.search(w):
-        return RoleSuggestion(col, "frequency", "high", "frequency by name", channel_of(col))
-    if ORGANIC.search(w) and not SPEND.search(w):
-        return RoleSuggestion(col, "organic_media", "medium", "unpaid channel by name", channel_of(col))
-    if NON_MEDIA.search(w):
-        return RoleSuggestion(col, "non_media_treatment", "medium", "a lever you control that isn't media")
-    if CONTROL.search(w):
-        if _is_binary(values):
-            return RoleSuggestion(col, "control", "high", "0/1 flag")
-        return RoleSuggestion(col, "control", "high" if "index" in w or "competitor" in w else "medium", "outside factor by name")
-    if SPEND.search(w):
-        return RoleSuggestion(col, "media_spend", "high", "spend by name", channel_of(col))
-    if EXPOSURE.search(w):
-        return RoleSuggestion(col, "media", "high", "exposure metric by name", channel_of(col))
-    if KPI_COUNT.search(w):
-        return RoleSuggestion(col, "kpi", "high", "count of outcomes by name")
-    if KPI_MONEY.search(w):
-        return RoleSuggestion(col, "kpi", "medium", "money outcome by name")
+    rule = kw.match(col)
+    if rule is not None:
+        confidence, reason = rule.confidence, rule.reason
+        if rule.role == "control" and _is_binary(values):
+            confidence, reason = "high", "0/1 flag"
+        channel = channel_of(col, kw) if rule.role in ("media", "media_spend", "reach", "frequency", "rf_spend", "organic_media") else None
+        return RoleSuggestion(col, rule.role, confidence, reason, channel, source=f"{rule.origin} words")
     if _is_binary(values):
-        return RoleSuggestion(col, "control", "medium", "0/1 column, treated as a flag")
-    return RoleSuggestion(col, "control", "low", "numeric column with an unrecognised name; assumed an outside factor")
+        return RoleSuggestion(col, "control", "medium", "0/1 column, treated as a flag", source="values")
+    return RoleSuggestion(col, "control", "low", "numeric column with an unrecognised name; assumed an outside factor", source="values")
 
 
-def suggest_roles(df: pd.DataFrame, date_col: str) -> list[RoleSuggestion]:
-    out = [suggest_role(col, df[col], date_col) for col in df.columns]
+def suggest_roles(df: pd.DataFrame, date_col: str, memory: RoleMemory | None = None) -> list[RoleSuggestion]:
+    kw = load_keywords()
+    out = [suggest_role(col, df[col], date_col, kw, memory) for col in df.columns]
 
     geos = [s for s in out if s.role == "geo"]
     for s in geos[1:]:
@@ -163,8 +135,9 @@ def validate_roles(roles: dict[str, str]) -> list[str]:
     return problems
 
 
-def map_roles(df: pd.DataFrame, date_col: str, answers: Answers) -> tuple[dict[str, str] | None, StepResult]:
-    suggestions = suggest_roles(df, date_col)
+def map_roles(df: pd.DataFrame, date_col: str, answers: Answers, memory: RoleMemory | None = None,
+              source_file: str = "") -> tuple[dict[str, str] | None, StepResult]:
+    suggestions = suggest_roles(df, date_col, memory)
     suggested = {s.column: s.role for s in suggestions}
     d = Decision(
         id="roles",
@@ -186,6 +159,7 @@ def map_roles(df: pd.DataFrame, date_col: str, answers: Answers) -> tuple[dict[s
     problems = validate_roles(roles)
     details = {
         "suggestions": [asdict(s) for s in suggestions],
+        "remembered": sum(1 for s in suggestions if s.source == "memory"),
         "roles": roles,
         "by_role": {r: [c for c, v in roles.items() if v == r] for r in ROLES if r in roles.values()},
     }
@@ -198,9 +172,13 @@ def map_roles(df: pd.DataFrame, date_col: str, answers: Answers) -> tuple[dict[s
     if not d.answered:
         return None, StepResult(
             STEP, NAME, Verdict.NEEDS_INPUT,
-            f"{len(roles)} roles suggested ({len(low)} low-confidence). Confirm them to continue.",
+            f"{len(roles)} roles suggested ({len(low)} low-confidence"
+            + (f", {details['remembered']} from roles you confirmed before" if details["remembered"] else "")
+            + "). Confirm them to continue.",
             details, warnings, [d],
         )
+    if memory is not None and "roles" in answers.values:
+        details["newly_remembered"] = memory.remember(roles, source_file)
     by_role = details["by_role"]
     n_media = len(by_role.get("media_spend", [])) + len(by_role.get("rf_spend", []))
     summary = (

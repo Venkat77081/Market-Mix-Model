@@ -1,0 +1,116 @@
+# Built-in words the tool uses to suggest a role for each column (step 3).
+#
+# Don't edit this file to add your own words: put them in roles.yaml at the
+# project root (or the file named by MMM_ROLES_FILE). Your rules are checked
+# before these, and your aliases and words are added to these.
+#
+# How a column name is matched: it is lowercased and split into words on
+# "_", "-", spaces and camelCase, so "TV_Spend (₹)" reads as "tv spend".
+# An entry matches when it appears as whole words, so "pop" matches
+# "adult pop" but not "popular". An entry can be a phrase: "per policy".
+#
+# Rules are checked top to bottom; the first one that matches wins. Fields:
+#   role        one of: geo, population, kpi, revenue_per_kpi, media, media_spend,
+#               reach, frequency, rf_spend, control, non_media_treatment,
+#               organic_media, excluded
+#   words       the name must contain at least one of these
+#   also_needs  ...and at least one of these (optional)
+#   unless      ...and none of these (optional)
+#   confidence  high, medium or low (default medium)
+#   reason      shown to the user in the "Why" column
+
+rules:
+  - role: population
+    words: [population, pop, households, adult pop]
+    confidence: high
+    reason: population by name
+
+  - role: excluded
+    words: [brand, branded]
+    also_needs: [search, queries, query, volume, clicks, traffic]
+    unless: [spend, spends, cost, costs, investment, budget]
+    reason: branded search rises because of other marketing; modelling it would steal their credit
+
+  - role: revenue_per_kpi
+    words: [revenue per, per policy, per kpi, per unit, avg premium, average premium, avg ticket, aov, arpu]
+    confidence: high
+    reason: value of one KPI unit
+
+  - role: reach
+    words: [reach]
+    confidence: high
+    reason: reach by name
+
+  - role: frequency
+    words: [frequency, freq]
+    confidence: high
+    reason: frequency by name
+
+  - role: organic_media
+    words: [email, emails, whatsapp, sms, push, newsletter, organic, owned, seo, crm]
+    unless: [spend, spends, cost, costs, investment, budget]
+    reason: unpaid channel by name
+
+  - role: non_media_treatment
+    words: [discount, discounts, promo, promotion, offer, cashback, incentive, incentives, commission]
+    reason: a lever you control that isn't media
+
+  - role: control
+    words: [index, competitor, competition]
+    confidence: high
+    reason: outside factor by name
+
+  - role: control
+    words: [price, rate, registrations, registration, holiday, season, festive, diwali, flag, temperature,
+            cpi, inflation, gdp, unemployment, event, covid, lockdown, trend]
+    reason: outside factor by name
+
+  - role: media_spend
+    words: [spend, spends, cost, costs, investment, budget, outlay]
+    confidence: high
+    reason: spend by name
+
+  - role: media
+    words: [grp, grps, trp, trps, impression, impressions, impr, imps, click, clicks, view, views, insertions, spots]
+    confidence: high
+    reason: exposure metric by name
+
+  - role: kpi
+    words: [kpi, policies, policy count, conversion, conversions, lead, leads, application, applications,
+            order, orders, unit, units, signups, sign ups, acquisition, acquisitions, customers, quotes]
+    confidence: high
+    reason: count of outcomes by name
+
+  - role: kpi
+    words: [revenue, sales, gwp, gross written premium, premium income, total premium, gmv, turnover, bookings]
+    reason: money outcome by name
+
+  # Only text columns are checked against geo rules; a text column with a
+  # few repeating values is suggested as the region even without these words.
+  - role: geo
+    words: [geo, region, state, zone, dma, market, territory, city, province, area, cluster]
+    confidence: high
+    reason: region by name
+
+# Words dropped from a column name to find its channel: "tv_spend" and
+# "tv_grps" both belong to channel "tv", so step 4 pairs them.
+channel_words_to_strip: [
+  spend, spends, cost, costs, investment, inr, rs, cr, lakh, lakhs, amount,
+  grp, grps, trp, trps, impressions, impression, impr, imps, clicks, click,
+  views, view, reach, frequency, freq, rf, sends, send, opens, posts,
+  media, paid, weekly, total,
+]
+
+# Different names for the same channel, after the words above are dropped.
+channel_aliases:
+  yt: youtube
+  fb: facebook
+  sem: search
+  paid search: search
+  dooh: outdoor
+  ooh: outdoor
+
+# Step 5: is the KPI a count (non-revenue) or money (revenue)? Count words
+# are checked first.
+kpi_count_words: [policies, policy, count, conversions, leads, applications, orders, units, customers, quotes, signups]
+kpi_money_words: [revenue, sales value, value, premium, gwp, gmv, turnover, amount, inr, rs, bookings, income]

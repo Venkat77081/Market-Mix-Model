@@ -117,13 +117,17 @@ td { padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 14px; v
 .grid tr.skipped td { color: var(--muted); text-decoration: line-through; background: var(--sunken); }
 .grid tr.hdr td { font-weight: 600; background: var(--accent-soft); }
 .grid { border: 1px solid var(--line); }
-.roles { min-width: 780px; }
+.roles { min-width: 880px; }
 .roles td.col { font: 13px var(--mono); }
 .roles td.why { font-size: 12.5px; color: var(--muted); min-width: 220px; }
 select, input[type=number] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .conf { font: 11px var(--mono); }
 .conf.low { color: var(--warn); } .conf.medium { color: var(--muted); }
+.src { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; white-space: nowrap; color: var(--muted); background: var(--sunken); }
+.src.memory { color: var(--accent); background: var(--accent-soft); }
+.src.yours { color: var(--pass); background: var(--pass-soft); }
+.note { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; font-size: 13.5px; color: var(--muted); }
 .fmtbar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; font: 11px var(--mono); }
 .fmtbar span { display: flex; align-items: center; padding: 0 8px; white-space: nowrap; overflow: hidden; color: var(--surface); min-width: 4px; }
 .decide { background: var(--block-soft); border-radius: var(--r); padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
@@ -341,6 +345,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <td class="col">${esc(g.column)}</td>
         <td style="width:200px"><select data-role="${i}" class="${roles[g.column] !== g.role ? "changed" : ""}" aria-label="Role for ${esc(g.column)}">${opts.map(o => `<option value="${o}" ${roles[g.column] === o ? "selected" : ""}>${ROLE_LABEL[o]}</option>`).join("")}</select></td>
         <td><span class="conf ${g.confidence}">${g.confidence}</span></td>
+        <td>${SOURCE[g.source] || ""}</td>
         <td class="why">${roles[g.column] !== g.role ? `changed (suggested: ${ROLE_LABEL[g.role]})` : esc(g.reason)}</td></tr>`).join("");
     const low = sugg.filter(g => g.confidence === "low").map(g => g.column);
     let msg, btn, cls;
@@ -351,10 +356,14 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     } else { msg = "Roles confirmed. Change any role to re-run steps 4–6."; btn = ""; cls = "okay"; }
     const check = (ok, label) => `<span class="pill ${ok ? "pass" : "block"}">${label}</span>`;
     const nSpend = n("media_spend") + n("rf_spend");
-    return `<div class="checklist">${check(n("date") === 1, "Date set")}${check(n("kpi") === 1, "One KPI")}${check(nSpend > 0, `${nSpend} paid spend column${nSpend === 1 ? "" : "s"}`)}</div>
-      <div class="scroll"><table class="roles"><thead><tr><th>Column</th><th>Role</th><th>Confidence</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>
+    const remembered = s.details.remembered || 0;
+    const note = `<div class="note"><span>${remembered ? `${remembered} role${remembered === 1 ? " was" : "s were"} suggested from columns you confirmed before.` : "Roles you confirm are remembered and suggested first next time."} Add your own words in <span class="mono">roles.yaml</span>.</span>${remembered ? `<button class="btn" id="forget-roles">Forget remembered roles</button>` : ""}</div>`;
+    return `${note}<div class="checklist">${check(n("date") === 1, "Date set")}${check(n("kpi") === 1, "One KPI")}${check(nSpend > 0, `${nSpend} paid spend column${nSpend === 1 ? "" : "s"}`)}</div>
+      <div class="scroll"><table class="roles"><thead><tr><th>Column</th><th>Role</th><th>Confidence</th><th>From</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="decide ${cls}"><p>${msg}</p>${btn}</div>`;
   }
+
+  const SOURCE = { memory: '<span class="src memory">remembered</span>', "your words": '<span class="src yours">your words</span>', "built-in words": '<span class="src">name</span>', values: '<span class="src">values</span>' };
 
   function step4(s) {
     const pairs = decision(s, "pairs");
@@ -466,6 +475,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     });
     const confirm = $("confirm-roles");
     if (confirm) confirm.onclick = () => answer({ roles: draftRoles || s3.details.roles });
+    const forget = $("forget-roles");
+    if (forget) forget.onclick = async () => {
+      try { await api("DELETE", "/api/role-memory"); show(await api("GET", `/api/runs/${run.run_id}`)); }
+      catch (e) { alert(e.message); }
+    };
     main.querySelectorAll("[data-pair]").forEach(sel => sel.onchange = () => {
       const pairs = { ...(answers.pairs || {}) };
       pairs[sel.dataset.pair] = { kind: "media", spend: sel.dataset.spend, exposure: sel.value || null };

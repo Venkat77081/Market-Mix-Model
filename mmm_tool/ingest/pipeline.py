@@ -16,6 +16,7 @@ from .dates import parse_dates
 from .granularity import detect_granularity
 from .kpi import set_kpi_type
 from .load import load_file
+from .memory import RoleMemory
 from .pairing import Channel, pair_channels
 from .roles import map_roles
 from .types import Answers, StepResult, Verdict
@@ -106,7 +107,10 @@ class PhaseAResult:
         return out
 
 
-def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = None, accept_defaults: bool = False) -> PhaseAResult:
+def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = None, accept_defaults: bool = False,
+                memory: RoleMemory | None = None) -> PhaseAResult:
+    """Run steps 1-6. With a RoleMemory, step 3 suggests roles the user
+    confirmed before and stores the roles confirmed in this run."""
     ans = answers if isinstance(answers, Answers) else Answers(answers, accept_defaults)
     steps: list[StepResult] = []
 
@@ -125,7 +129,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         return stop(step)
     steps.append(step)
 
-    roles, step = map_roles(table, date_col, ans)
+    roles, step = map_roles(table, date_col, ans, memory, Path(path).name)
     if step.blocks or roles is None:
         return stop(step)
     steps.append(step)
@@ -133,7 +137,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         # The user moved the date role; parse that column instead.
         new_date = next(c for c, r in roles.items() if r == "date")
         ans.values["date_column"] = new_date
-        return run_phase_a(path, ans)
+        return run_phase_a(path, ans, memory=memory)
 
     channels, roles, step = pair_channels(roles, ans)
     steps.append(step)

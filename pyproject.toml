@@ -8,6 +8,7 @@ dependencies = [
     "openpyxl>=3.1",
     "charset-normalizer>=3.0",
     "python-dateutil>=2.8",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -22,7 +23,7 @@ mmm-ui = "mmm_tool.api.app:main"
 include = ["mmm_tool*"]
 
 [tool.setuptools.package-data]
-mmm_tool = ["web/*.html"]
+mmm_tool = ["web/*.html", "ingest/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

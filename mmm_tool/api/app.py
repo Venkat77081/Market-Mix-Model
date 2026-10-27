@@ -24,6 +24,8 @@ from pydantic import BaseModel
 
 from .. import samples
 from ..ingest import run_phase_a
+from ..ingest.keywords import KeywordError, load_keywords
+from ..ingest.memory import RoleMemory
 from ..ingest.load import EXCEL_EXT, TEXT_EXT
 
 RUNS_DIR = Path(os.environ.get("MMM_RUNS_DIR", "runs"))
@@ -66,9 +68,17 @@ def _meta(d: Path) -> dict:
     return json.loads((d / "meta.json").read_text())
 
 
+def _memory() -> RoleMemory:
+    """Remembered column roles, shared by every run (MMM_ROLE_MEMORY, or next to the runs)."""
+    return RoleMemory(os.environ.get("MMM_ROLE_MEMORY") or RUNS_DIR / "role_memory.json")
+
+
 def _evaluate(d: Path) -> dict:
     meta = _meta(d)
-    result = run_phase_a(d / meta["file"], meta["answers"])
+    try:
+        result = run_phase_a(d / meta["file"], meta["answers"], memory=_memory())
+    except KeywordError as e:
+        raise HTTPException(400, f"Your role keywords file has a problem: {e}") from e
     out = result.to_dict()
     if result.status == "complete":
         t = result.table.head(8)
@@ -163,6 +173,18 @@ def download_table(run_id: str) -> Response:
         raise HTTPException(409, "Phase A is not complete yet.")
     stem = Path(_meta(d)["file"]).stem
     return FileResponse(d / "ingested.csv", media_type="text/csv", filename=f"{stem}_phase_a.csv")
+
+
+@app.get("/api/role-memory")
+def get_role_memory() -> dict:
+    kw = load_keywords()
+    return {"columns": _memory().to_list(), "keyword_files": kw.sources}
+
+
+@app.delete("/api/role-memory")
+def forget_roles(column: str | None = None) -> dict:
+    """Forget one remembered column (?column=name) or all of them."""
+    return {"forgotten": _memory().forget(column)}
 
 
 @app.delete("/api/runs/{run_id}")

@@ -7,26 +7,23 @@ either, the run continues and ROI is reported in KPI units.
 """
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 
-from .roles import tokens
+from .keywords import load_keywords, words_of
 from .types import Answers, Decision, StepResult, Verdict
 from .values import numeric_view
 
 STEP = 5
 NAME = "Set KPI type"
 
-MONEY = re.compile(r"(revenue|sales_value|value|premium|gwp|gmv|turnover|amount|inr|rs|bookings|income)")
-COUNT = re.compile(r"(policies|policy|count|conversions|leads|applications|orders|units|customers|quotes|signups)")
 
 
 def kpi_type_guess(kpi_col: str) -> str:
-    t = tokens(kpi_col)
-    if COUNT.search(t):
+    """Count words (kpi_count_words in role_keywords.yaml) win over money words."""
+    kw, w = load_keywords(), words_of(kpi_col)
+    if kw.kpi_count and kw.kpi_count.search(w):
         return "non_revenue"
-    return "revenue" if MONEY.search(t) else "non_revenue"
+    return "revenue" if kw.kpi_money and kw.kpi_money.search(w) else "non_revenue"
 
 
 def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> tuple[dict, StepResult]:

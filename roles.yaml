@@ -1,0 +1,22 @@
+# Your own words for suggesting column roles. Checked before the built-in
+# lists in mmm_tool/ingest/role_keywords.yaml, which explains every field.
+# Edits take effect on the next run; no restart needed.
+# Use a different file by setting MMM_ROLES_FILE.
+
+rules:
+  # Hindi "kharcha" (spend): tv_kharcha, search_kharcha -> paid media spend.
+  - role: media_spend
+    words: [kharcha]
+    confidence: high
+    reason: spend by name (kharcha)
+
+# Extra words dropped when finding a column's channel ("tv_kharcha" -> "tv").
+channel_words_to_strip: [kharcha]
+
+# Extra channel names: policybazaar_spend is the aggregator channel.
+channel_aliases:
+  policybazaar: aggregator
+
+# Extra words for step 5 (KPI type).
+kpi_count_words: []
+kpi_money_words: []

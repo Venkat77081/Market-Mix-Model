@@ -41,3 +41,21 @@ Answers are keyed by decision id (`sheet`, `date_order`, `unparseable_dates`, `r
 `unpaired:<col>`, `kpi_type`, `revenue_per_kpi_value`, `geo_mode`). `roles` takes a partial
 `{column: role}` override. `PhaseAResult.coord_to_columns()` gives the field lists for Meridian's
 `CoordToColumns` plus the `*_to_channel` maps; `to_meridian()` builds the object when Meridian is installed.
+
+## How column roles are suggested (step 3)
+
+Each column's suggested role comes from, in order:
+
+1. **Roles you confirmed before.** Every time you confirm step 3, the roles are saved (UI:
+   `runs/role_memory.json`; command line: `.mmm/role_memory.json`; or set `MMM_ROLE_MEMORY`).
+   A later file with the same column name ("TV Spend" matches "tv_spend") gets your earlier role,
+   marked *remembered*. Clear them with the **Forget remembered roles** button,
+   `mmm-ingest --forget`, or by deleting the file.
+2. **Your words** in `roles.yaml` at the project root (or `MMM_ROLES_FILE`), checked before the
+   built-in words. Example: `kharcha` means spend, and `policybazaar` is the aggregator channel.
+   Edits apply on the next run; no restart needed.
+3. **Built-in words** in `mmm_tool/ingest/role_keywords.yaml`, which documents every field.
+4. **The values**: text with a few repeating values is a region; a 0/1 column is a flag.
+   Anything else becomes a low-confidence control.
+
+You still confirm every role before the run continues.
