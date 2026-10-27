@@ -35,6 +35,8 @@ ROLES = (
     "control",
     "non_media_treatment",
     "organic_media",
+    "revenue_for_kpi",  # total money for the KPI (premium for policies); step 5 turns it into revenue per KPI
+    "needs_role",       # step 3 couldn't tell; the run waits until the user assigns one
     "excluded",
 )
 

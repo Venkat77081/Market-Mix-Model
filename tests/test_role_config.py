@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -53,8 +54,9 @@ def test_builtin_keywords_load_and_project_roles_yaml_is_valid():
 
 
 def test_user_words_add_a_role_and_channel_words(user_roles):
-    df = frame(tv_kharcha=[float(i) for i in range(30)], search_kharcha=[float(i) for i in range(30)])
-    assert roles_of(df)["tv_kharcha"] == "control"  # unknown word before
+    rng = np.random.default_rng(1)
+    df = frame(tv_kharcha=list(rng.gamma(4, 1e5, 30)), search_kharcha=list(rng.gamma(4, 1e5, 30)))
+    assert roles_of(df)["tv_kharcha"] == "needs_role"  # unknown word before: no silent control
 
     user_roles("rules:\n  - role: media_spend\n    words: [kharcha]\nchannel_words_to_strip: [kharcha]\n")
     s = {x.column: x for x in suggest_roles(df, "week_start")}

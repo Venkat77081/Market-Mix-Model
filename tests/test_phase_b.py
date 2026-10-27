@@ -27,9 +27,13 @@ def step(r, n):
     return next(s for s in r.b.steps if s.step == n)
 
 
+# The messy export repeats 20 weeks; step 2 asks before Phase B merges them.
+DUP = {"duplicate_dates": "merge"}
+
+
 @pytest.fixture(scope="module")
 def messy(files):
-    return run_pipeline(files["messy"], accept_defaults=True)
+    return run_pipeline(files["messy"], DUP, accept_defaults=True)
 
 
 def truth():
@@ -111,14 +115,16 @@ def test_unclassified_column_blocks_only_when_rows_merge(files, tmp_path):
     df["mystery_metric"] = np.arange(156, dtype=float)
     p = tmp_path / "mystery.csv"
     df.to_csv(p, index=False)
-    r = run_pipeline(p, accept_defaults=True)
+    known = {"roles": {"mystery_metric": "control"}}  # an unrecognised number needs a role (step 3)
+    r = run_pipeline(p, known, accept_defaults=True)
     assert r.status == "complete"  # nothing merges, so no rule is needed
 
     pd.concat([df, df.iloc[[5]]]).to_csv(p, index=False)
-    r = run_pipeline(p, {"roles": {}}, accept_defaults=False)
+    known = {**DUP, "roles": {"mystery_metric": "control"}}
+    r = run_pipeline(p, known, accept_defaults=False)
     s8 = step(r, 8)
     assert r.status == "needs_input" and s8.decisions[0].context["unclassified"] == ["mystery_metric"]
-    r = run_pipeline(p, {"roles": {}, "aggregation_rules": {"mystery_metric": "sum"}}, accept_defaults=False)
+    r = run_pipeline(p, {**known, "aggregation_rules": {"mystery_metric": "sum"}}, accept_defaults=False)
     assert r.b.steps[-1].step > 8
 
 
@@ -179,12 +185,12 @@ def test_zero_is_not_missing(messy):
 
 
 def test_kpi_gaps_block_without_an_answer(files):
-    r = run_pipeline(files["messy"], {"roles": {}})
+    r = run_pipeline(files["messy"], {**DUP, "roles": {}})
     assert r.status == "needs_input" and r.b.pending[0]["id"] == "kpi_gaps"
 
 
 def test_kpi_gaps_trim(files):
-    r = run_pipeline(files["messy"], {"kpi_gaps": "trim"}, accept_defaults=True)
+    r = run_pipeline(files["messy"], {**DUP, "kpi_gaps": "trim"}, accept_defaults=True)
     t = r.b.table
     assert "kpi_imputed" not in t.columns
     # KPI gaps sit at weeks 40, 41, 60, 61, 90 and 120; the longest run without one is weeks 0-39.
@@ -218,14 +224,14 @@ def test_outlier_week_gets_an_event_flag(messy):
 
 def test_outlier_can_be_kept(files, messy):
     key = step(messy, 11).details["outliers"][0]["key"]
-    r = run_pipeline(files["messy"], {"outliers": {key: "keep"}}, accept_defaults=True)
+    r = run_pipeline(files["messy"], {**DUP, "outliers": {key: "keep"}}, accept_defaults=True)
     assert not any(c.startswith("event_") for c in r.b.table.columns)
 
 
 # Step 12 -----------------------------------------------------------------
 
 def test_negative_spend_blocks_then_is_fixed(files):
-    answers = {"roles": {}, "kpi_gaps": "interpolate"}
+    answers = {**DUP, "roles": {}, "kpi_gaps": "interpolate"}
     r = run_pipeline(files["messy"], answers)
     assert r.status == "needs_input" and r.b.pending[0]["id"] == "negative_values"
     cells = {c["key"]: c for c in r.b.pending[0]["context"]["cells"]}
@@ -241,7 +247,7 @@ def test_negative_spend_blocks_then_is_fixed(files):
 
 def test_negative_spend_correction_value(files, messy):
     key = next(c["key"] for c in step(messy, 12).details["negative"] if c["column"] == "meta_spend")
-    r = run_pipeline(files["messy"], {"negative_values": {key: 98000}}, accept_defaults=True)
+    r = run_pipeline(files["messy"], {**DUP, "negative_values": {key: 98000}}, accept_defaults=True)
     date = key.split("|")[1]
     assert r.b.table.set_index("week_start").loc[date, "meta_spend"] == 98000
 

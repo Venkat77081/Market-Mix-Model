@@ -148,7 +148,8 @@ def test_role_suggestions_for_insurance_columns(data):
     assert roles["discount_pct"] == "non_media_treatment"
     assert roles["email_sends"] == "organic_media"
     assert roles["branded_search_queries"] == "excluded"
-    assert roles["gross_written_premium"] == "excluded"  # second KPI
+    # A second outcome-like column that doesn't track the KPI waits for the user (never silently dropped).
+    assert roles["gross_written_premium"] == "needs_role"
 
 
 def test_roles_block_until_confirmed(data):

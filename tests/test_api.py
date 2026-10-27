@@ -70,10 +70,12 @@ def test_phase_b_through_the_api(client):
     run_id = r["run_id"]
     assert r["phase"] == "A" and r["result_b"] is None
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}}).json()
+    assert r["phase"] == "A" and r["result"]["pending"][0]["id"] == "duplicate_dates"  # 20 repeated weeks
+    r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"duplicate_dates": "merge", "roles": {}}}).json()
     assert r["phase"] == "B" and r["result_b"]["pending"][0]["id"] == "kpi_gaps"
     assert client.get(f"/api/runs/{run_id}/cleaned.csv").status_code == 409
 
-    neg = {"roles": {}, "kpi_gaps": "interpolate"}
+    neg = {"duplicate_dates": "merge", "roles": {}, "kpi_gaps": "interpolate"}
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": neg}).json()
     cells = r["result_b"]["pending"][0]["context"]["cells"]
     r = client.put(f"/api/runs/{run_id}/answers",

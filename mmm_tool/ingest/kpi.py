@@ -26,19 +26,72 @@ def kpi_type_guess(kpi_col: str) -> str:
     return "revenue" if kw.kpi_money and kw.kpi_money.search(w) else "non_revenue"
 
 
-def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> tuple[dict, StepResult]:
+def _derived_name(df: pd.DataFrame) -> str:
+    name, i = "revenue_per_kpi", 2
+    while name in df.columns:
+        name, i = f"revenue_per_kpi_{i}", i + 1
+    return name
+
+
+def choose_revenue_kpi(df: pd.DataFrame, roles: dict[str, str], answers: Answers,
+                       decisions: list[Decision], notes: list[str]) -> tuple[pd.DataFrame, str | None]:
+    """With a "Revenue for KPI" column (premium beside policies), offer:
+    count    KPI stays the count; revenue per KPI = revenue / count, passed to
+             Meridian as the per-unit value, never the total (default)
+    revenue  the revenue column becomes the KPI, type revenue
+    Returns the table and the forced KPI type (None if unchanged)."""
+    rev = next((c for c, r in roles.items() if r == "revenue_for_kpi"), None)
+    if rev is None:
+        return df, None
+    kpi_col = next(c for c, r in roles.items() if r == "kpi")
+    d = Decision(
+        id="kpi_choice",
+        step=STEP,
+        question=(f"'{rev}' is revenue for '{kpi_col}'. Keep '{kpi_col}' as the KPI and value each one at "
+                  f"{rev} ÷ {kpi_col}, or make '{rev}' the KPI?"),
+        options=["count", "revenue"],
+        default="count",
+        context={"kpi": kpi_col, "revenue": rev},
+    )
+    decisions.append(d)
+    choice = answers.ask(d) or "count"
+    if choice == "revenue":
+        roles[rev], roles[kpi_col] = "kpi", "excluded"
+        notes.append(f"'{rev}' is the KPI; '{kpi_col}' is set aside")
+        return df, "revenue"
+    k = numeric_view(df[kpi_col])
+    per_unit = numeric_view(df[rev]) / k.where(k > 0)
+    name = _derived_name(df)
+    df = df.copy()
+    df[name] = per_unit
+    old = [c for c, r in roles.items() if r == "revenue_per_kpi"]
+    for c in old:
+        roles[c] = "excluded"
+    roles[name], roles[rev] = "revenue_per_kpi", "excluded"
+    notes.append(f"'{name}' = {rev} ÷ {kpi_col} (median ₹{per_unit.median():,.0f}); the total '{rev}' isn't passed to Meridian"
+                 + (f"; '{old[0]}' set aside" if old else ""))
+    return df, "non_revenue"
+
+
+def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> tuple[dict, StepResult, pd.DataFrame]:
+    decisions: list[Decision] = []
+    notes: list[str] = []
+    df, forced = choose_revenue_kpi(df, roles, answers, decisions, notes)
     kpi_col = next(c for c, r in roles.items() if r == "kpi")
     rpk_col = next((c for c, r in roles.items() if r == "revenue_per_kpi"), None)
-    guess = kpi_type_guess(kpi_col)
-    d_type = Decision(
-        id="kpi_type",
-        step=STEP,
-        question=f"Is '{kpi_col}' money (revenue) or a count (non-revenue)?",
-        options=["revenue", "non_revenue"],
-        default=guess,
-    )
-    decisions = [d_type]
-    kpi_type = answers.ask(d_type) or guess
+    guess = forced or kpi_type_guess(kpi_col)
+    if forced:
+        kpi_type = forced
+    else:
+        d_type = Decision(
+            id="kpi_type",
+            step=STEP,
+            question=f"Is '{kpi_col}' money (revenue) or a count (non-revenue)?",
+            options=["revenue", "non_revenue"],
+            default=guess,
+        )
+        decisions.append(d_type)
+        kpi_type = answers.ask(d_type) or guess
     warnings: list[str] = []
     out = {"kpi": kpi_col, "kpi_type": kpi_type, "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": "₹ per ₹"}
 
@@ -67,11 +120,13 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
         if value not in (None, ""):
             value = float(value)
             if value <= 0:
-                return out, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, "Revenue per KPI must be above zero.", out, warnings, decisions)
+                return out, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, "Revenue per KPI must be above zero.", out, warnings, decisions), df
             out["revenue_per_kpi_value"] = value
             summary = f"'{kpi_col}' is a count, valued at a fixed ₹{value:,.0f} per unit for ROI."
         else:
             out["roi_units"] = f"{kpi_col} per ₹"
             warnings.append(f"No value per '{kpi_col}'; ROI is reported as {kpi_col} per ₹ and cost per {kpi_col}.")
             summary = f"'{kpi_col}' is a count with no ₹ value; ROI is reported in KPI units."
-    return out, StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary, out, warnings, decisions)
+    if notes:  # the KPI choice explains itself better than the generic sentence
+        summary = f"'{kpi_col}' is {'revenue' if kpi_type == 'revenue' else 'a count'}; " + "; ".join(notes) + "."
+    return out, StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary, out, warnings, decisions), df

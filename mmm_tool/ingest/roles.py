@@ -15,6 +15,7 @@ import pandas as pd
 from .keywords import Keywords, load_keywords, words_of
 from .memory import RoleMemory
 from .types import ROLES, Answers, Decision, StepResult, Verdict
+from .wide import resolve_wide_regions
 from .values import is_null_token, numeric_share, numeric_view
 
 STEP = 3
@@ -91,10 +92,65 @@ def suggest_role(col: str, series: pd.Series, date_col: str, kw: Keywords | None
         return RoleSuggestion(col, rule.role, confidence, reason, channel, source=f"{rule.origin} words")
     if _is_binary(values):
         return RoleSuggestion(col, "control", "medium", "0/1 column, treated as a flag", source="values")
-    return RoleSuggestion(col, "control", "low", "numeric column with an unrecognised name; assumed an outside factor", source="values")
+    # Never default an unknown number to a control: an outcome used as a
+    # control absorbs the sales and pushes every media ROI towards zero.
+    return RoleSuggestion(col, "needs_role", "low", "numeric column with an unrecognised name; choose its role", source="values")
 
 
-def suggest_roles(df: pd.DataFrame, date_col: str, memory: RoleMemory | None = None) -> list[RoleSuggestion]:
+# Value checks against the chosen KPI (Fix: an outcome must not become a control).
+REVENUE_RATIO_CV = 0.15      # column / KPI varies less than this...
+REVENUE_STEADIER = 0.75      # ...and clearly less than the column itself varies
+OUTCOME_CORRELATION = 0.8    # moves with the KPI this closely: possibly an outcome
+CHECKED_ROLES = {"control", "non_media_treatment", "needs_role"}
+
+
+def _cv(x: pd.Series) -> float:
+    m = x.mean()
+    return float(x.std() / m) if m else float("inf")
+
+
+def value_checks(df: pd.DataFrame, out: list[RoleSuggestion], kpi: RoleSuggestion, second_kpis: set[str]) -> None:
+    """Compare every other numeric column with the KPI.
+
+    revenue for KPI: column / KPI is nearly constant (premium = policies x price)
+    possible outcome: correlation above 0.8; it can't become a control unconfirmed
+    """
+    k = numeric_view(df[kpi.column])
+    revenue: list[tuple[float, RoleSuggestion, str]] = []
+    for s in out:
+        if s.column == kpi.column or s.source == "memory" or (s.role not in CHECKED_ROLES and s.column not in second_kpis):
+            continue
+        x = numeric_view(df[s.column])
+        if _is_binary(x):
+            continue
+        m = (x > 0) & (k > 0)
+        if m.sum() >= 10:
+            r = x[m] / k[m]
+            rcv, ocv = _cv(r), _cv(x[m])
+            if rcv < REVENUE_RATIO_CV and rcv < REVENUE_STEADIER * ocv:
+                reason = (f"{s.column} ÷ {kpi.column} stays between ₹{r.min():,.0f} and ₹{r.max():,.0f} "
+                          f"(varies {rcv:.0%}): revenue for the KPI. Use it as revenue per KPI = {s.column} ÷ {kpi.column}")
+                revenue.append((rcv, s, reason))
+                continue
+        corr = x.corr(k)
+        if corr is not None and corr > OUTCOME_CORRELATION:
+            s.role, s.confidence, s.source = "needs_role", "medium", "values"
+            s.reason = (f"possible outcome: moves with '{kpi.column}' (correlation {corr:.2f}). "
+                        f"Confirm its role; as a control it would absorb the KPI")
+        elif s.column in second_kpis:
+            s.role, s.confidence, s.source = "needs_role", "low", "values"
+            s.reason = f"outcome-like name but it doesn't track '{kpi.column}'; choose its role"
+    revenue.sort(key=lambda t: t[0])
+    for i, (_, s, reason) in enumerate(revenue):
+        if i == 0:
+            s.role, s.confidence, s.reason, s.source = "revenue_for_kpi", "high", reason, "values"
+        else:
+            s.role, s.confidence, s.source = "needs_role", "medium", "values"
+            s.reason = f"also tracks '{kpi.column}' like '{revenue[0][1].column}'; choose its role"
+
+
+def suggest_roles(df: pd.DataFrame, date_col: str, memory: RoleMemory | None = None,
+                  wide: dict | None = None) -> list[RoleSuggestion]:
     kw = load_keywords()
     out = [suggest_role(col, df[col], date_col, kw, memory) for col in df.columns]
 
@@ -110,16 +166,42 @@ def suggest_roles(df: pd.DataFrame, date_col: str, memory: RoleMemory | None = N
                 s.confidence = "medium"
                 s.reason += "; it changes over time within a region (Meridian takes one value per region)"
 
-    # Only one KPI is modelled. Prefer a count (policies) over money (premium),
-    # since money can then come in as revenue per KPI.
+    # Region columns kept side by side: never crown one region's outcome.
+    region_cols = set()
+    if wide and wide.get("action") == "keep":
+        region_cols = {c for by_tag in wide["columns"].values() for c in by_tag.values()}
+        for s in out:
+            if s.role == "kpi" and s.column in region_cols:
+                s.role, s.confidence, s.source = "needs_role", "low", "values"
+                s.reason = (f"one region's outcome ({', '.join(wide['tags'])} each have one); "
+                            "choose one as the KPI or reshape the regions")
+
+    # Only one KPI is modelled. Prefer a count (policies) over money (premium);
+    # the other outcome-like columns are then checked against it by value.
     kpis = [s for s in out if s.role == "kpi"]
-    if len(kpis) > 1:
+    if kpis:
         keep = next((s for s in kpis if s.confidence == "high"), kpis[0])
+        second = {s.column for s in kpis if s is not keep}
         for s in kpis:
             if s is not keep:
-                s.role, s.confidence = "excluded", "medium"
-                s.reason = f"second outcome column; '{keep.column}' is the KPI and this one is caused by the same marketing"
+                s.role = "needs_role"
+        value_checks(df, out, keep, second)
     return out
+
+
+def identical_columns(df: pd.DataFrame, date_col: str) -> list[list[str]]:
+    """Groups of columns whose values are the same in every row."""
+    groups: dict = {}
+    for col in df.columns:
+        if col == date_col:
+            continue
+        s = df[col]
+        if s.map(is_null_token).all():
+            continue
+        vals = numeric_view(s) if numeric_share(s) >= 0.8 else s.astype(str).str.strip()
+        key = tuple(None if pd.isna(v) else v for v in vals)
+        groups.setdefault(key, []).append(col)
+    return [g for g in groups.values() if len(g) > 1]
 
 
 def validate_roles(roles: dict[str, str]) -> list[str]:
@@ -128,13 +210,16 @@ def validate_roles(roles: dict[str, str]) -> list[str]:
     if unknown:
         problems.append(f"Unknown role(s): {unknown}. Use one of {list(ROLES)}.")
     count = {r: sum(1 for v in roles.values() if v == r) for r in ROLES}
+    unassigned = [c for c, r in roles.items() if r == "needs_role"]
+    if unassigned:
+        problems.append(f"Choose a role for: {', '.join(unassigned)}.")
     if count["date"] != 1:
         problems.append("Set exactly one date column.")
     if count["kpi"] != 1:
         problems.append("Set exactly one KPI column." if count["kpi"] == 0 else f"{count['kpi']} columns are marked KPI; keep one.")
     if count["media_spend"] + count["rf_spend"] == 0:
         problems.append("Set at least one paid media channel (a spend column).")
-    for r in ("geo", "population", "revenue_per_kpi"):
+    for r in ("geo", "population", "revenue_per_kpi", "revenue_for_kpi"):
         if count[r] > 1:
             problems.append(f"Only one column can be {r}.")
     if count["population"] and not count["geo"]:
@@ -143,8 +228,38 @@ def validate_roles(roles: dict[str, str]) -> list[str]:
 
 
 def map_roles(df: pd.DataFrame, date_col: str, answers: Answers, memory: RoleMemory | None = None,
-              source_file: str = "") -> tuple[dict[str, str] | None, StepResult]:
-    suggestions = suggest_roles(df, date_col, memory)
+              source_file: str = "") -> tuple[dict[str, str] | None, pd.DataFrame, StepResult]:
+    """Returns (roles, table, step). The table changes when wide regions are reshaped or summed."""
+    # Wide-format regions are settled before any role is suggested.
+    df, wide, decisions, warnings = resolve_wide_regions(df, date_col, answers, STEP)
+    if wide and wide.get("action") is None:
+        pending = wide.get("problem") or (
+            f"Region columns found: {', '.join(wide['stems'])} for {', '.join(wide['tags'])}. "
+            "Choose how to handle them before roles are suggested.")
+        return None, df, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, pending, {"wide_regions": wide}, warnings, decisions)
+
+    suggestions = suggest_roles(df, date_col, memory, wide)
+
+    # Columns identical in every row: keep one of each group.
+    for group in identical_columns(df, date_col):
+        dd = Decision(
+            id=f"identical:{group[0]}",
+            step=STEP,
+            question=f"{', '.join(group)} have the same value in every row. Which one should be kept?",
+            options=group,
+            default=group[0],
+            blocking=True,
+            context={"columns": group},
+        )
+        decisions.append(dd)
+        keep = answers.ask(dd) or group[0]
+        if keep not in group:
+            dd.answered = False
+        for s in suggestions:
+            if s.column in group and s.column != keep:
+                s.role, s.confidence, s.source = "excluded", "high", "values"
+                s.reason = f"identical to '{keep}' in every row"
+
     suggested = {s.column: s.role for s in suggestions}
     d = Decision(
         id="roles",
@@ -155,12 +270,13 @@ def map_roles(df: pd.DataFrame, date_col: str, answers: Answers, memory: RoleMem
         blocking=True,
         context={"suggestions": [asdict(s) for s in suggestions]},
     )
+    decisions.append(d)
     chosen = answers.ask(d)
     roles = dict(suggested)
     if chosen:
         missing = [c for c in chosen if c not in df.columns]
         if missing:
-            return None, StepResult(STEP, NAME, Verdict.FAIL, f"Roles name column(s) not in the file: {missing}.", {}, [], [d])
+            return None, df, StepResult(STEP, NAME, Verdict.FAIL, f"Roles name column(s) not in the file: {missing}.", {}, warnings, decisions)
         roles.update(chosen)
 
     problems = validate_roles(roles)
@@ -169,27 +285,35 @@ def map_roles(df: pd.DataFrame, date_col: str, answers: Answers, memory: RoleMem
         "remembered": sum(1 for s in suggestions if s.source == "memory"),
         "roles": roles,
         "by_role": {r: [c for c, v in roles.items() if v == r] for r in ROLES if r in roles.values()},
+        "wide_regions": wide or None,
     }
     low = [s.column for s in suggestions if s.confidence == "low" and roles[s.column] == s.role]
-    warnings = [f"Low-confidence role(s) kept as suggested: {low}."] if low and d.answered and d.answer == suggested else []
+    if low and d.answered and d.answer == suggested:
+        warnings.append(f"Low-confidence role(s) kept as suggested: {low}.")
+    pending_other = [x for x in decisions if x is not d and x.pending]
 
     if problems:
         d.answered = False  # an invalid mapping must be fixed before continuing
-        return None, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, " ".join(problems), details, warnings, [d])
-    if not d.answered:
-        return None, StepResult(
+        return None, df, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, " ".join(problems), details, warnings, decisions)
+    if not d.answered or pending_other:
+        return None, df, StepResult(
             STEP, NAME, Verdict.NEEDS_INPUT,
             f"{len(roles)} roles suggested ({len(low)} low-confidence"
             + (f", {details['remembered']} from roles you confirmed before" if details["remembered"] else "")
             + "). Confirm them to continue.",
-            details, warnings, [d],
+            details, warnings, decisions,
         )
     if memory is not None and "roles" in answers.values:
         details["newly_remembered"] = memory.remember(roles, source_file)
     by_role = details["by_role"]
     n_media = len(by_role.get("media_spend", [])) + len(by_role.get("rf_spend", []))
-    summary = (
-        f"KPI '{by_role['kpi'][0]}', {n_media} paid channel spend column(s), "
-        f"{len(by_role.get('control', []))} control(s), {len(by_role.get('excluded', []))} excluded."
-    )
-    return roles, StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary, details, warnings, [d])
+    summary = f"KPI '{by_role['kpi'][0]}'"
+    if by_role.get("revenue_for_kpi"):
+        summary += f" with revenue '{by_role['revenue_for_kpi'][0]}'"
+    summary += (f", {n_media} paid channel spend column(s), "
+                f"{len(by_role.get('control', []))} control(s), {len(by_role.get('excluded', []))} excluded")
+    if wide and wide.get("action") == "reshape":
+        summary += f"; regions reshaped into '{wide['region_column']}' ({wide['rows_before']} → {wide['rows_after']} rows)"
+    elif wide and wide.get("action") == "sum":
+        summary += f"; {len(wide['tags'])} regions added into one national series"
+    return roles, df, StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary + ".", details, warnings, decisions)

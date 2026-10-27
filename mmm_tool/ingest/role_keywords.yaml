@@ -10,8 +10,8 @@
 # "adult pop" but not "popular". An entry can be a phrase: "per policy".
 #
 # Rules are checked top to bottom; the first one that matches wins. Fields:
-#   role        one of: geo, population, kpi, revenue_per_kpi, media, media_spend,
-#               reach, frequency, rf_spend, control, non_media_treatment,
+#   role        one of: geo, population, kpi, revenue_per_kpi, revenue_for_kpi, media,
+#               media_spend, reach, frequency, rf_spend, control, non_media_treatment,
 #               organic_media, excluded
 #   words       the name must contain at least one of these
 #   also_needs  ...and at least one of these (optional)
@@ -33,6 +33,7 @@ rules:
 
   - role: revenue_per_kpi
     words: [revenue per, per policy, per kpi, per unit, avg premium, average premium, avg ticket, aov, arpu]
+    unless: [index, idx]   # avg_premium_index is a price index, not ₹ per policy
     confidence: high
     reason: value of one KPI unit
 
@@ -56,7 +57,7 @@ rules:
     reason: a lever you control that isn't media
 
   - role: control
-    words: [index, competitor, competition]
+    words: [index, idx, competitor, competition]
     confidence: high
     reason: outside factor by name
 
@@ -82,7 +83,11 @@ rules:
     reason: count of outcomes by name
 
   - role: kpi
-    words: [revenue, sales, gwp, gross written premium, premium income, total premium, gmv, turnover, bookings]
+    # Money and outcome words. ₹ in a column name reads as "inr". After the KPI is
+    # chosen, step 3 checks these columns by value: one that is a near-constant
+    # multiple of the KPI becomes "Revenue for KPI" (premium = policies x price).
+    words: [revenue, sales, gwp, nbp, premium, gross written, gross written premium, premium income, total premium,
+            gmv, turnover, bookings, inr, rs, value]
     reason: money outcome by name
 
   # Only text columns are checked against geo rules; a text column with a

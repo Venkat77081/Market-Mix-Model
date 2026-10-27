@@ -129,7 +129,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         return stop(step)
     steps.append(step)
 
-    roles, step = map_roles(table, date_col, ans, memory, Path(path).name)
+    roles, table, step = map_roles(table, date_col, ans, memory, Path(path).name)
     if step.blocks or roles is None:
         return stop(step)
     steps.append(step)
@@ -142,7 +142,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
     channels, roles, step = pair_channels(roles, ans)
     steps.append(step)
 
-    kpi, step = set_kpi_type(table, roles, ans)
+    kpi, step, table = set_kpi_type(table, roles, ans)
     if step.blocks:
         return stop(step)
     steps.append(step)

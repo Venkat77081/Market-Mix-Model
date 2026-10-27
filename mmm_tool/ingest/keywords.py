@@ -25,8 +25,9 @@ def user_file() -> Path:
 
 
 def words_of(name: str) -> str:
-    """'TV_Spend (₹)' -> 'tv spend'; 'youtubeReach' -> 'youtube reach'."""
-    s = re.sub(r"([a-z])([A-Z])", r"\1_\2", str(name)).lower()
+    """'TV_Spend (₹)' -> 'tv spend inr'; 'youtubeReach' -> 'youtube reach'. ₹ reads as the word inr."""
+    s = str(name).replace("₹", " inr ")
+    s = re.sub(r"([a-z])([A-Z])", r"\1_\2", s).lower()
     return " ".join(re.findall(r"[a-z0-9]+", s))
 
 

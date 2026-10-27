@@ -1,0 +1,270 @@
+{
+  "A01_clean_weekly.csv": {
+    "steps": "1-6 baseline",
+    "delimiter": ",",
+    "encoding": "utf-8",
+    "header_row": 1,
+    "date_format": "%Y-%m-%d",
+    "granularity": "weekly",
+    "geo": null,
+    "kpi": "new_policies",
+    "kpi_type": "non_revenue",
+    "revenue_per_kpi": "derive: new_premium_inr / new_policies (or use new_premium_inr as a revenue KPI)",
+    "media_spend": [
+      "tv_spend",
+      "radio_spend",
+      "print_spend",
+      "ooh_spend",
+      "search_spend",
+      "social_spend",
+      "youtube_ott_spend",
+      "aggregator_spend",
+      "affiliate_spend"
+    ],
+    "exposure_pairs": {
+      "tv_spend": "tv_grps"
+    },
+    "controls": [
+      "avg_premium_index",
+      "competitor_spend_index",
+      "new_vehicle_registrations",
+      "tax_season",
+      "fy_end",
+      "festive_flag",
+      "regulatory_event"
+    ],
+    "suggest_exclude": [
+      "brand_search_index"
+    ],
+    "prompts": [
+      "KPI choice: new_policies vs new_premium_inr"
+    ],
+    "blocks": false
+  },
+  "A02_semicolon_bom.csv": {
+    "steps": "1",
+    "delimiter": ";",
+    "encoding": "utf-8 with BOM",
+    "header_row": 1,
+    "check": "first column must be named 'week_start', not '\\ufeffweek_start'",
+    "blocks": false
+  },
+  "A03_preamble_footer.csv": {
+    "steps": "1, 2",
+    "header_row": 5,
+    "preamble_rows": 4,
+    "footer": "last row 'TOTAL' is a summary, must be dropped (not an unparseable date)",
+    "expected_rows": 156,
+    "blocks": false
+  },
+  "A04_multisheet.xlsx": {
+    "steps": "1",
+    "sheets": [
+      "Notes",
+      "Weekly_Data",
+      "Yearly_Pivot"
+    ],
+    "data_sheet": "Weekly_Data",
+    "header_row": 3,
+    "prompts": [
+      "which sheet (suggest Weekly_Data: most rows, has a date column)"
+    ],
+    "blocks": false
+  },
+  "A05_mixed_dates.csv": {
+    "steps": "2",
+    "formats_present": [
+      "%Y-%m-%d",
+      "%d/%m/%Y",
+      "%d-%b-%y",
+      "%d.%m.%Y"
+    ],
+    "rule": "slash dates are day-first: proven by rows with day > 12 (e.g. 16/01/2023)",
+    "expected_first": "2023-01-02",
+    "expected_last": "2025-12-22",
+    "expected_unique_dates": 156,
+    "duplicates_created_if_parsed_month_first": "must be 0 after correct parsing",
+    "blocks": false
+  },
+  "A06_ambiguous_dates_monthly.csv": {
+    "steps": "2, 6",
+    "trap": "day-first gives monthly 2023-01..2025-12; month-first gives 2023-01-01..01-12 daily-ish then invalid (13th month) for... no: all days are 01, so month-first reads 01/02/2023 as Jan 2",
+    "expected": "prefer day-first: it gives an evenly spaced monthly series; month-first gives an irregular series. Ask the user to confirm",
+    "granularity": "monthly",
+    "phase_c_note": "36 rows -> would be refused at step 14",
+    "prompts": [
+      "confirm day-first"
+    ],
+    "blocks": false
+  },
+  "A07_messy_column_names.csv": {
+    "steps": "3",
+    "expected_roles": {
+      "Unnamed: 0": "exclude (row index)",
+      "Week Commencing": "date",
+      "Policies Issued (New)": "kpi",
+      "New Business GWP (INR)": "revenue (for revenue_per_kpi)",
+      "TV Spend (INR)": "media_spend",
+      "TV GRPs": "media (exposure)",
+      "Radio - Cost": "media_spend",
+      "Print Ads ₹": "media_spend",
+      "OOH/Hoardings spend": "media_spend",
+      "Google Search Cost": "media_spend",
+      "Meta Spend": "media_spend",
+      "YT+OTT Investment": "media_spend",
+      "PolicyBazaar Fees": "media_spend (needs confirmation: 'fees' is not an obvious spend word)",
+      "Affiliate Payout": "media_spend (needs confirmation)",
+      "Brand Search (GTrends)": "exclude (suggested: caused by media)",
+      "Avg Premium Idx": "control",
+      "Cmpttr SOV": "control",
+      "Vahan Registrations": "control",
+      "Tax Season?": "control (flag)",
+      "FY End Flag": "control (flag)",
+      "Diwali/Festive": "control (flag)",
+      "IRDAI change": "control (flag)",
+      "Notes": "exclude (free text)"
+    },
+    "blocks": false
+  },
+  "A08_spend_exposure_pairs.csv": {
+    "steps": "3, 4",
+    "pairs": {
+      "tv_spend": "tv_grps (name match)",
+      "Search Cost": "Search Clicks (name match)",
+      "FB spend": "Meta impressions (names differ: tool should ask, not auto-pair)",
+      "radio_spend": "none -> spend used as exposure"
+    },
+    "reach_frequency": {
+      "spend": "yt_spend",
+      "reach": "yt_reach",
+      "frequency": "yt_frequency"
+    },
+    "organic_media": [
+      "email_sends",
+      "whatsapp_msgs"
+    ],
+    "prompts": [
+      "confirm FB spend <-> Meta impressions"
+    ],
+    "blocks": false
+  },
+  "A09_revenue_kpi.csv": {
+    "steps": "5",
+    "kpi": "new_premium_inr",
+    "kpi_type": "revenue",
+    "revenue_per_kpi": null,
+    "note": "ROI reported directly in INR; no revenue-per-unit prompt",
+    "blocks": false
+  },
+  "A10_leads_no_revenue.csv": {
+    "steps": "5",
+    "kpi": "quote_requests",
+    "kpi_type": "non_revenue",
+    "prompts": [
+      "value per quote request in INR, or continue with ROI in quotes per INR"
+    ],
+    "blocks": false
+  },
+  "A11_daily.csv": {
+    "steps": "6",
+    "granularity": "daily",
+    "rows": 731,
+    "expected": "detect daily; Phase B step 9 resamples to 105 weeks (spend and KPI summed)",
+    "blocks": false
+  },
+  "A12_monthly.csv": {
+    "steps": "2, 6",
+    "date_format": "%Y-%m",
+    "granularity": "monthly",
+    "rows": 36,
+    "expected": "detect monthly; warn that monthly data cannot be split into weeks and 36 rows will be refused at step 14",
+    "blocks": false
+  },
+  "A13_regions_long.csv": {
+    "steps": "3, 6",
+    "geo": "state",
+    "geo_values": [
+      "Tamil Nadu",
+      "Karnataka",
+      "Maharashtra",
+      "Delhi",
+      "Gujarat"
+    ],
+    "population": "adult_population",
+    "rows": 780,
+    "expected": "5 regions x 156 weeks; population role suggested from a constant-per-region column",
+    "prompts": [
+      "model regions together (recommended) or aggregate to national"
+    ],
+    "blocks": false
+  },
+  "A14_regions_wide.csv": {
+    "steps": "3, 6",
+    "expected": "detect the repeated suffixes _TN/_KA/_MH on the same stems (policies, tv_spend, search_spend); offer to reshape to long: 468 rows = 3 regions x 156 weeks, geo=state, KPI=policies, channels tv and search; step 6 must then report 3 regions, not one national series",
+    "wrong_outcomes": [
+      "policies_TN as KPI with policies_KA/MH excluded",
+      "6 channels like tv_spend_KA (another region's spend explaining TN's policies)",
+      "'one national series' at step 6"
+    ],
+    "alternative": "sum the regions into one national series (policies, tv_spend, search_spend), if the user declines the reshape",
+    "prompts": [
+      "reshape wide regions to long"
+    ],
+    "blocks": false
+  },
+  "A15_bad_dates.csv": {
+    "steps": "2",
+    "bad_rows": [
+      18,
+      30,
+      73,
+      77,
+      82,
+      90,
+      103,
+      116,
+      138
+    ],
+    "bad_values": [
+      "TBD",
+      "Week 12",
+      "(blank)",
+      "2024-13-01",
+      "31/02/2024",
+      "#VALUE!",
+      "n/a",
+      "2024/W15",
+      "45292 (Excel serial = 2024-01-01)"
+    ],
+    "expected": "list all 9 rows with their values; offer to read 45292 as an Excel serial and 2024/W15 as ISO week; block until the rest are fixed or dropped",
+    "blocks": true
+  },
+  "A16_no_media.csv": {
+    "steps": "3",
+    "expected": "block: no column can be a media channel",
+    "blocks": true
+  },
+  "A17_empty.csv": {
+    "steps": "1",
+    "expected": "block: file is empty",
+    "blocks": true
+  },
+  "A17_header_only.csv": {
+    "steps": "1",
+    "expected": "block: header found but 0 data rows",
+    "blocks": true
+  },
+  "A18_indian_number_formats.csv": {
+    "steps": "3 (with Phase B step 7)",
+    "formats": [
+      "1,20,000 lakh grouping",
+      "₹4.50 Cr",
+      "12.6 L",
+      "'-' for zero",
+      "12%",
+      "(1,234) negative"
+    ],
+    "expected": "columns recognised as numeric before role suggestion; tv_spend '-' -> 0; affiliate rows 22 and 79 negative -> flagged at step 12",
+    "blocks": false
+  }
+}

@@ -205,10 +205,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
     media: "Paid media exposure", media_spend: "Paid media spend", reach: "Reach", frequency: "Frequency",
     rf_spend: "Reach & frequency spend", control: "Control", non_media_treatment: "Non-media lever",
-    organic_media: "Unpaid media", excluded: "Excluded",
+    organic_media: "Unpaid media", revenue_for_kpi: "Revenue for KPI", needs_role: "Needs a role", excluded: "Excluded",
   };
   const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
-    interpolate: "Interpolate", trim: "Trim the period", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹" };
+    interpolate: "Interpolate", trim: "Trim the period", merge: "Merge them in Phase B",
+    reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, ₹ per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹" };
   const PILL = { pass: ["pass", "Pass"], warn: ["warn", "Pass with warning"], needs_input: ["block", "Decision needed"], fail: ["fail", "Failed"] };
 
   let run = null;           // last API response
@@ -279,10 +280,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   const stepOf = n => [...run.result.steps, ...((run.result_b || {}).steps || [])].find(s => s.step === n);
   const decision = (s, id) => s && s.decisions.find(d => d.id === id);
   const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
-  function seg(d, options) {
+  function seg(d, options, labels = {}) {
     const cur = current(d);
     return `<div class="seg" role="group" aria-label="${esc(d.question)}">${(options || d.options).map(o =>
-      `<button data-answer="${esc(d.id)}" data-value="${esc(o)}" aria-pressed="${cur === o}">${esc(OPTION_LABEL[o] || o)}</button>`).join("")}</div>`;
+      `<button data-answer="${esc(d.id)}" data-value="${esc(o)}" aria-pressed="${cur === o}">${esc(labels[o] || OPTION_LABEL[o] || o)}</button>`).join("")}</div>`;
   }
   function card(n, s, body) {
     const waiting = !s;
@@ -329,6 +330,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const reg = order.context.regularity || {};
       out += `<div class="decide ${order.pending ? "" : "soft"}"><p>${esc(order.question)} <span class="muted">Spacing check: day-first ${Math.round((reg.dayfirst || 0) * 100)}% regular, month-first ${Math.round((reg.monthfirst || 0) * 100)}%.</span></p>${seg(order)}</div>`;
     }
+    const dup = decision(s, "duplicate_dates");
+    if (dup) out += `<div class="decide ${dup.pending ? "" : "soft"}"><p>${esc(dup.question)}</p>${dup.answered ? `<span class="pill pass">Merged in Phase B</span>` : `<button class="btn primary" data-answer="duplicate_dates" data-value="merge">Merge them in Phase B</button>`}</div>`;
     const bad = decision(s, "unparseable_dates");
     if (bad) out += `<div class="decide ${bad.pending ? "" : "soft"}"><p>${esc(bad.question)}</p>${bad.answered ? `<span class="pill pass">Rows dropped</span>` : `<button class="btn primary" data-answer="unparseable_dates" data-value="drop_rows">Drop those rows</button>`}</div>`;
     return out;
@@ -341,10 +344,40 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (n("media_spend") + n("rf_spend") === 0) out.push("Set at least one paid media spend column.");
     ["geo", "population", "revenue_per_kpi"].forEach(r => n(r) > 1 && out.push(`Only one column can be ${ROLE_LABEL[r].toLowerCase()}.`));
     if (n("population") && !n("geo")) out.push("A population column needs a region column.");
+    const unassigned = Object.keys(roles).filter(c => roles[c] === "needs_role");
+    if (unassigned.length) out.unshift(`Choose a role for: ${unassigned.join(", ")}.`);
+    if (n("revenue_for_kpi") > 1) out.push("Only one column can be revenue for the KPI.");
+    return out;
+  }
+  function step3Pre(s) {
+    let out = "";
+    const w = decision(s, "wide_regions");
+    if (w) {
+      const name = decision(s, "region_column"), comb = decision(s, "wide_regions_combine");
+      const cur = current(w);
+      out += `<div class="decide ${w.pending ? "" : "soft"}"><p>${esc(w.question)}</p>${seg(w)}</div>`;
+      if (cur === "reshape") out += `<form id="region-name" class="decide soft"><p>Name the region column.</p>
+        <span style="display:inline-flex;gap:8px"><input id="region-name-v" value="${esc(name ? current(name) : "region")}" style="width:160px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--surface)" aria-label="Region column name"><button class="btn" type="submit">Apply</button></span></form>`;
+      if (cur === "keep") out += `<div class="decide soft" style="background:var(--warn-soft)"><p>Each region's spend will explain the other regions' sales. Choose one region's outcome as the KPI below, or reshape.</p></div>`;
+      if (comb) {
+        const chosen = { ...comb.default, ...(answers.wide_regions_combine || {}) };
+        out += `<div class="decide ${comb.pending ? "" : "soft"}"><p>${esc(comb.question)}</p><span style="display:inline-flex;gap:8px;flex-wrap:wrap">${Object.keys(comb.default).map(c =>
+          `<label class="mono small">${esc(c)} <select data-combine="${esc(c)}">${["sum", "mean", "max"].map(o => `<option ${chosen[c] === o ? "selected" : ""}>${o}</option>`).join("")}</select></label>`).join("")}
+          <button class="btn primary" id="apply-combine">Apply</button></span></div>`;
+      }
+    }
+    s.decisions.filter(d => d.id.startsWith("identical:")).forEach(d => {
+      out += `<div class="decide ${d.pending ? "" : "soft"}"><p>${esc(d.question)}</p><select data-select="${esc(d.id)}" aria-label="Column to keep">${d.options.map(o => `<option ${o === current(d) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>`;
+    });
     return out;
   }
   function step3(s) {
+    const pre = step3Pre(s);
     const d = decision(s, "roles");
+    if (!d) return pre;
+    return pre + step3Roles(s, d);
+  }
+  function step3Roles(s, d) {
     const sugg = d.context.suggestions;
     const applied = s.details.roles;
     const roles = draftRoles || applied;
@@ -397,13 +430,15 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const d = s.details;
     const type = decision(s, "kpi_type");
     const val = decision(s, "revenue_per_kpi_value");
+    const choice = decision(s, "kpi_choice");
     return `<dl class="kv">
         <div><dt>KPI</dt><dd class="mono">${esc(d.kpi)}</dd></div>
         <div><dt>ROI unit</dt><dd>${esc(d.roi_units)}</dd></div>
         ${d.revenue_per_kpi_column ? `<div><dt>Revenue per KPI</dt><dd class="mono">${esc(d.revenue_per_kpi_column)}</dd></div><div><dt>Median value</dt><dd>₹${num(Math.round(d.revenue_per_kpi_median))}</dd></div>` : ""}
         ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>₹${num(d.revenue_per_kpi_value)}</dd></div>` : ""}
       </dl>
-      <div class="decide soft"><p>${esc(type.question)}</p>${seg(type)}</div>
+      ${choice ? `<div class="decide soft"><p>${esc(choice.question)}</p>${seg(choice, null, { count: `${choice.context.kpi} is the KPI (₹ per unit)`, revenue: `${choice.context.revenue} is the KPI` })}</div>` : ""}
+      ${type ? `<div class="decide soft"><p>${esc(type.question)}</p>${seg(type)}</div>` : ""}
       ${val ? `<div class="decide soft"><p>${esc(val.question)}</p>
         <form id="rpk" style="display:flex;gap:8px;align-items:center"><span>₹</span><input type="number" id="rpk-value" min="1" step="any" value="${esc(val.answer ?? "")}" placeholder="e.g. 14500" style="width:130px" aria-label="Value per KPI unit">
         <button class="btn" type="submit">Apply</button>${val.answered ? `<button class="btn" type="button" id="rpk-clear">Clear</button>` : ""}</form></div>` : ""}`;
@@ -652,6 +687,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       draftRoles = { ...(draftRoles || s3.details.roles), [g.column]: sel.value };
       const y = window.scrollY; render(); window.scrollTo(0, y);
     });
+    const rn = $("region-name");
+    if (rn) rn.onsubmit = e => { e.preventDefault(); const v = $("region-name-v").value.trim(); if (v) answer({ region_column: v }); };
+    const ac = $("apply-combine");
+    if (ac) ac.onclick = () => answer({ wide_regions_combine: Object.fromEntries([...main.querySelectorAll("[data-combine]")].map(x => [x.dataset.combine, x.value])) });
     const confirm = $("confirm-roles");
     if (confirm) confirm.onclick = () => answer({ roles: draftRoles || s3.details.roles });
     const forget = $("forget-roles");

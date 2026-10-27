@@ -13,6 +13,7 @@ import pandas as pd
 from .types import Answers, Decision, StepResult, Verdict
 
 STEP = 6
+MIN_WEEKS = 104  # step 14 refuses fewer weekly observations than this
 NAME = "Detect granularity"
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -58,9 +59,20 @@ def detect_granularity(df: pd.DataFrame, roles: dict[str, str], answers: Answers
     elif freq == "daily":
         warnings.append("Daily data; step 9 resamples it to weeks.")
     elif freq == "monthly":
-        warnings.append("Monthly data gives Meridian about a quarter of the observations of weekly data; expect wide ROI ranges.")
+        warnings.append("Monthly data can't be split into weeks without inventing numbers, so it stays monthly.")
     else:
         warnings.append(f"Dates are irregular (median gap {gap:.0f} days); check the export before going on.")
+
+    # Observations once Phase B has made weeks: daily data gives one per 7 days;
+    # weekly and monthly data give one per period.
+    weekly_obs = out["periods"] // 7 if freq == "daily" else out["periods"]
+    out["weekly_observations"] = weekly_obs
+    if weekly_obs < MIN_WEEKS:
+        unit = "weeks" if freq in ("weekly", "daily") else f"{freq} periods"
+        warnings.append(
+            f"History is under {MIN_WEEKS} weeks: {weekly_obs} {unit} of observations. "
+            f"Step 14 (data sufficiency) refuses fewer than {MIN_WEEKS} weekly observations, so this run will stop there."
+        )
 
     if len(regions) > 1:
         default = "regional" if pop_col else "national"
@@ -87,7 +99,8 @@ def detect_granularity(df: pd.DataFrame, roles: dict[str, str], answers: Answers
             warnings.append(f"Regions have different numbers of {freq} periods ({per_region.min()}–{per_region.max()}); step 10 labels the gaps.")
 
     where = f"{len(regions)} regions, modelled {out['geo_mode']}ly" if len(regions) > 1 else "one national series"
-    summary = f"{freq.capitalize()}, {out['periods']} periods (~{out['weeks_of_history']} weeks), {where}"
+    span = f"~{out['weeks_of_history']} weeks" if freq in ("weekly", "daily") else f"{dates.min().date()} to {dates.max().date()}"
+    summary = f"{freq.capitalize()}, {out['periods']} periods ({span}), {where}"
     if "week_start" in out:
         summary += f"; weeks start on {out['week_start']}"
     verdict = Verdict.WARN if warnings else Verdict.PASS

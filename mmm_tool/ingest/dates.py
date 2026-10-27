@@ -8,6 +8,7 @@ choose, with a suggestion from which reading gives the more regular spacing.
 """
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, datetime, timedelta
 
@@ -16,14 +17,21 @@ import pandas as pd
 from dateutil import parser as du_parser
 
 from .types import Answers, Decision, StepResult, Verdict
-from .values import is_null_token, to_number
+from .values import is_null_token, numeric_share, to_number
 
 STEP = 2
 NAME = "Parse dates"
 
 ISO = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T].*)?$")
 SLASH = re.compile(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})(?:[ T].*)?$")
+# Month-only dates read as the first of the month. A 4-digit year makes
+# MM/YYYY unambiguous, so it never goes through the day-first logic.
+YEAR_MONTH = re.compile(r"^(\d{4})[-/.](\d{1,2})$")
+MONTH_YEAR = re.compile(r"^(\d{1,2})[-/.](\d{4})$")
+MONTH_NAME_YEAR = re.compile(r"^([A-Za-z]{3,9})\.?[\s\-/,']*(\d{4})$")
+MONTHS = {name.lower(): i for i in range(1, 13) for name in (calendar.month_name[i], calendar.month_abbr[i])} | {"sept": 9}
 HAS_MONTH_NAME = re.compile(r"[A-Za-z]{3,}")
+NO_DAY = datetime(1900, 1, 1)  # dateutil fills missing parts from this, never from today
 DATE_NAME = re.compile(r"date|week|time|period|day|month", re.IGNORECASE)
 EXCEL_EPOCH = datetime(1899, 12, 30)
 
@@ -41,7 +49,7 @@ def _safe(y: int, m: int, d: int):
 
 
 def classify(value) -> tuple[str, object]:
-    """Return (kind, parsed). kind is one of: datetime, excel_serial, iso,
+    """Return (kind, parsed). kind is one of: datetime, excel_serial, iso, month_only,
     dayfirst, monthfirst, same_either_way, ambiguous, text_month, unparseable. For ambiguous
     rows `parsed` is (dayfirst_reading, monthfirst_reading)."""
     if is_null_token(value):
@@ -53,6 +61,14 @@ def classify(value) -> tuple[str, object]:
             return "excel_serial", pd.Timestamp(EXCEL_EPOCH + timedelta(days=int(value)))
         return "unparseable", None
     s = str(value).strip()
+    for pattern, ym in ((YEAR_MONTH, (1, 2)), (MONTH_YEAR, (2, 1))):
+        m = pattern.match(s)
+        if m:
+            ts = _safe(int(m[ym[0]]), int(m[ym[1]]), 1)
+            return ("month_only", ts) if ts is not None else ("unparseable", None)
+    m = MONTH_NAME_YEAR.match(s)
+    if m and m[1].lower() in MONTHS:
+        return "month_only", _safe(int(m[2]), MONTHS[m[1].lower()], 1)
     m = ISO.match(s)
     if m:
         ts = _safe(int(m[1]), int(m[2]), int(m[3]))
@@ -72,13 +88,28 @@ def classify(value) -> tuple[str, object]:
         return "unparseable", None
     if HAS_MONTH_NAME.search(s):
         try:
-            return "text_month", pd.Timestamp(du_parser.parse(s)).normalize()
+            parsed = du_parser.parse(s, default=NO_DAY)
+            if parsed.year == NO_DAY.year and str(NO_DAY.year) not in s:
+                return "unparseable", None  # no year in the text
+            return "text_month", pd.Timestamp(parsed).normalize()
         except (ValueError, OverflowError):
             return "unparseable", None
     n = to_number(s)
     if not np.isnan(n) and 20000 <= n <= 80000:
         return "excel_serial", pd.Timestamp(EXCEL_EPOCH + timedelta(days=int(n)))
     return "unparseable", None
+
+
+def explaining_region(df: pd.DataFrame, date_col: str) -> str | None:
+    """A text column with a few repeating values that makes every (date, value)
+    pair unique, as in long-format regional data."""
+    for col in df.columns:
+        if col == date_col or numeric_share(df[col]) >= 0.8:
+            continue
+        n = df[col].nunique()
+        if 2 <= n <= 60 and not df.duplicated([date_col, col]).any():
+            return col
+    return None
 
 
 def parse_rate(series: pd.Series) -> float:
@@ -208,7 +239,39 @@ def parse_dates(df: pd.DataFrame, answers: Answers, date_col: str | None = None)
     if drop:
         out = out.drop(index=out.index[bad]).reset_index(drop=True)
     details.update(first=str(out[date_col].min().date()), last=str(out[date_col].max().date()))
-    summary = f"'{date_col}' parsed: {len(out):,} rows from {details['first']} to {details['last']}"
+
+    # Every row should have its own date unless a region column explains the repeats.
+    n_rows, n_unique = len(out), int(out[date_col].nunique())
+    details.update(rows=n_rows, unique_dates=n_unique)
+    counted = f"{n_rows:,} rows, {n_unique:,} unique dates"
+    if n_unique < n_rows:
+        region = explaining_region(out, date_col)
+        if region:
+            details["repeats_explained_by"] = region
+            counted += f" ({n_unique:,} dates × {out[region].nunique()} values of '{region}')"
+        else:
+            repeated = out[date_col][out[date_col].duplicated(keep=False)]
+            examples = sorted({str(x.date()) for x in repeated})[:5]
+            d = Decision(
+                id="duplicate_dates",
+                step=STEP,
+                question=(f"{n_rows - n_unique} row(s) repeat a date already in the file (e.g. {examples}) and no region "
+                          "column explains it. If the export has duplicate rows, Phase B step 8 merges them. "
+                          "If not, a date is being read wrongly. Merge them in Phase B?"),
+                options=["merge"],
+                default=None,
+                blocking=True,
+                context={"examples": examples, "rows": n_rows, "unique_dates": n_unique},
+            )
+            decisions.append(d)
+            if answers.ask(d) == "merge":
+                warnings.append(f"{n_rows - n_unique} repeated date(s), e.g. {examples}; Phase B step 8 merges them.")
+            else:
+                return None, date_col, StepResult(
+                    STEP, NAME, Verdict.NEEDS_INPUT,
+                    f"Stopped: {counted}. Repeated dates need a decision.", details, warnings, decisions,
+                )
+    summary = f"'{date_col}' parsed: {counted}, from {details['first']} to {details['last']}"
     if len([k for k in counts if k != "unparseable"]) > 1:
         summary += " (mixed formats: " + ", ".join(f"{v} {k}" for k, v in counts.items() if k != "unparseable") + ")"
     if notes:
