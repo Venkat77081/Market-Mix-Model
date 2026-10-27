@@ -76,6 +76,8 @@ class StepResult:
         d = asdict(self)
         d["verdict"] = self.verdict.value
         d["blocks"] = self.blocks
+        for dd, dec in zip(d["decisions"], self.decisions):
+            dd["pending"] = dec.pending
         return d
 
 

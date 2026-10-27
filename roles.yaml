@@ -20,3 +20,9 @@ channel_aliases:
 # Extra words for step 5 (KPI type).
 kpi_count_words: []
 kpi_money_words: []
+
+# Extra words for Phase B: how to combine a control column (average or sum),
+# and money unit words with their value in ₹.
+aggregation_mean_words: []
+aggregation_sum_words: []
+money_units: {}

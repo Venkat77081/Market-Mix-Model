@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from .. import samples
-from ..ingest import run_phase_a
+from ..pipeline import run_pipeline
 from ..ingest.keywords import KeywordError, load_keywords
 from ..ingest.memory import RoleMemory
 from ..ingest.load import EXCEL_EXT, TEXT_EXT
@@ -73,23 +73,36 @@ def _memory() -> RoleMemory:
     return RoleMemory(os.environ.get("MMM_ROLE_MEMORY") or RUNS_DIR / "role_memory.json")
 
 
+def _preview(table) -> dict:
+    t = table.head(8)
+    return {
+        "columns": list(t.columns),
+        "rows": [[None if v is None else str(v)[:10] if hasattr(v, "date") else v for v in r] for r in t.itertuples(index=False)],
+    }
+
+
 def _evaluate(d: Path) -> dict:
+    """Run Phase A, then Phase B once A is complete, with the run's answers."""
     meta = _meta(d)
     try:
-        result = run_phase_a(d / meta["file"], meta["answers"], memory=_memory())
+        run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
     except KeywordError as e:
         raise HTTPException(400, f"Your role keywords file has a problem: {e}") from e
-    out = result.to_dict()
-    if result.status == "complete":
-        t = result.table.head(8)
-        out["table_preview"] = {
-            "columns": list(t.columns),
-            "rows": [[None if v is None else str(v)[:10] if hasattr(v, "date") else v for v in r] for r in t.itertuples(index=False)],
-        }
-        result.table.to_csv(d / "ingested.csv", index=False)
-    meta.update(status=result.status, updated=time.time(), decisions=len(result.pending))
+    out_a = run.a.to_dict()
+    if run.a.status == "complete":
+        out_a["table_preview"] = _preview(run.a.table)
+        run.a.table.to_csv(d / "ingested.csv", index=False)
+    out_b = None
+    if run.b is not None:
+        out_b = run.b.to_dict()
+        if run.b.status == "complete":
+            out_b["table_preview"] = _preview(run.b.table)
+            run.b.table.to_csv(d / "cleaned.csv", index=False)
+    final = run.b or run.a
+    meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
     (d / "meta.json").write_text(json.dumps(meta))
-    return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "result": _clean(out)}
+    return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
+            "result": _clean(out_a), "result_b": _clean(out_b)}
 
 
 def _new_run(filename: str) -> Path:
@@ -118,7 +131,7 @@ def list_runs(limit: int = 10) -> list[dict]:
     for d in RUNS_DIR.iterdir():
         if RUN_ID.match(d.name) and (d / "meta.json").exists():
             meta = _meta(d)
-            runs.append({"run_id": d.name, "file": meta["file"], "status": meta.get("status"),
+            runs.append({"run_id": d.name, "file": meta["file"], "phase": meta.get("phase", "A"), "status": meta.get("status"),
                          "decisions": meta.get("decisions", 0), "updated": meta.get("updated") or d.stat().st_mtime})
     return sorted(runs, key=lambda r: r["updated"], reverse=True)[:limit]
 
@@ -168,11 +181,23 @@ def set_answers(run_id: str, body: AnswersIn) -> dict:
 
 @app.get("/api/runs/{run_id}/table.csv")
 def download_table(run_id: str) -> Response:
+    """The table after Phase A (columns with confirmed roles)."""
     d = _run_dir(run_id)
     if _evaluate(d)["result"]["status"] != "complete":
         raise HTTPException(409, "Phase A is not complete yet.")
     stem = Path(_meta(d)["file"]).stem
     return FileResponse(d / "ingested.csv", media_type="text/csv", filename=f"{stem}_phase_a.csv")
+
+
+@app.get("/api/runs/{run_id}/cleaned.csv")
+def download_cleaned(run_id: str) -> Response:
+    """The table after Phase B: one complete row per week, ready for Meridian."""
+    d = _run_dir(run_id)
+    b = _evaluate(d)["result_b"]
+    if not b or b["status"] != "complete":
+        raise HTTPException(409, "Phase B is not complete yet.")
+    stem = Path(_meta(d)["file"]).stem
+    return FileResponse(d / "cleaned.csv", media_type="text/csv", filename=f"{stem}_phase_b.csv")
 
 
 @app.get("/api/role-memory")

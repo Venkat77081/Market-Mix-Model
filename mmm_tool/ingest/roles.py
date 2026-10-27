@@ -19,6 +19,7 @@ from .values import is_null_token, numeric_share, numeric_view
 
 STEP = 3
 NAME = "Map column roles"
+YES_NO = {"yes", "no", "y", "n", "true", "false"}
 
 
 @dataclass
@@ -64,6 +65,12 @@ def suggest_role(col: str, series: pd.Series, date_col: str, kw: Keywords | None
         channel = channel_of(col, kw) if role in ("media", "media_spend", "reach", "frequency", "rf_spend", "organic_media") else None
         reason = f"you confirmed this on {_when(remembered['confirmed_at'])} ({remembered['file']})"
         return RoleSuggestion(col, role, "high", reason, channel, source="memory")
+
+    present = series[~series.map(is_null_token)].astype(str).str.strip().str.lower()
+    if len(present) and present.isin(YES_NO).all():
+        rule = kw.match(col)
+        role = rule.role if rule is not None and rule.role in ("control", "non_media_treatment") else "control"
+        return RoleSuggestion(col, role, "high", "yes/no flag, read as 1/0", source="values")
 
     if numeric_share(series) < 0.8:
         distinct = series[~series.map(is_null_token)].nunique()

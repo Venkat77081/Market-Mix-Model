@@ -126,6 +126,63 @@ def write_rf(dir: Path) -> Path:
     return path
 
 
+# Phase B test files. MESSY_TRUTH describes exactly what write_messy breaks, so
+# tests can check every count.
+MESSY_TRUTH = {
+    "duplicate_dates": 20,     # weeks 10-29 appear twice, each row holding half the spend and KPI
+    "missing_weeks": 4,        # weeks 40, 41, 90, 120 are absent
+    "kpi_blank_weeks": 2,      # new_policies blank in weeks 60 and 61
+    "radio_starts_week": 30,   # radio_spend blank before week 30
+    "negative_cells": 2,       # meta_spend week 70, search_spend week 71
+    "kpi_zero_week": 100,
+    "index_jump_week": 130,    # premium_index x10 in week 130 only
+    "outlier_week": 140,       # new_policies x3
+    "tv_unit": "crore",        # tv_spend_cr holds TV spend in crore
+}
+
+
+def write_messy(dir: Path) -> Path:
+    """Weekly export with every problem Phase B handles, at known places."""
+    path = dir / "ins_messy.csv"
+    df = make_insurance()
+    df["promo_flag"] = (np.arange(len(df)) % 9 == 0).astype(int)
+    df["radio_spend"] = df["radio_spend"].astype(object)
+    df.loc[: MESSY_TRUTH["radio_starts_week"] - 1, "radio_spend"] = ""
+    df.loc[60:61, "new_policies"] = np.nan
+    df.loc[70, "meta_spend"] = -125000
+    df.loc[71, "search_spend"] = -40000
+    df.loc[MESSY_TRUTH["kpi_zero_week"], "new_policies"] = 0
+    df.loc[MESSY_TRUTH["index_jump_week"], "premium_index"] *= 10
+    df.loc[MESSY_TRUTH["outlier_week"], "new_policies"] *= 3
+    df["tv_spend_cr"] = df.pop("tv_spend") / 1e7
+
+    halves = df.loc[10:29].copy()
+    money = [c for c in df.columns if c.endswith(("_spend", "_spend_cr", "_grps", "_clicks", "_impressions", "_sends")) or c == "new_policies"]
+    for c in money:
+        num = pd.to_numeric(df.loc[10:29, c], errors="coerce")
+        df.loc[10:29, c] = num / 2
+        halves[c] = num / 2
+    df = pd.concat([df, halves]).drop(index=[40, 41, 90, 120]).sort_values("week_start", kind="stable")
+    df["week_start"] = df["week_start"].dt.strftime("%Y-%m-%d")
+    df.to_csv(path, index=False)
+    return path
+
+
+def write_daily(dir: Path) -> Path:
+    """Two years of daily data starting on a Wednesday."""
+    path = dir / "ins_daily.csv"
+    rng = np.random.default_rng(3)
+    days = pd.date_range("2023-01-04", periods=730, freq="D")
+    df = pd.DataFrame({"date": days.strftime("%Y-%m-%d")})
+    for ch in ("tv", "search", "meta"):
+        df[f"{ch}_spend"] = np.round(rng.gamma(4, 3.5e4, len(df)), 0)
+    df["festive_flag"] = days.month.isin([10, 11]).astype(int)
+    df["premium_index"] = np.round(100 + np.cumsum(rng.normal(0, 0.05, len(df))), 2)
+    df["new_policies"] = np.round(rng.normal(600, 40, len(df)), 0)
+    df.to_csv(path, index=False)
+    return path
+
+
 SAMPLES = {
     "ins_clean": ("156 weeks, 9 channels, clean CSV", write_clean),
     "ins_export": ("Excel, two sheets, title lines above the header", write_excel_with_preamble),
@@ -133,4 +190,6 @@ SAMPLES = {
     "ins_monthly": ("Monthly, every date ambiguous (asks day-first or month-first)", write_ambiguous_monthly),
     "ins_regions": ("5 regions with population", write_regions),
     "ins_rf": ("YouTube reach and frequency, print with no spend, branded search", write_rf),
+    "ins_messy": ("Duplicate and missing weeks, negative spend, TV in crore, an outlier", write_messy),
+    "ins_daily": ("Two years of daily data starting on a Wednesday", write_daily),
 }

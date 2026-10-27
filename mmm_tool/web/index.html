@@ -77,6 +77,9 @@ button, select, input { font: inherit; color: inherit; }
 .rail .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 6px; }
 .rail .ph { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; padding: 6px 10px; border-radius: var(--r); font-size: 14px; color: var(--muted); }
 .rail .ph.on { background: var(--accent-soft); color: var(--ink); }
+.rail a.ph { color: var(--ink); }
+.rail a.ph:hover { background: var(--sunken); }
+.num { font-variant-numeric: tabular-nums; }
 .rail .letter { font: 600 13px var(--mono); }
 .rail .soon { font-size: 11px; }
 .rail ol { list-style: none; margin: 2px 0 8px 34px; padding: 0; font-size: 13px; }
@@ -190,11 +193,13 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   <nav class="rail" id="rail" aria-label="Phases"></nav>
   <main class="main"><div class="inner" id="main"></div></main>
 </div>
-<div class="busy" id="busy" hidden>Running Phase A…</div>
+<div class="busy" id="busy" hidden>Running the pipeline…</div>
 
 <script>
 (() => {
-  const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity"];
+  const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity",
+    "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -202,12 +207,14 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     rf_spend: "Reach & frequency spend", control: "Control", non_media_treatment: "Non-media lever",
     organic_media: "Unpaid media", excluded: "Excluded",
   };
-  const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows" };
+  const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
+    interpolate: "Interpolate", trim: "Trim the period", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹" };
   const PILL = { pass: ["pass", "Pass"], warn: ["warn", "Pass with warning"], needs_input: ["block", "Decision needed"], fail: ["fail", "Failed"] };
 
   let run = null;           // last API response
   let answers = {};         // answers sent with the next re-run
   let draftRoles = null;    // step 3 edits not yet applied
+  let view = null;          // "a" or "b": which phase is on screen
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const num = x => typeof x === "number" ? x.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(x);
@@ -230,7 +237,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     run = data;
     answers = structuredClone(data.answers || {});
     draftRoles = null;
-    if (location.hash !== "#run=" + data.run_id) history.replaceState(null, "", "#run=" + data.run_id);
+    if (!view) view = data.phase === "B" ? "b" : "a";
+    if (view === "b" && !data.result_b) view = "a";
+    const hash = `#run=${data.run_id}${view === "b" ? "/b" : ""}`;
+    if (location.hash !== hash) history.replaceState(null, "", hash);
     render();
     if (keepScroll) window.scrollTo(0, y);
   }
@@ -265,7 +275,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
 
   // ---------- helpers ----------
-  const stepOf = n => run.result.steps.find(s => s.step === n);
+  const phaseResult = v => v === "b" ? run.result_b : run.result;
+  const stepOf = n => [...run.result.steps, ...((run.result_b || {}).steps || [])].find(s => s.step === n);
   const decision = (s, id) => s && s.decisions.find(d => d.id === id);
   const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
   function seg(d, options) {
@@ -410,63 +421,231 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ${geo ? `<div class="decide ${geo.pending ? "" : "soft"}"><p>${esc(geo.question)}${geo.context.has_population ? "" : " There is no population column, which a regional model needs."}</p>${seg(geo)}</div>` : ""}`;
   }
 
+  // ---------- Phase B step bodies ----------
+  const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const RULE_LABEL = { sum: "Add up", mean: "Average", max: "Maximum" };
+
+  function step7(s) {
+    const cols = s.details.columns;
+    const changed = cols.filter(c => c.formatted || c.text_nulls || c.yes_no || c.unreadable || c.blank);
+    const rows = changed.map(c => `<tr><td class="mono">${esc(c.column)}</td><td class="num">${c.formatted || ""}</td><td class="num">${c.text_nulls || ""}</td>
+        <td class="num">${c.yes_no || ""}</td><td class="num">${c.blank || ""}</td>
+        <td>${c.unreadable ? `<span style="color:var(--block)">${c.unreadable}</span> <span class="muted mono">${c.examples.map(esc).join(", ")}</span>` : ""}</td></tr>`).join("");
+    const sym = Object.entries(s.details.currency_symbols || {});
+    return `${changed.length ? `<div class="scroll"><table style="min-width:620px"><thead><tr><th>Column</th><th>Formatted numbers</th><th>Text nulls</th><th>Yes/no → 1/0</th><th>Blank</th><th>Unreadable</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      <p class="muted small">${cols.length - changed.length} other column(s) were already clean numbers.${sym.length ? ` Currency symbols seen: ${sym.map(([c, v]) => `${esc(c)} ${esc(v.join(" "))}`).join(", ")}.` : ""}</p>`;
+  }
+
+  function step8(s) {
+    const d = s.details;
+    const dec = decision(s, "aggregation_rules");
+    const chosen = { ...(dec ? dec.default : {}), ...(answers.aggregation_rules || {}) };
+    const rows = (d.rules || []).map(r => {
+      const cur = chosen[r.column] || r.applied || r.rule;
+      const cell = r.editable
+        ? `<select data-agg="${esc(r.column)}" aria-label="Rule for ${esc(r.column)}" class="${r.rule ? "" : "changed"}">${Object.keys(RULE_LABEL).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${RULE_LABEL[k]}</option>`).join("")}</select>`
+        : esc(RULE_LABEL[cur] || cur);
+      return `<tr><td class="mono">${esc(r.column)}</td><td>${esc(ROLE_LABEL[r.role] || r.role)}</td><td>${cell}</td><td class="why">${r.rule ? esc(r.reason) : `<b style="color:var(--block)">${esc(r.reason)}</b>`}</td></tr>`;
+    }).join("");
+    const why = d.why || [];
+    let out = `<dl class="kv">
+        <div><dt>Duplicate rows</dt><dd>${num(d.duplicate_rows ?? 0)}${d.duplicate_dates ? ` on ${num(d.duplicate_dates)} dates` : ""}</dd></div>
+        ${d.regions_rolled_up ? `<div><dt>Regions added up</dt><dd>${num(d.regions_rolled_up)} → national</dd></div>` : ""}
+        ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
+        <div><dt>Rules used for</dt><dd>${why.length ? esc(why.join(", ")) : "nothing (no rows merge)"}</dd></div>
+      </dl>
+      <div class="scroll"><table class="roles" style="min-width:640px"><thead><tr><th>Column</th><th>Role</th><th>Combine by</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    if (dec && dec.pending) out += `<div class="decide"><p>Pick how to combine ${dec.context.unclassified.map(c => `<span class="mono">${esc(c)}</span>`).join(", ")}, then apply.</p><button class="btn primary" id="apply-agg">Apply rules</button></div>`;
+    return out;
+  }
+
+  function step9(s) {
+    const d = s.details;
+    const dec = decision(s, "week_start");
+    return `<dl class="kv">
+        <div><dt>Data came in</dt><dd>${esc(d.frequency_in || d.frequency)}</dd></div>
+        ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
+        ${d.rows_shifted ? `<div><dt>Moved to the week start</dt><dd>${num(d.rows_shifted)} rows</dd></div>` : ""}
+        ${(d.partial_weeks_dropped || []).length ? `<div><dt>Partial weeks dropped</dt><dd class="mono">${d.partial_weeks_dropped.map(esc).join(", ")}</dd></div>` : ""}
+      </dl>
+      ${dec ? `<div class="decide soft"><p>${esc(dec.question)} <span class="muted">Found in the data: ${esc(dec.context.detected)}.</span></p>
+        <select data-select="week_start" aria-label="Week start">${WEEKDAYS.map(w => `<option ${w === current(dec) ? "selected" : ""}>${w}</option>`).join("")}</select></div>` : ""}`;
+  }
+
+  function step10(s) {
+    const d = s.details;
+    const gaps = (d.columns || []).filter(c => c.not_started || c.ended || c.missing);
+    const rows = gaps.map(c => `<tr><td class="mono">${esc(c.column)}</td><td class="num">${c.not_started || ""}</td><td class="num">${c.ended || ""}</td>
+        <td class="num">${c.missing || ""}</td><td class="num">${num(c.zeros)}</td><td class="why">${esc(c.fill)}</td></tr>`).join("");
+    const kg = decision(s, "kpi_gaps"), mg = decision(s, "media_gaps");
+    const zeros = (d.columns || []).reduce((a, c) => a + c.zeros, 0);
+    return `<dl class="kv">
+        <div><dt>Weeks absent from the export</dt><dd>${(d.missing_weeks || []).length ? `${d.missing_weeks.length} <span class="muted mono small">${d.missing_weeks.slice(0, 4).map(esc).join(", ")}${d.missing_weeks.length > 4 ? "…" : ""}</span>` : "none"}</dd></div>
+        ${d.rows_after ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
+        <div><dt>Zeros kept as real zeros</dt><dd>${num(zeros)}</dd></div>
+        ${(d.trimmed_weeks || []).length ? `<div><dt>Weeks trimmed</dt><dd>${d.trimmed_weeks.length}</dd></div>` : ""}
+      </dl>
+      ${gaps.length ? `<div class="scroll"><table style="min-width:620px"><thead><tr><th>Column</th><th>Not started</th><th>Ended</th><th>Missing</th><th>Zeros</th><th>Filled with</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      ${kg ? `<div class="decide ${kg.pending ? "" : "soft"}"><p>${esc(kg.question)}</p>${seg(kg)}</div>` : ""}
+      ${mg ? `<div class="decide soft"><p>${esc(mg.question)}</p>${seg(mg)}</div>` : ""}`;
+  }
+
+  function kpiChart(series, outliers) {
+    if (!series || series.length < 2) return "";
+    const W = 680, H = 170, l = 52, r = 10, t = 10, b = 22;
+    const vals = series.map(p => p.value), lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.08 || 1, y0 = lo - pad, y1 = hi + pad;
+    const x = i => l + (i / (series.length - 1)) * (W - l - r);
+    const y = v => t + (1 - (v - y0) / (y1 - y0)) * (H - t - b);
+    const idx = Object.fromEntries(series.map((p, i) => [p.date, i]));
+    const ticks = [y0 + pad, (lo + hi) / 2, hi].map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${num(Math.round(v))}</text>`).join("");
+    const path = series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
+    const marks = outliers.filter(o => o.date in idx).map(o => `<circle cx="${x(idx[o.date])}" cy="${y(series[idx[o.date]].value)}" r="5" fill="${o.action === "keep" ? "var(--surface)" : "var(--block)"}" stroke="var(--block)" stroke-width="2"><title>${esc(o.date)}: ${num(o.value)} (z ${o.z})</title></circle>`).join("");
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly KPI with unusual weeks marked" style="width:100%;height:auto;display:block">${ticks}
+      <text x="${l}" y="${H - 6}" fill="var(--muted)" font-size="11">${esc(series[0].date)}</text><text x="${W - r}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(series[series.length - 1].date)}</text>
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>${marks}</svg></div>`;
+  }
+
+  function step11(s) {
+    const d = s.details, dec = decision(s, "outliers");
+    const chosen = dec ? { ...dec.default, ...(answers.outliers || {}) } : {};
+    const rows = (d.outliers || []).map(o => `<tr><td class="mono">${esc(o.date)}</td>${o.geo != null ? `<td>${esc(o.geo)}</td>` : ""}<td class="num">${num(o.value)}</td><td class="num">${o.z}</td>
+        <td><div class="seg">${["flag", "keep"].map(v => `<button data-outlier="${esc(o.key)}" data-value="${v}" aria-pressed="${chosen[o.key] === v}">${OPTION_LABEL[v]}</button>`).join("")}</div></td></tr>`).join("");
+    const geo = (d.outliers || []).some(o => o.geo != null);
+    return `${kpiChart(d.series, d.outliers || [])}
+      ${rows ? `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Week</th>${geo ? "<th>Region</th>" : ""}<th>KPI</th><th>Robust z</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted small">An event flag is a 0/1 control column for that week, so the model doesn't credit media with the spike. Rows are never deleted.</p>` : ""}`;
+  }
+
+  function cellTable(dec, cells, extraHead, extraCell) {
+    const chosen = { ...dec.default, ...(answers[dec.id] || {}) };
+    const geo = cells.some(c => c.geo != null);
+    const rows = cells.map(c => {
+      const a = chosen[c.key];
+      const isNum = typeof a === "number";
+      const opts = ["zero", "keep", "interpolate"].map(o => `<option value="${o}" ${a === o ? "selected" : ""}>${{ zero: "Set to 0", keep: "Keep", interpolate: "Interpolate" }[o]}</option>`).join("")
+        + `<option value="value" ${isNum ? "selected" : ""}>Enter value…</option>`;
+      return `<tr><td class="mono">${esc(c.column)}</td><td class="mono">${esc(c.date)}</td>${geo ? `<td>${esc(c.geo)}</td>` : ""}${extraCell(c)}<td class="num">${num(c.value)}</td>
+        <td><select data-cell="${esc(dec.id)}" data-key="${esc(c.key)}" aria-label="Fix for ${esc(c.key)}">${opts}</select>
+        <input type="number" step="any" data-cellv="${esc(dec.id)}" data-key="${esc(c.key)}" value="${isNum ? a : ""}" ${isNum ? "" : "hidden"} style="width:120px" aria-label="Corrected value for ${esc(c.key)}"></td></tr>`;
+    }).join("");
+    return `<div class="scroll"><table style="min-width:600px"><thead><tr><th>Column</th><th>Week</th>${geo ? "<th>Region</th>" : ""}${extraHead}<th>Value</th><th>Fix</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function step12(s) {
+    let out = "";
+    const neg = decision(s, "negative_values"), zero = decision(s, "kpi_zero_weeks"), jump = decision(s, "control_jumps");
+    if (neg) out += `<div class="decide ${neg.pending ? "" : "soft"}"><p>${esc(neg.question)}</p>${neg.pending ? `<button class="btn primary" data-applyall="negative_values">Set all to 0</button>` : ""}</div>${cellTable(neg, neg.context.cells, "", () => "")}`;
+    if (zero) out += `<div class="decide soft"><p>${esc(zero.question)}</p></div>${cellTable(zero, zero.context.cells, "", () => "")}`;
+    if (jump) out += `<div class="decide soft"><p>${esc(jump.question)}</p></div>${cellTable(jump, jump.context.cells, "<th>Week before</th>", c => `<td class="num">${num(c.previous)}</td>`)}`;
+    return out;
+  }
+
+  function step13(s) {
+    const d = s.details;
+    const units = decision(s, "money_units"), infl = decision(s, "inflation");
+    const cur = infl ? current(infl) : "none";
+    const on = cur && typeof cur === "object";
+    const years = infl ? infl.context.years : [];
+    return `<dl class="kv">
+        <div><dt>Money columns</dt><dd>${(d.money_columns || []).length}</dd></div>
+        ${(d.units_converted || []).length ? `<div><dt>Converted to ₹</dt><dd class="mono small">${d.units_converted.map(u => `${esc(u.column)} ×${num(u.multiplied_by)}`).join(", ")}</dd></div>` : ""}
+        <div><dt>Inflation</dt><dd>${d.inflation ? `${esc(d.inflation.base_year)} prices, ${esc(d.inflation.annual_rate_pct)}% a year` : "as recorded"}</dd></div>
+      </dl>
+      ${units ? `<div class="decide soft"><p>${esc(units.question)}</p>${seg(units)}</div>` : ""}
+      ${infl ? `<div class="decide soft"><p>${esc(infl.question)}</p>
+        <form id="infl" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <select id="infl-on" aria-label="Inflation adjustment"><option value="none" ${on ? "" : "selected"}>As recorded</option><option value="on" ${on ? "selected" : ""}>Restate in one year's prices</option></select>
+          <span id="infl-fields" ${on ? "" : "hidden"} style="display:inline-flex;gap:8px;align-items:center">
+            <select id="infl-year" aria-label="Base year">${years.map(y => `<option ${on && cur.base_year === y || !on && y === years[years.length - 1] ? "selected" : ""}>${y}</option>`).join("")}</select>
+            <input type="number" id="infl-rate" min="0" max="50" step="0.1" value="${on ? cur.annual_rate_pct : 5}" style="width:80px" aria-label="Annual inflation %"> % a year
+          </span>
+          <button class="btn" type="submit">Apply</button>
+        </form></div>` : ""}`;
+  }
+
   // ---------- page ----------
   function render() {
     $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
-    const r = run.result;
-    const statuses = STEP_NAMES.map((_, i) => (stepOf(i + 1) || {}).verdict || "");
+    const r = phaseResult(view);
+    const nums = PHASE_STEPS[view];
+    const statuses = nums.map(n => (stepOf(n) || {}).verdict || "");
     const done = statuses.filter(v => v === "pass" || v === "warn").length;
     const pending = r.pending.length;
+    const a = run.result, b = run.result_b;
+    const dot = res => !res ? "" : res.status === "complete" ? "pass" : res.status === "failed" ? "fail" : "needs_input";
 
-    $("rail").innerHTML = PHASES.map(([k, name], i) =>
-      (i === 0 ? '<div class="group">Pipeline</div>' : i === 5 ? '<div class="group">Screens</div>' : "") +
-      `<div class="ph ${k === "A" ? "on" : ""}"><span class="letter">${k}</span><span>${name}</span>${k === "A" ? `<span class="dot ${r.status === "complete" ? "pass" : r.status === "failed" ? "fail" : "needs_input"}"></span>` : '<span class="soon">soon</span>'}</div>` +
-      (k === "A" ? `<ol>${STEP_NAMES.map((n, j) => `<li><span class="dot ${statuses[j]}"></span><a href="#step-${j + 1}" data-jump="${j + 1}">${j + 1}. ${n}</a></li>`).join("")}</ol>` : "")
-    ).join("");
+    $("rail").innerHTML = PHASES.map(([k, name], i) => {
+      const key = k.toLowerCase();
+      const live = key === "a" || (key === "b" && b);
+      const head = (i === 0 ? '<div class="group">Pipeline</div>' : i === 5 ? '<div class="group">Screens</div>' : "");
+      const status = key === "a" ? `<span class="dot ${dot(a)}"></span>` : key === "b" ? (b ? `<span class="dot ${dot(b)}"></span>` : '<span class="soon">after A</span>') : '<span class="soon">soon</span>';
+      const row = live
+        ? `<a class="ph ${view === key ? "on" : ""}" href="#" data-view="${key}" style="text-decoration:none"><span class="letter">${k}</span><span>${name}</span>${status}</a>`
+        : `<div class="ph"><span class="letter">${k}</span><span>${name}</span>${status}</div>`;
+      const steps = view === key ? `<ol>${PHASE_STEPS[key].map(n => `<li><span class="dot ${(stepOf(n) || {}).verdict || ""}"></span><a href="#" data-jump="${n}">${n}. ${STEP_NAMES[n - 1]}</a></li>`).join("")}</ol>` : "";
+      return head + row + steps;
+    }).join("");
 
-    const body = [step1, step2, step3, step4, step5, step6];
-    const cards = STEP_NAMES.map((_, i) => {
-      const s = stepOf(i + 1);
-      if (!s) return card(i + 1, null);
-      if (s.verdict === "fail") return card(i + 1, s, "");
-      try { return card(i + 1, s, body[i](s)); }
-      catch (e) { console.error(e); return card(i + 1, s, ""); }
+    const bodies = { 1: step1, 2: step2, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, 8: step8, 9: step9, 10: step10, 11: step11, 12: step12, 13: step13 };
+    const cards = nums.map(n => {
+      const s = stepOf(n);
+      if (!s) return card(n, null);
+      if (s.verdict === "fail") return card(n, s, "");
+      try { return card(n, s, bodies[n](s)); }
+      catch (e) { console.error(e); return card(n, s, ""); }
     }).join("");
 
     const m = r.meridian;
     const mapping = m ? Object.entries(m.coord_to_columns).map(([k, v]) => `<div>${esc(k)} ← ${esc(Array.isArray(v) ? v.join(", ") : v)}</div>`).join("") : "";
-    const preview = r.table_preview ? `<article class="card"><header><span class="n">→</span><h3>Ingested table</h3><a class="btn" href="/api/runs/${run.run_id}/table.csv">Download CSV</a>
-        <p class="sum">${num(r.rows)} rows, excluded columns dropped, dates parsed. Phase B cleans and aligns it to weeks.</p></header>
+    const isB = view === "b";
+    const preview = r.table_preview ? `<article class="card"><header><span class="n">→</span><h3>${isB ? "Clean weekly table" : "Ingested table"}</h3><a class="btn" href="/api/runs/${run.run_id}/${isB ? "cleaned" : "table"}.csv">Download CSV</a>
+        <p class="sum">${isB ? `${num(r.rows)} rows, one per ${r.granularity && r.granularity.geo_mode === "regional" ? "week and region" : "week"}, no empty cells. This is what Meridian reads.` : `${num(r.rows)} rows, excluded columns dropped, dates parsed. Phase B cleans and aligns it to weeks.`}</p></header>
         <div class="body"><div class="scroll"><table class="grid"><thead><tr>${r.table_preview.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>
-        <tbody>${r.table_preview.rows.map(row => `<tr>${row.map(v => `<td>${esc(v ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div></article>` : "";
+        <tbody>${r.table_preview.rows.map(row => `<tr>${row.map(v => `<td>${esc(typeof v === "number" ? Math.round(v * 100) / 100 : v ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div></article>` : "";
+
+    const next = isB
+      ? `<span class="muted small">${r.status === "complete" ? "One complete row per week. Phase C profiles the data and checks it can support an MMM." : "Answer the highlighted decision to continue."}</span>
+         <button class="btn primary" disabled title="Phase C is not built yet">Continue to C · Profile (not built yet)</button>`
+      : `<span class="muted small">${r.status === "complete" ? "Every column has a confirmed role." : r.status === "failed" ? "Fix the file and upload it again." : "Answer the highlighted decision to continue."}</span>
+         <button class="btn primary" data-view="b" ${b ? "" : "disabled"}>Continue to B · Clean</button>`;
+    const log = (b || a).decision_log;
 
     $("main").innerHTML = `
       <div class="runhead">
-        <div><span class="eyebrow">Phase A · steps 1–6</span><h1>Ingest</h1></div>
+        <div><span class="eyebrow">Phase ${isB ? "B · steps 7–13" : "A · steps 1–6"}</span><h1>${isB ? "Clean and align to weeks" : "Ingest"}</h1></div>
         <div class="chips"><span class="chip mono">${esc(run.file)}</span><span class="chip">run ${esc(run.run_id)}</span>
-          <span class="chip">${r.status === "complete" ? "Complete" : r.status === "failed" ? "Failed" : `${done} of 6 steps done · ${pending} decision${pending === 1 ? "" : "s"} needed`}</span></div>
+          <span class="chip">${r.status === "complete" ? "Complete" : r.status === "failed" ? "Failed" : `${done} of ${nums.length} steps done · ${pending} decision${pending === 1 ? "" : "s"} needed`}</span></div>
       </div>
-      <div class="progress" aria-hidden="true">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
+      <div class="progress" aria-hidden="true" style="grid-template-columns:repeat(${nums.length},1fr)">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
       <div class="cols">
-        <div class="steps">${cards}${preview}
-          <div class="nextbar"><span class="muted small">${r.status === "complete" ? "Every column has a confirmed role." : r.status === "failed" ? "Fix the file and upload it again." : "Answer the highlighted decision to continue."}</span>
-            <button class="btn primary" disabled title="Phase B is not built yet">Continue to B · Clean (not built yet)</button></div>
-        </div>
+        <div class="steps">${cards}${preview}<div class="nextbar">${next}</div></div>
         <aside class="side">
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
-          <div class="card"><h4>Decision log</h4>${r.decision_log.length ? `<div class="log">${r.decision_log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
+          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
           ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
         </aside>
       </div>`;
     wire();
     const first = r.steps.find(s => s.blocks);
-    if (first && !render.scrolled) { render.scrolled = true; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
+    if (first && render.scrolled !== view) { render.scrolled = view; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
+  }
+
+  function switchView(v) {
+    view = v;
+    history.replaceState(null, "", `#run=${run.run_id}${v === "b" ? "/b" : ""}`);
+    render();
+    window.scrollTo(0, 0);
   }
 
   function wire() {
-    const main = $("main");
+    const main = $("main"), app = $("app");
+    app.querySelectorAll("[data-view]").forEach(el => el.onclick = e => { e.preventDefault(); switchView(el.dataset.view); });
+    $("rail").querySelectorAll("[data-jump]").forEach(a => a.onclick = e => { e.preventDefault(); $("step-" + a.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
     main.querySelectorAll("[data-answer]").forEach(b => b.onclick = () => answer({ [b.dataset.answer]: b.dataset.value }));
     main.querySelectorAll("[data-select]").forEach(s => s.onchange = () => answer({ [s.dataset.select]: s.value }));
+
+    // Phase A
     const s3 = stepOf(3);
     main.querySelectorAll("[data-role]").forEach(sel => sel.onchange = () => {
       const g = decision(s3, "roles").context.suggestions[+sel.dataset.role];
@@ -489,12 +668,56 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (rpk) rpk.onsubmit = e => { e.preventDefault(); const v = parseFloat($("rpk-value").value); if (v > 0) answer({ revenue_per_kpi_value: v }); };
     const clear = $("rpk-clear");
     if (clear) clear.onclick = () => answer({ revenue_per_kpi_value: undefined });
+
+    // Phase B
+    const aggRules = () => Object.fromEntries([...main.querySelectorAll("[data-agg]")].map(s => [s.dataset.agg, s.value]));
+    main.querySelectorAll("[data-agg]").forEach(sel => sel.onchange = () => {
+      const dec = decision(stepOf(8), "aggregation_rules");
+      if (dec && dec.pending) return;  // applied together with the button
+      answer({ aggregation_rules: { ...(answers.aggregation_rules || {}), [sel.dataset.agg]: sel.value } });
+    });
+    const applyAgg = $("apply-agg");
+    if (applyAgg) applyAgg.onclick = () => answer({ aggregation_rules: aggRules() });
+    main.querySelectorAll("[data-outlier]").forEach(b => b.onclick = () => {
+      const dec = decision(stepOf(11), "outliers");
+      answer({ outliers: { ...dec.default, ...(answers.outliers || {}), [b.dataset.outlier]: b.dataset.value } });
+    });
+    const cellDecision = id => decision(stepOf(12), id);
+    main.querySelectorAll("[data-cell]").forEach(sel => sel.onchange = () => {
+      const input = main.querySelector(`[data-cellv="${sel.dataset.cell}"][data-key="${CSS.escape(sel.dataset.key)}"]`);
+      if (sel.value === "value") { input.hidden = false; input.focus(); return; }
+      const dec = cellDecision(sel.dataset.cell);
+      answer({ [dec.id]: { ...dec.default, ...(answers[dec.id] || {}), [sel.dataset.key]: sel.value } });
+    });
+    main.querySelectorAll("[data-cellv]").forEach(inp => inp.onchange = () => {
+      const v = parseFloat(inp.value);
+      if (Number.isNaN(v)) return;
+      const dec = cellDecision(inp.dataset.cellv);
+      answer({ [dec.id]: { ...dec.default, ...(answers[dec.id] || {}), [inp.dataset.key]: v } });
+    });
+    main.querySelectorAll("[data-applyall]").forEach(b => b.onclick = () => {
+      const dec = cellDecision(b.dataset.applyall);
+      answer({ [dec.id]: { ...dec.default, ...(answers[dec.id] || {}) } });
+    });
+    const infl = $("infl");
+    if (infl) {
+      $("infl-on").onchange = () => { $("infl-fields").hidden = $("infl-on").value !== "on"; };
+      infl.onsubmit = e => {
+        e.preventDefault();
+        if ($("infl-on").value !== "on") return answer({ inflation: "none" });
+        const rate = parseFloat($("infl-rate").value);
+        if (Number.isNaN(rate) || rate < 0 || rate > 50) return alert("Enter an annual rate between 0 and 50%.");
+        answer({ inflation: { base_year: +$("infl-year").value, annual_rate_pct: rate } });
+      };
+    }
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})$/);
-  if (m) api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);
-  else startScreen();
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(\/b)?$/);
+  if (m) {
+    view = m[2] ? "b" : "a";
+    api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);
+  } else startScreen();
 })();
 </script>
 </body>

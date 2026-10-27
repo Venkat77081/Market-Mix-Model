@@ -1,7 +1,8 @@
 # Meridian MMM Tool
 
-Built so far: **Phase A, Ingest (steps 1–6)** from the roadmap, a web UI for it, and a clickable
-design mock of the later screens in `mock/` (sample data only, not connected).
+Built so far: **Phase A, Ingest (steps 1–6)** and **Phase B, Clean (steps 7–13)** from the roadmap,
+a web UI for both, and a clickable design mock of the later screens in `mock/` (sample data only,
+not connected).
 
 ## Web UI
 
@@ -59,3 +60,22 @@ Each column's suggested role comes from, in order:
    Anything else becomes a low-confidence control.
 
 You still confirm every role before the run continues.
+
+## Phase B: clean and align to weeks (steps 7–13)
+
+Runs automatically once Phase A is complete, and produces one complete row per week (per region in a
+regional model) with no empty cells, which is what Meridian reads. Download it from the UI, or
+`python -m mmm_tool.ingest file.csv --out clean.csv` (add `--phase a` to stop after ingest).
+
+| Step | What it does | You decide | Blocks |
+|---|---|---|---|
+| 7 Coerce types | `N/A`, `NULL`, `-`, blanks → missing; `1,20,000`, `₹4,500`, `(250)` → numbers; yes/no → 1/0 | nothing | no |
+| 8 Collapse duplicate weeks | merges rows on the same date (and adds regions up for a national model): spend, exposure, KPI summed; indexes, prices averaged; flags take the maximum | the rule for a column it can't classify (`aggregation_rules`) | only if rows merge |
+| 9 Resample to weeks | days → weeks; weeks aligned to one start day; partial edge weeks dropped | week start (`week_start`) | no |
+| 10 Label every gap | adds absent weeks; labels empty cells not started, ended or missing; a zero stays zero | KPI gaps: interpolate + `kpi_imputed` flag, or trim (`kpi_gaps`); media holes: 0 or interpolate (`media_gaps`) | KPI gaps |
+| 11 Flag outliers | robust z-score on the KPI, weeks above 3.5 | event flag or keep, per week (`outliers`) | no |
+| 12 Check impossible values | negative spend, KPI zero in a trading week, an index or price jumping 10x | zero, keep, interpolate or a corrected number, per cell (`negative_values`, `kpi_zero_weeks`, `control_jumps`) | negative values |
+| 13 Normalise money | crore/lakh columns → ₹; mixed currency warning; optional inflation restatement; a fixed value per KPI unit becomes a column | `money_units`, `inflation` (`{"base_year": 2025, "annual_rate_pct": 5}`) | no |
+
+The words used to classify columns in step 8 and the unit words in step 13 are in
+`role_keywords.yaml`; add your own in `roles.yaml`.

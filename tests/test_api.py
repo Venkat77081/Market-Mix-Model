@@ -63,3 +63,30 @@ def test_recent_runs_list(client):
     runs = client.get("/api/runs").json()
     assert [r["run_id"] for r in runs] == [b["run_id"], a["run_id"]]
     assert runs[0]["status"] == "needs_input" and runs[0]["decisions"] == 1
+
+
+def test_phase_b_through_the_api(client):
+    r = client.post("/api/runs/sample/ins_messy").json()
+    run_id = r["run_id"]
+    assert r["phase"] == "A" and r["result_b"] is None
+    r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}}).json()
+    assert r["phase"] == "B" and r["result_b"]["pending"][0]["id"] == "kpi_gaps"
+    assert client.get(f"/api/runs/{run_id}/cleaned.csv").status_code == 409
+
+    neg = {"roles": {}, "kpi_gaps": "interpolate"}
+    r = client.put(f"/api/runs/{run_id}/answers", json={"answers": neg}).json()
+    cells = r["result_b"]["pending"][0]["context"]["cells"]
+    r = client.put(f"/api/runs/{run_id}/answers",
+                   json={"answers": {**neg, "negative_values": {c["key"]: "zero" for c in cells}}}).json()
+    assert r["result_b"]["status"] == "complete"
+    assert r["result_b"]["table_preview"]["rows"]
+    csv = client.get(f"/api/runs/{run_id}/cleaned.csv")
+    assert csv.status_code == 200 and len(csv.text.strip().splitlines()) == 157
+    runs = client.get("/api/runs").json()
+    assert runs[0]["phase"] == "B" and runs[0]["status"] == "complete"
+
+
+def test_decisions_say_whether_they_are_pending(client):
+    r = client.post("/api/runs/sample/ins_clean").json()
+    roles = r["result"]["steps"][2]["decisions"][0]
+    assert roles["id"] == "roles" and roles["pending"] is True

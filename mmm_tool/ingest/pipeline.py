@@ -40,7 +40,7 @@ class PhaseAResult:
 
     @property
     def pending(self) -> list[dict[str, Any]]:
-        return [asdict(d) for s in self.steps for d in s.decisions if d.pending]
+        return [{**asdict(d), "pending": True} for s in self.steps for d in s.decisions if d.pending]
 
     def coord_to_columns(self) -> dict[str, Any]:
         """Column names for Meridian's CoordToColumns plus the *_to_channel maps

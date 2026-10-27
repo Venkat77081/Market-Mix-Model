@@ -63,6 +63,9 @@ class Keywords:
     aliases: dict[str, str] = field(default_factory=dict)
     kpi_count: re.Pattern | None = None
     kpi_money: re.Pattern | None = None
+    agg_mean: re.Pattern | None = None
+    agg_sum: re.Pattern | None = None
+    money_units: dict[str, float] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
 
     def match(self, column: str, text: bool = False) -> Rule | None:
@@ -126,7 +129,7 @@ def load_keywords(user_path: Path | None = None) -> Keywords:
         layers.append(("your", user_path, _read(user_path)))
 
     kw = Keywords()
-    count, money = [], []
+    count, money, mean_w, sum_w = [], [], [], []
     for origin, path, data in reversed(layers):  # user rules first
         kw.rules += _rules(data, origin, path)
     for origin, path, data in layers:
@@ -134,7 +137,15 @@ def load_keywords(user_path: Path | None = None) -> Keywords:
         kw.aliases.update({words_of(k).replace(" ", "_"): words_of(v).replace(" ", "_") for k, v in (data.get("channel_aliases") or {}).items()})
         count += [str(x) for x in data.get("kpi_count_words") or []]
         money += [str(x) for x in data.get("kpi_money_words") or []]
+        mean_w += [str(x) for x in data.get("aggregation_mean_words") or []]
+        sum_w += [str(x) for x in data.get("aggregation_sum_words") or []]
+        for unit, rupees in (data.get("money_units") or {}).items():
+            try:
+                kw.money_units[words_of(unit)] = float(rupees)
+            except (TypeError, ValueError) as e:
+                raise KeywordError(f"{path}: money_units.{unit} must be a number of ₹.") from e
         kw.sources.append(str(path))
     kw.kpi_count, kw.kpi_money = _pattern(count), _pattern(money)
+    kw.agg_mean, kw.agg_sum = _pattern(mean_w), _pattern(sum_w)
     _cache.update(stamp=stamp, kw=kw)
     return kw

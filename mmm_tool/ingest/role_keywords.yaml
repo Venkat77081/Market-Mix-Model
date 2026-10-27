@@ -114,3 +114,26 @@ channel_aliases:
 # are checked first.
 kpi_count_words: [policies, policy, count, conversions, leads, applications, orders, units, customers, quotes, signups]
 kpi_money_words: [revenue, sales value, value, premium, gwp, gmv, turnover, amount, inr, rs, bookings, income]
+
+# Phase B (steps 8 and 9): how a control or non-media column is combined when
+# duplicate weeks collapse, regions add up to national, or days become weeks.
+# Spend, exposure and the KPI are always summed; 0/1 flags always take the
+# maximum. Other columns are averaged if their name has a mean word, summed
+# if it has a sum word, and otherwise you are asked.
+aggregation_mean_words: [index, price, rate, pct, percent, percentage, share, ratio, avg, average, mean,
+                         temperature, temp, cpi, inflation, gdp, unemployment, score, rating, discount]
+aggregation_sum_words: [spend, spends, cost, costs, registrations, registration, count, volume, sends,
+                        sales, units, orders, visits, sessions, calls, leads, amount, incentive, incentives]
+
+# Phase B (step 13): unit words in money column names, and the ₹ each unit is worth.
+money_units:
+  crore: 10000000
+  crores: 10000000
+  cr: 10000000
+  lakh: 100000
+  lakhs: 100000
+  lac: 100000
+  lacs: 100000
+  mn: 1000000
+  million: 1000000
+  thousand: 1000
