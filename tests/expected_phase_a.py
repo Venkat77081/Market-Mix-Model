@@ -7,6 +7,7 @@ checks. Run as a script to print a report for every file:
     python tests/expected_phase_a.py
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # run as a scri
 from mmm_tool.ingest import Answers, run_phase_a  # noqa: E402
 from mmm_tool.pipeline import run_pipeline  # noqa: E402
 
-D = Path(__file__).parent / "data" / "phase_a_tests"
+# PHASE_A_DIR points the checks at another copy of the test set (e.g. a newer one).
+D = Path(os.environ.get("PHASE_A_DIR", Path(__file__).parent / "data" / "phase_a_tests"))
 EXP = json.loads((D / "expected_phase_a.json").read_text())
 
 
@@ -166,6 +168,24 @@ def check(name):
         add("stops: empty file", "empty" in r.steps[-1].summary.lower(), r.steps[-1].summary)
     if name == "A17_header_only.csv":
         add("stops: 0 data rows", "0 data rows" in r.steps[-1].summary or "no data rows" in r.steps[-1].summary.lower(), r.steps[-1].summary)
+    if name == "A19_vague_money_column.csv":
+        s = sug.get("Biz Value", {})
+        add("Biz Value = Revenue for KPI (high, from values)", s.get("role") == "revenue_for_kpi" and s.get("confidence") == "high",
+            (s.get("role"), s.get("confidence"), s.get("reason", "")[:60]))
+    if "identical_pairs" in e:
+        groups = sorted(sorted(d.options) for d in dec.values() if d.id.startswith("identical:"))
+        add("both identical pairs flagged", groups == sorted(sorted(p) for p in e["identical_pairs"]), groups)
+        kept = [sum(1 for c in pair if r.roles.get(c) not in (None, "excluded")) for pair in e["identical_pairs"]]
+        add("one of each pair kept", kept == [1] * len(kept), kept)
+    if name.startswith("A21"):
+        add("36 monthly dates from 2023-01-01", s2 and (s2.details.get("unique_dates"), s2.details.get("first"), s2.details.get("last")) == (36, "2023-01-01", "2025-12-01"),
+            s2 and (s2.details.get("unique_dates"), s2.details.get("first"), s2.details.get("last")))
+        add("warns under 104 weeks", s6 and any("under 104 weeks" in w for w in s6.warnings), s6 and s6.warnings)
+    if name == "A22_channel_metric_grid.csv":
+        add("no reshape prompt", "wide_regions" not in dec, list(dec))
+        pairs = {c.spend: c.exposure for c in r.channels if not c.exposure_is_spend}
+        add("3 channels paired with impressions", len(r.channels) == 3 and len(pairs) == 3, pairs)
+        add("one national series", s6 and not s6.details.get("regions"), s6 and s6.details.get("regions"))
     if name == "A18_indian_number_formats.csv":
         p = run_pipeline(D / name, {}, accept_defaults=True)
         b12 = p.b and next((s for s in p.b.steps if s.step == 12), None)
