@@ -1,7 +1,8 @@
 """Step 7: coerce types.
 
-Text nulls (N/A, NULL, -, blank) become missing; number formats such as
-1,20,000, ₹4,500 and (250) become numbers; yes/no flags become 1/0. Nothing
+Text nulls (N/A, NULL, blank) become missing; a lone "-" is the accounting
+zero; number formats such as 1,20,000, ₹4,500, (250), ₹1.17 Cr and 12.6 L
+become numbers; yes/no flags become 1/0. Nothing
 for the user to decide. Cells that still can't be read are listed.
 """
 from __future__ import annotations
@@ -12,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from ..ingest.types import StepResult, Verdict
-from ..ingest.values import is_null_token, to_number
+from ..ingest.values import is_null_token, to_number, value_units
 from .context import Ctx
 
 STEP = 7
@@ -28,6 +29,7 @@ def currency_of(text: str) -> str | None:
 
 def coerce_types(ctx: Ctx) -> StepResult:
     df = ctx.df
+    units = value_units()
     report = []
     warnings = []
     for col in list(df.columns):
@@ -49,9 +51,9 @@ def coerce_types(ctx: Ctx) -> StepResult:
         text_null = ~blank & text.map(lambda v: v is not None and is_null_token(v))
         low = text.str.lower()
         yes_no = ~blank & ~text_null & low.isin(YES_NO)
-        numbers = s.map(to_number)
+        numbers = s.map(lambda v: to_number(v, units))
         numbers[yes_no] = low[yes_no].map(YES_NO)
-        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,₹$€£()%]|rs|inr", case=False, regex=True, na=False)
+        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,₹$€£()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
         unreadable = ~blank & ~text_null & numbers.isna()
         symbols = sorted({sym for v in text.dropna() if (sym := currency_of(v))})
         if symbols:

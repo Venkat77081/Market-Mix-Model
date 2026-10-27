@@ -222,3 +222,95 @@ def test_identical_columns_ask_which_to_keep(tmp_path):
     assert d.options == ["tv_spend", "tv_spend_copy"] and d.pending
     r = run(p, {"identical:tv_spend": "tv_spend_copy"})
     assert r.roles["tv_spend"] == "excluded" and r.roles["tv_spend_copy"] == "media_spend"
+
+
+# Remaining answer-key fixes: general rules on synthetic data ---------------
+
+def test_numbers_with_units_and_accounting_dash():
+    from mmm_tool.ingest.values import to_number
+
+    assert to_number("₹1.17 Cr") == 11_700_000 and to_number("12.6 L") == 1_260_000 and to_number("45k") == 45_000
+    assert to_number("-") == 0.0 and to_number("(1,234)") == -1234
+    assert np.isnan(to_number("12 apples")) and np.isnan(to_number("N/A"))
+
+
+def test_summary_rows_at_the_end_are_dropped(tmp_path):
+    df = gen.make_insurance(weeks=110)
+    df["week_start"] = df["week_start"].dt.strftime("%Y-%m-%d")
+    total = df.sum(numeric_only=True).to_dict()
+    lines = df.to_csv(index=False) + "Grand Total," + ",".join(str(total[c]) for c in df.columns[1:]) + "\n"
+    p = tmp_path / "with_total.csv"
+    p.write_text(lines)
+    s1 = step(run(p), 1)
+    assert s1.details["rows"] == 110 and s1.details["summary_rows_dropped"][0]["label"] == "Grand Total"
+
+
+def test_blank_lines_above_the_header_count_as_preamble(tmp_path):
+    df = gen.make_insurance(weeks=110)
+    p = tmp_path / "pre.csv"
+    p.write_text("Report\n\n\n" + df.to_csv(index=False))
+    s1 = step(run(p), 1)
+    assert (s1.details["header_row"], s1.details["preamble_rows"]) == (4, 3)
+
+
+def test_empty_and_header_only_messages(tmp_path):
+    (tmp_path / "e.csv").write_text("")
+    (tmp_path / "h.csv").write_text("week,policies,tv_spend\n")
+    assert "empty" in run(tmp_path / "e.csv").steps[-1].summary
+    assert "0 data rows" in run(tmp_path / "h.csv").steps[-1].summary
+
+
+def test_iso_week_dates():
+    assert classify("2024-W15") == ("iso_week", pd.Timestamp("2024-04-08"))
+    assert classify("2024/W15") == ("iso_week", pd.Timestamp("2024-04-08"))
+    assert classify("2024W15-3") == ("iso_week", pd.Timestamp("2024-04-10"))
+
+
+def test_a_column_of_serials_or_iso_weeks_is_read_without_asking(tmp_path):
+    df = gen.make_insurance(weeks=110)
+    df["week_start"] = [f"{d.isocalendar().year}-W{d.isocalendar().week:02d}" for d in df["week_start"]]
+    r = run(write(tmp_path, df))
+    assert "date_fixes" not in decisions(r) and r.status == "complete"
+
+
+def test_a_few_serials_in_a_date_column_are_offered_with_their_lines(tmp_path):
+    df = gen.make_insurance(weeks=110)
+    df["week_start"] = df["week_start"].dt.strftime("%Y-%m-%d").astype(object)
+    df.loc[5, "week_start"] = "44963"  # 2023-02-06, the week that belongs there, as an Excel serial
+    p = write(tmp_path, df)
+    r = run(p, defaults=False)
+    d = decisions(r)["date_fixes"]
+    assert "line 7" in d.question and "2023-02-06" in d.question
+    assert run(p, {"date_fixes": "apply", "roles": {}}, defaults=False).status == "complete"
+    r = run(p, {"date_fixes": "no"}, defaults=False)
+    assert decisions(r)["unparseable_dates"].pending
+
+
+def test_row_index_and_free_text_are_excluded():
+    from mmm_tool.ingest.roles import suggest_roles
+
+    df = gen.make_insurance()
+    df.insert(0, "sl_no", range(1, len(df) + 1))
+    df["comments"] = [None] * len(df)
+    df.loc[[3, 40], "comments"] = "new creative"
+    s = {x.column: x for x in suggest_roles(df, "week_start")}
+    assert s["sl_no"].role == "excluded" and "row numbers" in s["sl_no"].reason
+    assert s["comments"].role == "excluded" and "free text" in s["comments"].reason
+
+
+def test_exposure_is_offered_to_the_spend_it_moves_with(tmp_path):
+    df = gen.make_insurance()
+    df = df.rename(columns={"meta_spend": "fb_cost"})  # names no longer match meta_impressions
+    p = write(tmp_path, df)
+    r = run(p, defaults=False, answers={"roles": {}})
+    d = decisions(r)["pair:meta_impressions"]
+    assert d.default == "facebook" and d.pending and d.context["correlation"] > 0.9  # fb is an alias of facebook
+    r = run(p, {"pair:meta_impressions": "facebook"})
+    assert next(c for c in r.channels if c.spend == "fb_cost").exposure == "meta_impressions"
+
+
+def test_unrelated_exposure_is_not_offered(tmp_path):
+    df = gen.make_insurance()
+    df["cinema_impressions"] = np.random.default_rng(5).gamma(3, 1e5, len(df))  # no cinema spend, no relation
+    r = run(write(tmp_path, df))
+    assert "pair:cinema_impressions" not in decisions(r) and r.roles["cinema_impressions"] == "organic_media"

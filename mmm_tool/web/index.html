@@ -318,8 +318,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function step2(s) {
     const d = s.details;
     const f = d.formats || {};
-    const colors = { iso: "var(--accent)", dayfirst: "var(--pass)", monthfirst: "var(--pass)", ambiguous: "var(--warn)", same_either_way: "var(--muted)", text_month: "var(--accent)", datetime: "var(--accent)", excel_serial: "var(--accent)", unparseable: "var(--block)" };
-    const label = { iso: "ISO", dayfirst: "day-first", monthfirst: "month-first", ambiguous: "ambiguous", same_either_way: "same either way", text_month: "month names", datetime: "Excel dates", excel_serial: "Excel serials", unparseable: "unreadable" };
+    const colors = { iso: "var(--accent)", dayfirst: "var(--pass)", monthfirst: "var(--pass)", ambiguous: "var(--warn)", same_either_way: "var(--muted)", text_month: "var(--accent)", datetime: "var(--accent)", excel_serial: "var(--accent)", month_only: "var(--accent)", iso_week: "var(--accent)", unparseable: "var(--block)" };
+    const label = { iso: "ISO", dayfirst: "day-first", monthfirst: "month-first", ambiguous: "ambiguous", same_either_way: "same either way", text_month: "month names", datetime: "Excel dates", excel_serial: "Excel serials", month_only: "month only", iso_week: "ISO weeks", unparseable: "unreadable" };
     const bar = Object.entries(f).map(([k, v]) => `<span style="flex:${v};background:${colors[k] || "var(--muted)"}" title="${v} ${label[k] || k}">${v} ${label[k] || k}</span>`).join("");
     let out = `<dl class="kv"><div><dt>Date column</dt><dd class="mono">${esc(d.date_column)}</dd></div>
       ${d.first ? `<div><dt>From</dt><dd>${esc(d.first)}</dd></div><div><dt>To</dt><dd>${esc(d.last)}</dd></div>` : ""}
@@ -330,6 +330,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const reg = order.context.regularity || {};
       out += `<div class="decide ${order.pending ? "" : "soft"}"><p>${esc(order.question)} <span class="muted">Spacing check: day-first ${Math.round((reg.dayfirst || 0) * 100)}% regular, month-first ${Math.round((reg.monthfirst || 0) * 100)}%.</span></p>${seg(order)}</div>`;
     }
+    const un = d.unreadable || [];
+    if (un.length) out += `<div class="scroll"><table style="min-width:420px"><thead><tr><th>Line</th><th>Value</th><th>Can be read as</th></tr></thead><tbody>${un.map(u =>
+      `<tr><td class="mono">${u.line}</td><td class="mono">${esc(u.value) || '<span class="muted">(blank)</span>'}</td><td>${u.suggestion ? esc(u.suggestion) : '<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table></div>`;
+    const fixes = decision(s, "date_fixes");
+    if (fixes) out += `<div class="decide ${fixes.pending ? "" : "soft"}"><p>${esc(fixes.question)}</p>${seg(fixes, null, { apply: "Use these readings", no: "No" })}</div>`;
     const dup = decision(s, "duplicate_dates");
     if (dup) out += `<div class="decide ${dup.pending ? "" : "soft"}"><p>${esc(dup.question)}</p>${dup.answered ? `<span class="pill pass">Merged in Phase B</span>` : `<button class="btn primary" data-answer="duplicate_dates" data-value="merge">Merge them in Phase B</button>`}</div>`;
     const bad = decision(s, "unparseable_dates");
@@ -419,11 +424,13 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         ${exposureCols.map(o => `<option ${!c.exposure_is_spend && c.exposure === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
       return `<tr><td><b>${esc(c.name)}</b></td><td class="mono">${esc(c.spend)}</td><td>${sel}</td><td>${c.exposure_is_spend ? '<span class="pill wait">spend only</span>' : '<span class="pill pass">paired</span>'}</td></tr>`;
     }).join("");
+    const valuePairs = s.decisions.filter(d => d.id.startsWith("pair:")).map(d =>
+      `<div class="decide ${d.pending ? "" : "soft"}"><p>${esc(d.question)}</p>${seg(d, null, { [d.options[0]]: `Pair with ${d.context.spend}`, organic_media: "Unpaid media", excluded: "Drop it" })}</div>`).join("");
     const unpaired = s.decisions.filter(d => d.id.startsWith("unpaired:")).map(d =>
       `<div class="decide soft" style="background:var(--warn-soft)"><p>${esc(d.question)}</p>${seg(d)}</div>`).join("");
     const notes = (s.details.notes || []).map(n => `<li>${esc(n)}</li>`).join("");
     return `<div class="scroll"><table style="min-width:560px"><thead><tr><th>Channel</th><th>Spend</th><th>Exposure</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${unpaired}${notes ? `<ul class="muted small" style="margin:0;padding-left:18px">${notes}</ul>` : ""}`;
+      ${valuePairs}${unpaired}${notes ? `<ul class="muted small" style="margin:0;padding-left:18px">${notes}</ul>` : ""}`;
   }
 
   function step5(s) {
@@ -497,6 +504,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function step9(s) {
     const d = s.details;
     const dec = decision(s, "week_start");
+    const part = decision(s, "partial_weeks");
     return `<dl class="kv">
         <div><dt>Data came in</dt><dd>${esc(d.frequency_in || d.frequency)}</dd></div>
         ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
@@ -504,7 +512,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         ${(d.partial_weeks_dropped || []).length ? `<div><dt>Partial weeks dropped</dt><dd class="mono">${d.partial_weeks_dropped.map(esc).join(", ")}</dd></div>` : ""}
       </dl>
       ${dec ? `<div class="decide soft"><p>${esc(dec.question)} <span class="muted">Found in the data: ${esc(dec.context.detected)}.</span></p>
-        <select data-select="week_start" aria-label="Week start">${WEEKDAYS.map(w => `<option ${w === current(dec) ? "selected" : ""}>${w}</option>`).join("")}</select></div>` : ""}`;
+        <select data-select="week_start" aria-label="Week start">${WEEKDAYS.map(w => `<option ${w === current(dec) ? "selected" : ""}>${w}</option>`).join("")}</select></div>` : ""}
+      ${part ? `<div class="decide soft"><p>${esc(part.question)}</p>${seg(part, null, { keep: "Keep", drop: "Drop" })}</div>` : ""}`;
   }
 
   function step10(s) {

@@ -146,17 +146,23 @@ def test_regional_model_keeps_regions(files):
 
 # Step 9 ------------------------------------------------------------------
 
-def test_daily_becomes_full_weeks(files):
+def test_daily_becomes_weeks(files):
     r = run_pipeline(files["daily"], accept_defaults=True)
     t, d = r.b.table, step(r, 9).details
     assert (t["date"].dt.dayofweek == 0).all()  # Monday by default
-    assert len(t) == 103 and len(d["partial_weeks_dropped"]) == 2
+    assert len(t) == 105 and len(d["partial_weeks_kept"]) == 2  # partial edge weeks kept by default
     raw = pd.read_csv(files["daily"], parse_dates=["date"])
-    first = t["date"].iloc[0]
-    week = raw[(raw["date"] >= first) & (raw["date"] < first + pd.Timedelta(days=7))]
-    assert np.isclose(t["tv_spend"].iloc[0], week["tv_spend"].sum())
-    assert np.isclose(t["premium_index"].iloc[0], week["premium_index"].mean())
+    second = t["date"].iloc[1]
+    week = raw[(raw["date"] >= second) & (raw["date"] < second + pd.Timedelta(days=7))]
+    assert np.isclose(t["tv_spend"].iloc[1], week["tv_spend"].sum())
+    assert np.isclose(t["premium_index"].iloc[1], week["premium_index"].mean())
     assert t["festive_flag"].max() == 1.0
+    assert step(r, 9).warnings
+
+
+def test_partial_edge_weeks_can_be_dropped(files):
+    r = run_pipeline(files["daily"], {"partial_weeks": "drop"}, accept_defaults=True)
+    assert len(r.b.table) == 103 and len(step(r, 9).details["partial_weeks_dropped"]) == 2
 
 
 def test_week_start_answer(files):

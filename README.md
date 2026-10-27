@@ -79,3 +79,9 @@ regional model) with no empty cells, which is what Meridian reads. Download it f
 
 The words used to classify columns in step 8 and the unit words in step 13 are in
 `role_keywords.yaml`; add your own in `roles.yaml`.
+
+## Phase A answer key
+
+`tests/data/phase_a_tests/` holds 19 test exports and `expected_phase_a.json`, their answer key.
+`python tests/expected_phase_a.py` prints a check-by-check report for every file; the same checks run
+in `pytest` (`tests/test_expected_phase_a.py`).

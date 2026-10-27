@@ -10,6 +10,7 @@ import re
 import time
 from dataclasses import asdict, dataclass
 
+import numpy as np
 import pandas as pd
 
 from .keywords import Keywords, load_keywords, words_of
@@ -45,6 +46,14 @@ def channel_of(name: str, kw: Keywords | None = None) -> str:
     return kw.aliases.get(stem, stem)
 
 
+def is_row_index(values: pd.Series) -> bool:
+    """0, 1, 2… or 1, 2, 3… in order on every row: a row number left by an export."""
+    v = values.to_numpy()
+    if len(v) < 3 or np.isnan(v).any():
+        return False
+    return v[0] in (0, 1) and bool((np.diff(v) == 1).all())
+
+
 def _is_binary(values: pd.Series) -> bool:
     v = values.dropna().unique()
     return len(v) > 0 and set(v) <= {0.0, 1.0}
@@ -74,7 +83,11 @@ def suggest_role(col: str, series: pd.Series, date_col: str, kw: Keywords | None
         return RoleSuggestion(col, role, "high", "yes/no flag, read as 1/0", source="values")
 
     if numeric_share(series) < 0.8:
-        distinct = series[~series.map(is_null_token)].nunique()
+        filled = present.map(len).gt(0).sum() / max(len(series), 1)
+        distinct = present.nunique()
+        # A region is named on every row and is short; notes are sparse or long.
+        if filled < 0.8 or present.map(len).mean() > 40:
+            return RoleSuggestion(col, "excluded", "high", f"free text (filled in {filled:.0%} of rows), not a variable", source="values")
         rule = kw.match(col, text=True)
         if rule is not None:
             return RoleSuggestion(col, "geo", "high", rule.reason, source=f"{rule.origin} words")
@@ -83,6 +96,8 @@ def suggest_role(col: str, series: pd.Series, date_col: str, kw: Keywords | None
         return RoleSuggestion(col, "excluded", "low", "text column that isn't a region", source="values")
 
     values = numeric_view(series)
+    if is_row_index(values):
+        return RoleSuggestion(col, "excluded", "high", "row numbers (0, 1, 2… or 1, 2, 3…), not a variable", source="values")
     rule = kw.match(col)
     if rule is not None:
         confidence, reason = rule.confidence, rule.reason

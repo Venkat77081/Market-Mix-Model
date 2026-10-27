@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 from charset_normalizer import from_bytes
 
+from .keywords import load_keywords, words_of
 from .types import Answers, Decision, StepResult, Verdict
 from .values import is_null_token, to_number
 
@@ -104,8 +105,21 @@ def _unique_names(raw_names: list) -> list[str]:
     return names
 
 
-def grid_to_table(grid: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
-    """Return (table, header row number in the file, count of preamble lines)."""
+def summary_label(row: pd.Series) -> str | None:
+    """The summary word ('TOTAL', 'Grand total') labelling a row, if any. Only
+    text cells count, so a number never makes a row a summary."""
+    pattern = load_keywords().summary_rows
+    if pattern is None:
+        return None
+    for v in row:
+        if isinstance(v, str) and not is_null_token(v) and pd.isna(to_number(v)) and pattern.fullmatch(words_of(v)):
+            return v.strip()
+    return None
+
+
+def grid_to_table(grid: pd.DataFrame) -> tuple[pd.DataFrame, int, list[int], list[dict]]:
+    """Return (table, header row number in the file, file line of each table
+    row, summary rows dropped from the end)."""
     filled = ~grid.map(is_null_token).all(axis=1)
     rows = grid[filled]
     file_row = list(rows.index)
@@ -113,11 +127,18 @@ def grid_to_table(grid: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     header = detect_header_row(rows)
     table = rows.iloc[header + 1 :].copy()
     table.columns = _unique_names(list(rows.iloc[header]))
-    blank_rows = table.map(is_null_token).all(axis=1)
-    table = table[~blank_rows]
     blank_cols = [c for c in table.columns if c.startswith("unnamed_") and table[c].map(is_null_token).all()]
-    table = table.drop(columns=blank_cols).reset_index(drop=True)
-    return table, file_row[header] + 1, header
+    table = table.drop(columns=blank_cols)
+    # Trailing TOTAL / average rows are report summaries, not weeks.
+    summaries = []
+    while len(table) and len(summaries) < 3:
+        label = summary_label(table.iloc[-1])
+        if label is None:
+            break
+        summaries.insert(0, {"line": file_row[table.index[-1]] + 1, "label": label})
+        table = table.iloc[:-1]
+    lines = [file_row[i] + 1 for i in table.index]
+    return table.reset_index(drop=True), file_row[header] + 1, lines, summaries
 
 
 def _sheet_score(grid: pd.DataFrame) -> int:
@@ -168,14 +189,18 @@ def load_file(path: str | Path, answers: Answers) -> tuple[pd.DataFrame | None, 
     else:
         return None, StepResult(STEP, NAME, Verdict.FAIL, f"Unsupported file type '{ext}'. Upload a CSV or Excel file.", details)
 
-    if grid.empty:
-        return None, StepResult(STEP, NAME, Verdict.FAIL, "The file has no rows.", details)
+    if grid.empty or grid.map(is_null_token).all().all():
+        what = "0 bytes" if ext in TEXT_EXT and not path.stat().st_size else "only blank cells"
+        return None, StepResult(STEP, NAME, Verdict.FAIL, f"The file is empty ({what}). Export the data again.", details)
 
-    table, header_row, n_preamble = grid_to_table(grid)
+    table, header_row, lines, summaries = grid_to_table(grid)
+    n_preamble = header_row - 1  # every line above the header, blank ones included
     preamble = grid.iloc[: header_row - 1]
     details.update(
         header_row=header_row,
         preamble_rows=n_preamble,
+        data_lines=lines,
+        summary_rows_dropped=summaries,
         preamble_text=[
             " ".join(str(v) for v in r if not is_null_token(v))
             for r in preamble.itertuples(index=False)
@@ -185,8 +210,11 @@ def load_file(path: str | Path, answers: Answers) -> tuple[pd.DataFrame | None, 
         columns=list(table.columns),
         preview=[["" if is_null_token(v) else str(v) for v in r] for r in table.head(5).itertuples(index=False)],
     )
-    if table.empty or len(table.columns) < 2:
-        return None, StepResult(STEP, NAME, Verdict.FAIL, "No data table found below the header row.", details)
+    if len(table.columns) < 2:
+        return None, StepResult(STEP, NAME, Verdict.FAIL, "No data table found: fewer than 2 columns.", details)
+    if table.empty:
+        return None, StepResult(STEP, NAME, Verdict.FAIL,
+                                f"Header found on row {header_row} but 0 data rows below it.", details)
 
     parts = [f"{len(table):,} rows × {len(table.columns)} columns"]
     if "encoding" in details:
@@ -195,6 +223,8 @@ def load_file(path: str | Path, answers: Answers) -> tuple[pd.DataFrame | None, 
         parts.append(f"sheet '{details['sheet']}'")
     if n_preamble:
         parts.append(f"header on row {header_row}, {n_preamble} preamble line(s) skipped")
+    if summaries:
+        parts.append(", ".join(f"'{x['label']}' row on line {x['line']} dropped as a summary" for x in summaries))
     verdict = Verdict.PASS
     if any(c.startswith("unnamed_") for c in table.columns):
         verdict = Verdict.WARN

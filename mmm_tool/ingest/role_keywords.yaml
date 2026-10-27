@@ -57,7 +57,7 @@ rules:
     reason: a lever you control that isn't media
 
   - role: control
-    words: [index, idx, competitor, competition]
+    words: [index, idx, competitor, competition, sov, share of voice]
     confidence: high
     reason: outside factor by name
 
@@ -67,9 +67,16 @@ rules:
     reason: outside factor by name
 
   - role: media_spend
-    words: [spend, spends, cost, costs, investment, budget, outlay]
+    words: [spend, spends, cost, costs, investment, budget, outlay, ads, ad, advertising]
     confidence: high
     reason: spend by name
+
+  # Fees and payouts usually go to a media partner (an aggregator, affiliates),
+  # but not always, so they are suggested with low confidence for you to confirm.
+  - role: media_spend
+    words: [fees, fee, payout, payouts]
+    confidence: low
+    reason: fees and payouts are usually paid to a media partner; confirm this is paid media
 
   - role: media
     words: [grp, grps, trp, trps, impression, impressions, impr, imps, click, clicks, view, views, insertions, spots]
@@ -78,6 +85,7 @@ rules:
 
   - role: kpi
     words: [kpi, policies, policy count, conversion, conversions, lead, leads, application, applications,
+            quote, quotes, quote requests, enquiry, enquiries, inquiry, inquiries, requests,
             order, orders, unit, units, signups, sign ups, acquisition, acquisitions, customers, quotes]
     confidence: high
     reason: count of outcomes by name
@@ -103,7 +111,7 @@ channel_words_to_strip: [
   spend, spends, cost, costs, investment, inr, rs, cr, lakh, lakhs, amount,
   grp, grps, trp, trps, impressions, impression, impr, imps, clicks, click,
   views, view, reach, frequency, freq, rf, sends, send, opens, posts,
-  media, paid, weekly, total,
+  media, paid, weekly, total, ads, ad, advertising, fees, fee, payout, payouts,
 ]
 
 # Different names for the same channel, after the words above are dropped.
@@ -117,7 +125,8 @@ channel_aliases:
 
 # Step 5: is the KPI a count (non-revenue) or money (revenue)? Count words
 # are checked first.
-kpi_count_words: [policies, policy, count, conversions, leads, applications, orders, units, customers, quotes, signups]
+kpi_count_words: [policies, policy, count, conversions, leads, applications, orders, units, customers, quote, quotes,
+                  requests, enquiries, inquiries, signups]
 kpi_money_words: [revenue, sales value, value, premium, gwp, gmv, turnover, amount, inr, rs, bookings, income]
 
 # Phase B (steps 8 and 9): how a control or non-media column is combined when
@@ -142,3 +151,21 @@ money_units:
   mn: 1000000
   million: 1000000
   thousand: 1000
+
+# Step 1: a trailing row whose label is one of these is a summary (TOTAL), not data.
+summary_row_words: [total, grand total, sub total, subtotal, sum, totals, average, avg, mean]
+
+# Unit words allowed after a number in a cell: "₹1.17 Cr", "12.6 L", "45k".
+value_units:
+  cr: 10000000
+  crore: 10000000
+  crores: 10000000
+  l: 100000
+  lakh: 100000
+  lakhs: 100000
+  lac: 100000
+  lacs: 100000
+  k: 1000
+  thousand: 1000
+  mn: 1000000
+  million: 1000000

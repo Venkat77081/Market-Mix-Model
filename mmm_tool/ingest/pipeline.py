@@ -124,7 +124,7 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         return stop(step)
     steps.append(step)
 
-    table, date_col, step = parse_dates(table, ans)
+    table, date_col, step = parse_dates(table, ans, lines=steps[0].details.get("data_lines"))
     if step.blocks or table is None:
         return stop(step)
     steps.append(step)
@@ -139,7 +139,9 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         ans.values["date_column"] = new_date
         return run_phase_a(path, ans, memory=memory)
 
-    channels, roles, step = pair_channels(roles, ans)
+    channels, roles, step = pair_channels(roles, ans, table)
+    if step.blocks:
+        return stop(step)
     steps.append(step)
 
     kpi, step, table = set_kpi_type(table, roles, ans)

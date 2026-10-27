@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+import pandas as pd
+
 from .roles import channel_of
 from .types import Answers, Decision, StepResult, Verdict
+from .values import numeric_view
 
 STEP = 4
 NAME = "Pair spend with exposure"
@@ -70,8 +73,23 @@ def propose_pairs(roles: dict[str, str]) -> tuple[dict[str, dict], list[str]]:
     return pairs, notes
 
 
-def pair_channels(roles: dict[str, str], answers: Answers) -> tuple[list[Channel], dict[str, str], StepResult]:
-    """Return channels, the possibly updated roles, and the step result."""
+VALUE_PAIR_CORRELATION = 0.7  # exposure that moves this closely with a spend column is offered as its pair
+
+
+def value_match(df: pd.DataFrame | None, col: str, candidates: list[Channel]) -> tuple[Channel, float] | None:
+    """The spend-only channel whose spend moves most closely with this exposure column."""
+    if df is None or col not in df.columns:
+        return None
+    x = numeric_view(df[col])
+    scored = [(c, numeric_view(df[c.spend]).corr(x)) for c in candidates if c.spend in df.columns]
+    scored = [(c, r) for c, r in scored if r == r and r > VALUE_PAIR_CORRELATION]
+    return max(scored, key=lambda t: t[1]) if scored else None
+
+
+def pair_channels(roles: dict[str, str], answers: Answers, df: pd.DataFrame | None = None) -> tuple[list[Channel], dict[str, str], StepResult]:
+    """Return channels, the possibly updated roles, and the step result. With
+    the table, exposure that no spend column matches by name is offered to the
+    spend column it moves with (FB spend and Meta impressions)."""
     roles = dict(roles)
     proposed, notes = propose_pairs(roles)
     d = Decision(
@@ -100,10 +118,6 @@ def pair_channels(roles: dict[str, str], answers: Answers) -> tuple[list[Channel
             if exp:
                 roles[exp] = "media"
 
-    spend_only = [c.name for c in channels if c.exposure_is_spend]
-    if spend_only:
-        notes.append(f"No exposure column for {spend_only}; spend is used as exposure.")
-
     # Leftover exposure, reach or frequency columns. A second exposure metric
     # for a paired channel is dropped; one with no spend at all can't get an
     # ROI, so the user can keep it as unpaid media or drop it.
@@ -115,6 +129,28 @@ def pair_channels(roles: dict[str, str], answers: Answers) -> tuple[list[Channel
         if twin is not None:
             roles[col] = "excluded"
             notes.append(f"'{col}' is a second exposure metric for {twin.name}; '{twin.exposure or twin.reach}' is used instead.")
+            continue
+        match = value_match(df, col, [c for c in channels if c.kind == "media" and c.exposure_is_spend]) if role == "media" else None
+        if match:
+            ch, corr = match
+            dp = Decision(
+                id=f"pair:{col}",
+                step=STEP,
+                question=(f"'{col}' has no spend column with a matching name, but it moves with '{ch.spend}' "
+                          f"(correlation {corr:.2f}). Pair them as one channel?"),
+                options=[ch.name, "organic_media", "excluded"],
+                default=ch.name,
+                blocking=True,
+                context={"spend": ch.spend, "exposure": col, "correlation": round(float(corr), 3)},
+            )
+            decisions.append(dp)
+            choice = answers.ask(dp)
+            if choice == ch.name:
+                ch.exposure, ch.exposure_is_spend = col, False
+                used.add(col)
+                notes.append(f"'{ch.spend}' paired with '{col}' by their values (correlation {corr:.2f}).")
+            elif choice in ("organic_media", "excluded"):
+                roles[col] = choice
             continue
         unpaired = Decision(
             id=f"unpaired:{col}",
@@ -128,6 +164,9 @@ def pair_channels(roles: dict[str, str], answers: Answers) -> tuple[list[Channel
         roles[col] = answer
         warnings.append(f"'{col}' has no spend column; set to {answer}.")
 
+    spend_only = [c.name for c in channels if c.exposure_is_spend]
+    if spend_only:
+        notes.append(f"No exposure column for {spend_only}; spend is used as exposure.")
     details = {
         "channels": [asdict(c) for c in channels],
         "notes": notes,

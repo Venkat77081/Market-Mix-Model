@@ -30,7 +30,11 @@ YEAR_MONTH = re.compile(r"^(\d{4})[-/.](\d{1,2})$")
 MONTH_YEAR = re.compile(r"^(\d{1,2})[-/.](\d{4})$")
 MONTH_NAME_YEAR = re.compile(r"^([A-Za-z]{3,9})\.?[\s\-/,']*(\d{4})$")
 MONTHS = {name.lower(): i for i in range(1, 13) for name in (calendar.month_name[i], calendar.month_abbr[i])} | {"sept": 9}
+ISO_WEEK = re.compile(r"^(\d{4})[-/ ]?W(\d{1,2})(?:[-/ ]?([1-7]))?$", re.IGNORECASE)
 HAS_MONTH_NAME = re.compile(r"[A-Za-z]{3,}")
+# Readings that are right when a whole column uses them, but suspicious when
+# a few rows of an ordinary date column do: they are offered, not applied.
+OFFERED = {"excel_serial": "an Excel serial date", "iso_week": "an ISO week"}
 NO_DAY = datetime(1900, 1, 1)  # dateutil fills missing parts from this, never from today
 DATE_NAME = re.compile(r"date|week|time|period|day|month", re.IGNORECASE)
 EXCEL_EPOCH = datetime(1899, 12, 30)
@@ -49,7 +53,7 @@ def _safe(y: int, m: int, d: int):
 
 
 def classify(value) -> tuple[str, object]:
-    """Return (kind, parsed). kind is one of: datetime, excel_serial, iso, month_only,
+    """Return (kind, parsed). kind is one of: datetime, excel_serial, iso, month_only, iso_week,
     dayfirst, monthfirst, same_either_way, ambiguous, text_month, unparseable. For ambiguous
     rows `parsed` is (dayfirst_reading, monthfirst_reading)."""
     if is_null_token(value):
@@ -66,6 +70,12 @@ def classify(value) -> tuple[str, object]:
         if m:
             ts = _safe(int(m[ym[0]]), int(m[ym[1]]), 1)
             return ("month_only", ts) if ts is not None else ("unparseable", None)
+    m = ISO_WEEK.match(s)
+    if m:
+        try:
+            return "iso_week", pd.Timestamp(date.fromisocalendar(int(m[1]), int(m[2]), int(m[3] or 1)))
+        except ValueError:
+            return "unparseable", None
     m = MONTH_NAME_YEAR.match(s)
     if m and m[1].lower() in MONTHS:
         return "month_only", _safe(int(m[2]), MONTHS[m[1].lower()], 1)
@@ -140,7 +150,9 @@ def regularity(dates: list[pd.Timestamp]) -> float:
     return float(np.mean(np.abs(gaps - med) <= 3))
 
 
-def parse_dates(df: pd.DataFrame, answers: Answers, date_col: str | None = None) -> tuple[pd.DataFrame | None, str | None, StepResult]:
+def parse_dates(df: pd.DataFrame, answers: Answers, date_col: str | None = None,
+                lines: list[int] | None = None) -> tuple[pd.DataFrame | None, str | None, StepResult]:
+    """lines: the file line of each row (from step 1), for messages."""
     date_col = answers.values.get("date_column", date_col) or find_date_column(df)
     if date_col is None or date_col not in df.columns:
         return None, None, StepResult(
@@ -206,25 +218,56 @@ def parse_dates(df: pd.DataFrame, answers: Answers, date_col: str | None = None)
             f"({counts['monthfirst']}) dates. Each was read in the only way that is valid; check the source export."
         )
 
-    # Rows whose date can't be read.
+    # Rows whose date can't be read, each listed with its file line. A few
+    # Excel serials or ISO weeks in an ordinary date column are offered as fixes.
+    line = (lambda i: lines[i]) if lines and len(lines) == len(df) else (lambda i: i + 2)
+    readable = sum(1 for k in kinds if k != "unparseable")
+    offered = [i for i, k in enumerate(kinds) if k in OFFERED and counts[k] < 0.5 * readable]
+    raw = lambda i: "" if is_null_token(df[date_col].iloc[i]) and str(df[date_col].iloc[i]).strip() == "" else str(df[date_col].iloc[i])  # noqa: E731
+    unreadable = [{"row": i, "line": line(i), "value": raw(i),
+                   "suggestion": (f"{OFFERED[kinds[i]]}: {parsed[i].date()}" if i in offered else None)}
+                  for i, k in enumerate(kinds) if k == "unparseable" or i in offered]
+    details["unreadable"] = unreadable
+    taken = {parsed[i] for i, k in enumerate(kinds) if k != "unparseable" and i not in offered}
+    for u in unreadable:
+        if u["suggestion"] and parsed[u["row"]] in taken:
+            u["suggestion"] += " (that week is already in the file)"
+    if offered:
+        d = Decision(
+            id="date_fixes",
+            step=STEP,
+            question="These can be read another way: " + "; ".join(
+                f"'{u['value']}' (line {u['line']}) as {u['suggestion']}" for u in unreadable if u["suggestion"]) + ". Use these readings?",
+            options=["apply", "no"],
+            default="apply",
+            blocking=True,
+            context={"rows": [u for u in unreadable if u["suggestion"]]},
+        )
+        decisions.append(d)
+        if answers.ask(d) == "apply":
+            notes.append(f"{len(offered)} date(s) read as suggested ({', '.join(sorted({kinds[i].replace('_', ' ') for i in offered}))})")
+        for i in offered:
+            if d.answer != "apply":
+                kinds[i], parsed[i] = "unparseable", None
     bad = [i for i, k in enumerate(kinds) if k == "unparseable"]
     drop = False
     if bad:
-        examples = [str(df[date_col].iloc[i]) for i in bad[:5]]
+        listed = [f"line {line(i)}: '{raw(i)}'" for i in bad]
         details["unparseable_rows"] = [int(i) for i in bad]
         d = Decision(
             id="unparseable_dates",
             step=STEP,
-            question=f"{len(bad)} row(s) have a date that can't be read (e.g. {examples}). Drop those rows?",
+            question=(f"{len(bad)} row(s) have a date that can't be read: {', '.join(listed[:20])}"
+                      f"{'…' if len(listed) > 20 else ''}. Fix them in the file, or drop those rows?"),
             options=["drop_rows"],
             default=None,
             blocking=True,
-            context={"examples": examples},
+            context={"rows": [u for u in unreadable if u["row"] in bad]},
         )
         decisions.append(d)
         drop = answers.ask(d) == "drop_rows"
         if drop:
-            warnings.append(f"Dropped {len(bad)} row(s) with unreadable dates: {examples}.")
+            warnings.append(f"Dropped {len(bad)} row(s) with unreadable dates: {', '.join(listed[:10])}.")
 
     if any(d.pending for d in decisions):
         pending = [d.id for d in decisions if d.pending]

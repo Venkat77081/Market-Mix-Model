@@ -44,7 +44,7 @@ def test_excel_picks_data_sheet_and_skips_preamble(data):
     s1 = step(r, 1)
     assert s1.details["sheet"] == "Weekly data"
     assert s1.details["header_row"] == 4
-    assert s1.details["preamble_rows"] == 2
+    assert s1.details["preamble_rows"] == 3  # two title lines and a blank line above the header
     assert s1.details["preamble_text"][0] == "Weekly media and sales report"
     assert r.status == "complete"
 
