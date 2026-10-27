@@ -199,8 +199,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 (() => {
   const STEP_NAMES = ["Load file", "Parse dates", "Map column roles", "Pair spend with exposure", "Set KPI type", "Detect granularity",
     "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money",
-    "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20] };
+    "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report",
+    "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -216,7 +217,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   let run = null;           // last API response
   let answers = {};         // answers sent with the next re-run
   let draftRoles = null;    // step 3 edits not yet applied
-  let view = null;          // "a", "b" or "c": which phase is on screen
+  let view = null;          // "a" to "d": which phase is on screen
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const num = x => typeof x === "number" ? x.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(x);
@@ -240,6 +241,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
+    if (view === "d" && !data.result_d) view = "c";
     if (view === "c" && !data.result_c) view = "b";
     if (view === "b" && !data.result_b) view = "a";
     const hash = `#run=${data.run_id}${view === "a" ? "" : "/" + view}`;
@@ -278,8 +280,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
 
   // ---------- helpers ----------
-  const phaseResult = v => v === "c" ? run.result_c : v === "b" ? run.result_b : run.result;
-  const stepOf = n => [run.result, run.result_b, run.result_c].filter(Boolean).flatMap(r => r.steps).find(s => s.step === n);
+  const phaseResult = v => ({ a: run.result, b: run.result_b, c: run.result_c, d: run.result_d })[v];
+  const stepOf = n => [run.result, run.result_b, run.result_c, run.result_d].filter(Boolean).flatMap(r => r.steps).find(s => s.step === n);
   const decision = (s, id) => s && s.decisions.find(d => d.id === id);
   const current = d => d.answered ? d.answer : (answers[d.id] ?? d.default);
   function seg(d, options, labels = {}) {
@@ -610,6 +612,77 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         </form></div>` : ""}`;
   }
 
+  // ---------- Phase D step bodies ----------
+  const inputStyle = 'style="padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--surface)"';
+
+  function step21(s) {
+    const d = s.details, on = decision(s, "calendar_events"), cus = decision(s, "custom_events");
+    const chosen = on ? current(on) || [] : [];
+    const custom = cus ? current(cus) || [] : [];
+    const rows = (d.events || []).map(e => `<tr>
+        <td>${e.source === "preset" ? `<input type="checkbox" data-event="${esc(e.event)}" ${chosen.includes(e.event) ? "checked" : ""} aria-label="Model ${esc(e.label)}">` :
+          `<button class="btn" data-del-event="${esc(e.event)}" aria-label="Remove ${esc(e.label)}">Remove</button>`}</td>
+        <td>${esc(e.label)}</td><td class="mono small">${esc(e.column)}</td><td class="num">${e.weeks_on}</td>
+        <td>${e.status === "added" ? '<span class="pill pass">added</span>' : `<span class="muted small">${esc(e.status)}</span>`}</td></tr>`).join("");
+    const offPreset = on ? on.options.filter(n => !chosen.includes(n)).map(n => `<tr><td><input type="checkbox" data-event="${esc(n)}" aria-label="Model ${esc(on.context.events[n])}"></td><td>${esc(on.context.events[n])}</td><td colspan="3" class="muted small">not modelled</td></tr>`).join("") : "";
+    return `<div class="scroll"><table style="min-width:560px"><thead><tr><th></th><th>Event</th><th>Column</th><th>Weeks on</th><th></th></tr></thead><tbody>${rows}${offPreset}</tbody></table></div>
+      <form id="add-event" class="decide soft" style="flex-wrap:wrap"><p>Add an event (a launch, a price change, a regulator's ruling):</p>
+        <span style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="ev-name" placeholder="name, e.g. price_change" ${inputStyle} aria-label="Event name">
+          <input id="ev-start" type="date" ${inputStyle} aria-label="Start date"> to <input id="ev-end" type="date" ${inputStyle} aria-label="End date">
+          <button class="btn" type="submit">Add</button></span></form>
+      <p class="muted small">Preset: ${esc(d.preset)}. ${custom.length} event(s) of your own.</p>`;
+  }
+
+  function step22(s) {
+    const dec = decision(s, "max_lag");
+    return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="max_lag" aria-label="Carryover weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
+  }
+
+  function step23(s) {
+    const dec = decision(s, "adstock_shape"), shapes = { ...dec.default, ...(answers.adstock_shape || {}) };
+    const sug = dec.context.suggest_binomial || [];
+    return `<p class="muted small">${esc(dec.question)}</p><div class="scroll"><table style="min-width:400px"><thead><tr><th>Channel</th><th>Shape</th><th></th></tr></thead><tbody>
+      ${Object.keys(dec.default).map(c => `<tr><td><b>${esc(c)}</b></td><td><select data-shape="${esc(c)}" aria-label="Carryover shape for ${esc(c)}">${["geometric", "binomial"].map(o => `<option ${shapes[c] === o ? "selected" : ""}>${o}</option>`).join("")}</select></td>
+        <td class="muted small">${sug.includes(c) ? "often peaks later: consider binomial" : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function step24(s) {
+    const dec = decision(s, "knots");
+    return `<form id="knots-form" class="decide soft"><p>${esc(dec.question)} <span class="muted">Default ${s.details.default} for ${s.details.weeks} weeks.</span></p>
+      <span style="display:inline-flex;gap:8px"><input id="knots-v" type="number" min="1" max="${s.details.weeks}" value="${current(dec)}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--surface)" aria-label="Knots"><button class="btn" type="submit">Apply</button></span></form>`;
+  }
+
+  function step25(s) {
+    const pr = s.details.priors || {}, dec = decision(s, "roi_ranges");
+    const given = { ...(answers.roi_ranges || {}) };
+    const hard = dec.context.hard_to_measure || [];
+    return `<p class="muted small">${esc(dec.question)}</p><div class="scroll"><table style="min-width:640px"><thead><tr><th>Channel</th><th>Prior median</th><th>90% range</th><th>From</th><th>Your expected range</th></tr></thead><tbody>
+      ${Object.entries(pr).map(([c, p]) => `<tr><td><b>${esc(c)}</b>${hard.includes(c) ? ' <span class="pill warn">hard to measure</span>' : ""}</td><td class="num">${p.median.toFixed(2)}</td><td class="num">${p.low.toFixed(2)}–${p.high.toFixed(2)}</td>
+        <td>${p.source === "benchmark" ? '<span class="pill pass">your range</span>' : '<span class="muted small">default</span>'}</td>
+        <td><span style="display:inline-flex;gap:6px;align-items:center"><input type="number" step="0.01" min="0" data-roi-lo="${esc(c)}" value="${given[c] ? given[c].low : ""}" placeholder="low" style="width:72px" aria-label="Low ROI for ${esc(c)}">–<input type="number" step="0.01" min="0" data-roi-hi="${esc(c)}" value="${given[c] ? given[c].high : ""}" placeholder="high" style="width:72px" aria-label="High ROI for ${esc(c)}"></span></td></tr>`).join("")}</tbody></table></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="apply-roi">Apply ranges</button>${Object.keys(given).length ? '<button class="btn" id="clear-roi">Clear all</button>' : ""}</div>`;
+  }
+
+  function step26(s) {
+    const dec = decision(s, "lift_tests"), tests = current(dec) || [];
+    const rows = tests.map((t, i) => `<tr><td><b>${esc(t.channel)}</b></td><td class="mono small">${esc(t.start)} to ${esc(t.end)}</td><td class="num">${t.roi}</td><td class="num">${t.low}–${t.high}</td>
+        <td><button class="btn" data-del-test="${i}">Remove</button></td></tr>`).join("");
+    return `${tests.length ? `<div class="scroll"><table style="min-width:560px"><thead><tr><th>Channel</th><th>Test weeks</th><th>Measured ROI</th><th>90% range</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted small">No lift tests yet. Every channel is "model only".</p>`}
+      <form id="add-test" class="decide soft"><p>Add a test (data runs ${esc(dec.context.first_week)} to ${esc(dec.context.last_week)}):</p>
+        <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <select id="lt-ch" aria-label="Channel">${dec.options.map(o => `<option>${esc(o)}</option>`).join("")}</select>
+          <input id="lt-start" type="date" aria-label="Test start"> to <input id="lt-end" type="date" aria-label="Test end">
+          ROI <input id="lt-roi" type="number" step="0.01" style="width:70px" aria-label="Measured ROI">
+          range <input id="lt-lo" type="number" step="0.01" style="width:70px" aria-label="Low"> – <input id="lt-hi" type="number" step="0.01" style="width:70px" aria-label="High">
+          <button class="btn" type="submit">Add</button></span></form>`;
+  }
+
+  function step27(s) {
+    const dec = decision(s, "holdout_weeks");
+    return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="holdout_weeks" aria-label="Holdout weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
+  }
+
   // ---------- page ----------
   // ---------- Phase C step bodies ----------
   const CHOICE_LABEL = { other: "Merge into Other", drop: "Drop", keep: "Keep", combine: "Combine", exclude: "Exclude" };
@@ -723,9 +796,12 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       done: "One complete row per week. Phase C checks the data can support an MMM.", next: "c", nextLabel: "Continue to C · Profile" },
     c: { eyebrow: "C · steps 14–20", title: "Profile and sufficiency gates", csv: "profiled", table: "Profiled table",
       note: r => `${num(r.rows)} rows; rarely-on channels merged, channels that move together combined, marketing-caused controls dropped as you chose.`,
-      done: "The data can support an MMM. Phase D configures the model.", next: null, nextLabel: "Continue to D · Configure (not built yet)" },
+      done: "The data can support an MMM. Phase D configures the model.", next: "d", nextLabel: "Continue to D · Configure" },
+    d: { eyebrow: "D · steps 21–27", title: "Configure the model", csv: "model_data", table: "Data Meridian fits",
+      note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
+      done: "The model is configured. Phase E fits and validates it.", next: null, nextLabel: "Continue to E · Validate (not built yet)" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d };
 
   function render() {
     $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
@@ -751,7 +827,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     }).join("");
 
     const bodies = { 1: step1, 2: step2, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, 8: step8, 9: step9, 10: step10, 11: step11, 12: step12, 13: step13,
-      14: step14, 15: step15, 16: step16, 17: step17, 18: step18, 19: step19, 20: step20 };
+      14: step14, 15: step15, 16: step16, 17: step17, 18: step18, 19: step19, 20: step20,
+      21: step21, 22: step22, 23: step23, 24: step24, 25: step25, 26: step26, 27: step27 };
     const cards = nums.map(n => {
       const s = stepOf(n);
       if (!s) return card(n, null);
@@ -770,7 +847,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const nextRes = info.next ? RESULT_OF[info.next]() : null;
     const next = `<span class="muted small">${r.status === "complete" ? info.done : r.status === "failed" ? (view === "a" ? "Fix the file and upload it again." : "The run stops here; see the step above.") : "Answer the highlighted decision to continue."}</span>
       <button class="btn primary" ${info.next ? `data-view="${info.next}"` : ""} ${nextRes ? "" : "disabled"}>${info.nextLabel}</button>`;
-    const log = (run.result_c || run.result_b || run.result).decision_log;
+    const log = (run.result_d || run.result_c || run.result_b || run.result).decision_log;
+    const cfg = view === "d" && r.config ? `<article class="card"><header><span class="n">→</span><h3>Model configuration</h3><a class="btn" href="/api/runs/${run.run_id}/model_config.json">Download JSON</a>
+        <p class="sum">${r.config.channels.length} channels · carryover up to ${r.config.max_lag} weeks · ${r.config.knots} knots · holdout ${esc(r.config.holdout.start)} to ${esc(r.config.holdout.end)} · ${Object.keys(r.config.calibration || {}).length} calibrated by lift tests.</p></header></article>` : "";
     const badges = Object.entries(r.badges || {});
 
     $("main").innerHTML = `
@@ -781,7 +860,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       </div>
       <div class="progress" aria-hidden="true" style="grid-template-columns:repeat(${nums.length},1fr)">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
       <div class="cols">
-        <div class="steps">${cards}${preview}<div class="nextbar">${next}</div></div>
+        <div class="steps">${cards}${cfg}${preview}<div class="nextbar">${next}</div></div>
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div><p class="muted small">Shown beside these channels' ROI on every later screen.</p></div>` : ""}
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
@@ -870,6 +949,42 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     // Phase C
     const applyRare = $("apply-rare");
     if (applyRare) applyRare.onclick = () => answer({ rare_channels: Object.fromEntries([...main.querySelectorAll("[data-rare]")].map(x => [x.dataset.rare, x.value])) });
+    // Phase D
+    main.querySelectorAll("[data-select-int]").forEach(x => x.onchange = () => answer({ [x.dataset.selectInt]: +x.value }));
+    main.querySelectorAll("[data-event]").forEach(x => x.onchange = () => answer({ calendar_events: [...main.querySelectorAll("[data-event]")].filter(c => c.checked).map(c => c.dataset.event) }));
+    const customNow = () => [...(answers.custom_events || [])];
+    const addEv = $("add-event");
+    if (addEv) addEv.onsubmit = e => {
+      e.preventDefault();
+      const name = $("ev-name").value.trim(), start = $("ev-start").value, end = $("ev-end").value;
+      if (!name || !start || !end) return alert("Give the event a name, a start and an end date.");
+      answer({ custom_events: [...customNow(), { name, ranges: [{ start, end }] }] });
+    };
+    const eventKey = name => name.trim().toLowerCase().replace(/ /g, "_");  // as step 21 names it
+    main.querySelectorAll("[data-del-event]").forEach(x => x.onclick = () => answer({ custom_events: customNow().filter(c => eventKey(c.name) !== x.dataset.delEvent) }));
+    main.querySelectorAll("[data-shape]").forEach(x => x.onchange = () => answer({ adstock_shape: { ...(answers.adstock_shape || {}), [x.dataset.shape]: x.value } }));
+    const kf = $("knots-form");
+    if (kf) kf.onsubmit = e => { e.preventDefault(); answer({ knots: +$("knots-v").value }); };
+    const ar = $("apply-roi");
+    if (ar) ar.onclick = () => {
+      const out = {};
+      main.querySelectorAll("[data-roi-lo]").forEach(lo => {
+        const c = lo.dataset.roiLo, hi = main.querySelector(`[data-roi-hi="${CSS.escape(c)}"]`);
+        if (lo.value !== "" || hi.value !== "") out[c] = { low: +lo.value, high: +hi.value };
+      });
+      answer({ roi_ranges: out });
+    };
+    const cr = $("clear-roi");
+    if (cr) cr.onclick = () => answer({ roi_ranges: {} });
+    const testsNow = () => [...(answers.lift_tests || [])];
+    const at = $("add-test");
+    if (at) at.onsubmit = e => {
+      e.preventDefault();
+      const t = { channel: $("lt-ch").value, start: $("lt-start").value, end: $("lt-end").value, roi: +$("lt-roi").value, low: +$("lt-lo").value, high: +$("lt-hi").value };
+      if (!t.start || !t.end || !$("lt-roi").value) return alert("Fill in the test dates and the measured ROI with its range.");
+      answer({ lift_tests: [...testsNow(), t] });
+    };
+    main.querySelectorAll("[data-del-test]").forEach(x => x.onclick = () => answer({ lift_tests: testsNow().filter((_, i) => i !== +x.dataset.delTest) }));
     const infl = $("infl");
     if (infl) {
       $("infl-on").onchange = () => { $("infl-fields").hidden = $("infl-on").value !== "on"; };
@@ -884,7 +999,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bc]))?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcd]))?$/);
   if (m) {
     view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);

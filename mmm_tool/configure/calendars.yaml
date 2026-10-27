@@ -1,0 +1,35 @@
+# Calendar presets for step 21. Each event becomes a 0/1 control column: a
+# week is 1 when any of its days falls in the event.
+#
+# Event fields (use one way of saying when it happens):
+#   months      [1, 2, 3]                  every year, these months
+#   recurring   {from: "03-18", to: "03-31"}  every year, this day range
+#   dates       [2024-11-01, ...]          specific days, widened by
+#   weeks_before / weeks_after             whole weeks around each date
+#
+# Add your own events in the app (step 21) or in a preset of your own here.
+
+presets:
+  india_insurance:
+    label: India insurance
+    events:
+      - name: tax_season
+        label: Tax-saving season (January to March)
+        months: [1, 2, 3]
+
+      - name: fy_end
+        label: Financial year-end (last two weeks of March)
+        recurring: {from: "03-18", to: "03-31"}
+
+      # Diwali (Lakshmi Puja) dates. Regional calendars can differ by a day;
+      # the flag covers whole weeks, so check them against your own calendar
+      # only if your festive campaigns are tightly timed.
+      - name: diwali_festive
+        label: Diwali and the two festive weeks before it
+        dates: [2018-11-07, 2019-10-27, 2020-11-14, 2021-11-04, 2022-10-24, 2023-11-12,
+                2024-11-01, 2025-10-21, 2026-11-08, 2027-10-29, 2028-10-17, 2029-11-05, 2030-10-26]
+        weeks_before: 2
+        weeks_after: 0
+
+# Channel words that suggest a delayed peak (binomial carryover) in step 23.
+delayed_peak_words: [tv, television, outdoor, ooh, hoarding, hoardings, cinema]

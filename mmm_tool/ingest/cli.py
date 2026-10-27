@@ -24,13 +24,14 @@ MARK = {"pass": "✓", "warn": "!", "needs_input": "?", "fail": "✗"}
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="mmm-ingest", description="Phases A (ingest, 1-6), B (clean, 7-13) and C (profile, 14-20)")
+    p = argparse.ArgumentParser(prog="mmm-ingest", description="Phases A (ingest, 1-6), B (clean, 7-13), C (profile, 14-20) and D (configure, 21-27)")
     p.add_argument("file", nargs="?")
     p.add_argument("--answers", help="JSON file of answers keyed by decision id")
     p.add_argument("--accept-defaults", action="store_true")
     p.add_argument("--json", action="store_true", help="print the full result as JSON")
     p.add_argument("--out", help="write the table from the last phase run to this CSV")
-    p.add_argument("--phase", choices=["a", "b", "c"], default="c", help="stop after this phase (default c)")
+    p.add_argument("--phase", choices=["a", "b", "c", "d"], default="d", help="stop after this phase (default d)")
+    p.add_argument("--config", help="write the Phase D model configuration to this JSON file")
     p.add_argument("--no-memory", action="store_true", help="don't use or update remembered column roles")
     p.add_argument("--forget", action="store_true", help="clear remembered column roles and exit")
     args = p.parse_args(argv)
@@ -48,15 +49,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_phase_a(args.file, ans, memory=memory)
         phases = [result]
-        if result.status == "complete" and args.phase in ("b", "c"):
+        if result.status == "complete" and args.phase in ("b", "c", "d"):
             from ..clean import run_phase_b
 
             result = run_phase_b(result, ans)
             phases.append(result)
-        if result.status == "complete" and args.phase == "c":
+        if result.status == "complete" and args.phase in ("c", "d"):
             from ..profile import run_phase_c
 
             result = run_phase_c(result, ans)
+            phases.append(result)
+        if result.status == "complete" and args.phase == "d":
+            from ..configure import run_phase_d
+
+            result = run_phase_d(result, ans)
             phases.append(result)
     except KeywordError as e:
         print(f"Role keywords: {e}", file=sys.stderr)
@@ -75,6 +81,9 @@ def main(argv: list[str] | None = None) -> int:
         if result.status == "complete":
             print("\nMeridian CoordToColumns:")
             print(json.dumps(result.coord_to_columns(), indent=2, default=str))
+    if args.config and getattr(result, "config", None):
+        with open(args.config, "w") as f:
+            json.dump(result.config, f, indent=2, default=str)
     if args.out and result.table is not None:
         result.table.to_csv(args.out, index=False)
     return {"complete": 0, "needs_input": 2, "failed": 1}[result.status]

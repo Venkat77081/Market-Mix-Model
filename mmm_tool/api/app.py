@@ -104,11 +104,18 @@ def _evaluate(d: Path) -> dict:
         if run.c.status == "complete":
             out_c["table_preview"] = _preview(run.c.table)
             run.c.table.to_csv(d / "profiled.csv", index=False)
+    out_d = None
+    if run.d is not None:
+        out_d = run.d.to_dict()
+        if run.d.status == "complete":
+            out_d["table_preview"] = _preview(run.d.table)
+            run.d.table.to_csv(d / "model_data.csv", index=False)
+            (d / "model_config.json").write_text(json.dumps(_clean(run.d.config), indent=2))
     final = run.last
     meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
     (d / "meta.json").write_text(json.dumps(meta))
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
-            "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c)}
+            "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d)}
 
 
 def _new_run(filename: str) -> Path:
@@ -215,6 +222,27 @@ def download_profiled(run_id: str) -> Response:
         raise HTTPException(409, "Phase C is not complete yet.")
     stem = Path(_meta(d)["file"]).stem
     return FileResponse(d / "profiled.csv", media_type="text/csv", filename=f"{stem}_phase_c.csv")
+
+
+def _phase_d_file(run_id: str, name: str, media_type: str, suffix: str) -> Response:
+    d = _run_dir(run_id)
+    res = _evaluate(d)["result_d"]
+    if not res or res["status"] != "complete":
+        raise HTTPException(409, "Phase D is not complete yet.")
+    stem = Path(_meta(d)["file"]).stem
+    return FileResponse(d / name, media_type=media_type, filename=f"{stem}_{suffix}")
+
+
+@app.get("/api/runs/{run_id}/model_data.csv")
+def download_model_data(run_id: str) -> Response:
+    """The table Meridian fits: Phase C's table with calendar flags added."""
+    return _phase_d_file(run_id, "model_data.csv", "text/csv", "model_data.csv")
+
+
+@app.get("/api/runs/{run_id}/model_config.json")
+def download_model_config(run_id: str) -> Response:
+    """Phase D's model configuration: carryover, knots, priors, calibration, holdout."""
+    return _phase_d_file(run_id, "model_config.json", "application/json", "model_config.json")
 
 
 @app.get("/api/role-memory")

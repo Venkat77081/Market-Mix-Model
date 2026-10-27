@@ -44,7 +44,7 @@ def truth():
 
 def test_clean_file_passes_unchanged(files):
     r = run_pipeline(files["clean"], accept_defaults=True)
-    assert r.b.status == "complete" and r.phase == "C"  # Phase C runs once B is complete
+    assert r.b.status == "complete" and r.c is not None  # Phase C runs once B is complete
     t, raw = r.b.table, truth()
     assert len(t) == 156 and not t.isna().any().any()
     assert np.allclose(t["tv_spend"], raw["tv_spend"]) and np.allclose(t["new_policies"], raw["new_policies"])

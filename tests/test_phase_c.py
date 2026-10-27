@@ -28,7 +28,7 @@ def decisions(r):
 
 def test_clean_file_passes_with_a_priors_warning(d):
     r = run(samples.write_clean(d))
-    assert r.phase == "C" and r.status == "complete"
+    assert r.c.status == "complete"
     s14 = step(r, 14)
     assert s14.details["weeks"] == 156 and s14.details["parameters"]["media channels"] == 9 * PARAMS_PER_MEDIA
     assert 3 <= s14.details["obs_per_parameter"] < 6 and "strong priors" in s14.warnings[0]

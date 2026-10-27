@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .clean import PhaseBResult, run_phase_b
+from .configure import PhaseDResult, run_phase_d
 from .profile import PhaseCResult, run_phase_c
 from .ingest import Answers, PhaseAResult, run_phase_a
 from .ingest.memory import RoleMemory
@@ -16,15 +17,16 @@ class PipelineResult:
     a: PhaseAResult
     b: PhaseBResult | None = None
     c: PhaseCResult | None = None
+    d: PhaseDResult | None = None
 
     @property
     def last(self) -> PhaseAResult:
-        return self.c or self.b or self.a
+        return self.d or self.c or self.b or self.a
 
     @property
     def phase(self) -> str:
         """The phase the run has reached: each starts once the one before is complete."""
-        return "C" if self.c is not None else "B" if self.b is not None else "A"
+        return "D" if self.d is not None else "C" if self.c is not None else "B" if self.b is not None else "A"
 
     @property
     def status(self) -> str:
@@ -44,4 +46,7 @@ def run_pipeline(path: str | Path, answers: dict[str, Any] | None = None, accept
     b = run_phase_b(a, ans)
     if b.status != "complete":
         return PipelineResult(a, b)
-    return PipelineResult(a, b, run_phase_c(b, ans))
+    c = run_phase_c(b, ans)
+    if c.status != "complete":
+        return PipelineResult(a, b, c)
+    return PipelineResult(a, b, c, run_phase_d(c, ans))

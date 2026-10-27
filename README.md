@@ -1,7 +1,7 @@
 # Meridian MMM Tool
 
-Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)** and **Phase C,
-Profile (steps 14–20)** from the roadmap, a web UI for all three, and a clickable design mock of the later screens in `mock/` (sample data only,
+Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)**, **Phase C,
+Profile (steps 14–20)** and **Phase D, Configure (steps 21–27)** from the roadmap, a web UI for all four, and a clickable design mock of the later screens in `mock/` (sample data only,
 not connected).
 
 ## Web UI
@@ -105,3 +105,22 @@ Parameters are counted as 3 per paid or unpaid media channel (effect, carryover,
 control or lever, one baseline knot per quarter and one intercept per region; the counts and every
 threshold are in `mmm_tool/profile/context.py`. Samples: `ins_short`, `ins_rare`, `ins_flat`,
 `ins_collinear`, `ins_mediator`, `ins_season`.
+
+## Phase D: configure the model (steps 21–27)
+
+Runs once Phase C is complete and completes on its own: every step has a default. You add business
+calendars and past lift tests, and can change any setting. The result is a JSON model configuration
+(download it from the UI, or `--config file.json` on the command line) and the table Meridian fits.
+
+| Step | Default | You can change | Meridian setting |
+|---|---|---|---|
+| 21 Calendar flags | India insurance preset in `mmm_tool/configure/calendars.yaml`: tax season, financial year-end, Diwali and festive weeks | events on or off (`calendar_events`), your own date ranges (`custom_events`) | added to `controls` |
+| 22 Carryover length | 8 weeks | 2–13 (`max_lag`) | `max_lag` |
+| 23 Carryover shape | geometric; binomial suggested for TV and outdoor | per channel (`adstock_shape`) | `adstock_decay_spec` |
+| 24 Baseline flexibility | one knot per quarter | any number (`knots`), warned above 1.5× the default | `knots` |
+| 25 ROI priors | Meridian's LogNormal(0.2, 0.9) | a 90% ROI range per channel (`roi_ranges`) | `roi_m` / `roi_rf` |
+| 26 Lift-test calibration | none | tests: channel, dates, ROI and 90% range (`lift_tests`); several per channel are combined | prior + `roi_calibration` |
+| 27 Holdout | last 13 weeks | 8–26 (`holdout_weeks`) | `holdout` |
+
+With google-meridian installed, `mmm_tool.configure.spec.build_input_data(result)` and
+`build_model_spec(result.config, input_data)` give the `InputData` and `ModelSpec` to fit.

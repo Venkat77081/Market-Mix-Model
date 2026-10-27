@@ -38,6 +38,8 @@ BADGE_TEXT = {
     "rarely_on": "rarely on",
     "moves_with": "moves with another channel",
     "season_timed": "timed with a season",
+    "calibrated": "calibrated",      # Phase D step 26: a lift test sets its prior
+    "model_only": "model only",      # no experiment behind it
 }
 
 
