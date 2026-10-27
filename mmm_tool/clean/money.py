@@ -123,7 +123,8 @@ def normalise_money(ctx: Ctx, answers: Answers) -> StepResult:
             shifted.append({"column": v["column"], "geo": v["geo"], "weeks": int(len(rows)), "multiplied_by": v["factor"],
                             "change": str(v["change"].date())})
         if shifted:
-            notes.append(f"{len(shifted)} level shift(s) converted ({', '.join(f'{x['column']} ×{x['multiplied_by']:,}' for x in shifted)})")
+            done = ", ".join(f"{x['column']} ×{x['multiplied_by']:,}" for x in shifted)
+            notes.append(f"{len(shifted)} level shift(s) converted ({done})")
 
     # Units
     units = {c: unit_of(c) for c in money}
