@@ -27,7 +27,7 @@ STEPS = [
     lambda ctx, ans: check_variation(ctx),
     check_together,
     check_mediators,
-    lambda ctx, ans: check_seasons(ctx),
+    check_seasons,
     lambda ctx, ans: profile_report(ctx),
 ]
 

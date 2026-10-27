@@ -134,3 +134,30 @@ def test_a_lone_rare_channel_is_not_merged_alone(d, tmp_path):
     assert r.c.pending[0]["default"] == {"radio": "drop"}
     r = run(_weekly_csv(df, tmp_path / "one_rare.csv"), {"rare_channels": {"radio": "other"}})
     assert any("just renames it" in w for w in step(r, 15).warnings)
+
+
+def test_season_check_uses_the_calendar_step_21_adds(tmp_path):
+    from mmm_tool.samples import _weekly_csv, make_insurance
+
+    df = make_insurance().drop(columns=["tax_season_flag"])  # no season column in the data
+    df["outdoor_spend"] = np.where(df["week_start"].dt.month.isin([1, 2, 3]), 2.5e6, 0.0)
+    p = _weekly_csv(df, tmp_path / "no_flags.csv")
+    r = run(p)
+    s19 = step(r, 19)
+    assert "cal_tax_season" in s19.details["calendar_flags"]
+    pair = next(x for x in s19.details["pairs"] if x["channel"] == "outdoor")
+    assert pair["flag"] == "cal_tax_season" and pair["source"].startswith("calendar")
+    assert r.c.badges["outdoor"] == ["season_timed"]
+    # The flag step 21 then adds is the one step 19 checked.
+    assert "cal_tax_season" in r.d.config["calendar"]["added"]
+
+    # Switched off at step 21, it is no longer a season to compete with.
+    r = run(p, {"calendar_events": ["fy_end", "diwali_festive"]})
+    assert "cal_tax_season" not in step(r, 19).details["calendar_flags"]
+    assert "outdoor" not in r.c.badges
+
+
+def test_calendar_event_already_in_the_data_is_checked_once(d):
+    r = run(samples.write_season(d))
+    s19 = step(r, 19)
+    assert "tax_season_flag" in s19.details["flags"] and "cal_tax_season" not in s19.details["calendar_flags"]

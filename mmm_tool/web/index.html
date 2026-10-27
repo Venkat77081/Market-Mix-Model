@@ -778,9 +778,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   function step19(s) {
     const d = s.details;
+    const cal = new Set(d.calendar_flags || []);
+    const name = f => `<span class="mono">${esc(f)}</span>${cal.has(f) ? ` <span class="muted small">calendar, added at step 21</span>` : ""}`;
     return (d.pairs || []).length
-      ? `<div class="scroll"><table style="min-width:360px"><thead><tr><th>Channel</th><th>Season flag</th><th>Correlation</th></tr></thead><tbody>${d.pairs.map(p => `<tr><td><b>${esc(p.channel)}</b></td><td class="mono">${esc(p.flag)}</td><td class="num">${p.correlation.toFixed(2)}</td></tr>`).join("")}</tbody></table></div>`
-      : `<p class="muted small">Season flags checked: ${(d.flags || []).map(esc).join(", ") || "none"}.</p>`;
+      ? `<div class="scroll"><table style="min-width:360px"><thead><tr><th>Channel</th><th>Season flag</th><th>Correlation</th></tr></thead><tbody>${d.pairs.map(p => `<tr><td><b>${esc(p.channel)}</b></td><td>${name(p.flag)}</td><td class="num">${p.correlation.toFixed(2)}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted small">Season flags checked: ${(d.flags || []).map(name).join(", ") || "none"}.</p>`;
   }
 
   function step20(s) {

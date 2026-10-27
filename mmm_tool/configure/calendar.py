@@ -21,6 +21,7 @@ STEP = 21
 NAME = "Calendar flags"
 NAME_OK = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 SAME_EVENT_AGREEMENT = 0.95
+PRESET = "india_insurance"
 
 
 def _days(event: dict, years: range) -> set[date]:
@@ -49,9 +50,28 @@ def week_flags(weeks: pd.DatetimeIndex, event: dict) -> np.ndarray:
     return np.array([float(any((w + pd.Timedelta(days=i)).date() in days for i in range(7))) for w in weeks])
 
 
+def planned_events(values: dict) -> list[dict]:
+    """The events step 21 will add, from the answers given so far: the preset
+    events switched on (all by default) and any readable custom events. Step 19
+    checks spend against these before step 21 runs."""
+    preset = load_calendars()["presets"][PRESET]
+    events = {e["name"]: e for e in preset["events"]}
+    chosen = values.get("calendar_events")
+    out = [events[n] for n in (list(events) if chosen is None else chosen) if n in events]
+    for c in values.get("custom_events") or []:
+        name = str(c.get("name", "")).strip().lower().replace(" ", "_")
+        try:
+            ranges = [{"start": pd.Timestamp(r["start"]), "end": pd.Timestamp(r["end"])} for r in c.get("ranges", [])]
+        except (KeyError, ValueError, TypeError, AttributeError):
+            continue
+        if NAME_OK.match(name) and ranges and all(r["start"] <= r["end"] for r in ranges):
+            out.append({"name": name, "label": c.get("label") or name.replace("_", " "), "ranges": ranges})
+    return out
+
+
 def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
     cal = load_calendars()
-    preset_name = "india_insurance"
+    preset_name = PRESET
     preset = cal["presets"][preset_name]
     events = {e["name"]: e for e in preset["events"]}
     weeks = ctx.weeks
