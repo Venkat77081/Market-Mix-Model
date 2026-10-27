@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian MMM Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Same tokens as index.html and mock/mmm_tool_mock.html. */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --sunken: #e9edf1; --ink: #15202b; --muted: #586675; --line: #d8dfe6;
+  --accent: #1d5bbf; --accent-soft: #e3ecfa; --pass: #1b7a4b; --pass-soft: #e2f3ea; --warn: #a66300; --warn-soft: #fbefd9;
+  --block: #b42a20; --block-soft: #fbe4e1;
+  --display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --r: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1; --line: #283440;
+    --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f; --warn: #e7a94a; --warn-soft: #33270f;
+    --block: #f07f74; --block-soft: #3a1a17; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+h1, h2, h3 { font-family: var(--display); font-weight: 500; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.muted { color: var(--muted); }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+.topbar { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar .wrap { display: flex; align-items: center; gap: 16px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.topnav { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.topnav a.link { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: var(--r); font-size: 14px; }
+.topnav a.link:hover { color: var(--ink); background: var(--sunken); }
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: var(--r); text-decoration: none; color: var(--ink); font-weight: 500; font-size: 14px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.pass { color: var(--pass); background: var(--pass-soft); }
+.pill.block { color: var(--block); background: var(--block-soft); }
+.pill.wait { color: var(--muted); background: var(--sunken); }
+.badge { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+.badge.cal { color: var(--pass); }
+.badge.model { color: var(--muted); border-color: var(--line); }
+.badge.hard { color: var(--warn); }
+.badge.prior { color: var(--block); }
+.badge.unstable { color: var(--warn); border-style: dashed; }
+
+.hero { padding: 56px 0 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: center; }
+.hero h1 { font-size: clamp(34px, 5vw, 54px); line-height: 1.06; margin-top: 14px; }
+.hero .lede { font-size: 17px; color: var(--muted); margin-top: 18px; max-width: 34em; }
+.ctas { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 26px; }
+.fine { margin-top: 14px; font-size: 13px; color: var(--muted); }
+.roi-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 20px 14px; min-width: 0; }
+.roi-card header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.roi-card h3 { font-size: 19px; }
+.roi-chart { overflow-x: auto; }
+.roi-chart svg { display: block; width: 100%; min-width: 440px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; align-items: center; }
+
+section.band { padding: 56px 0; border-top: 1px solid var(--line); }
+.band h2 { font-size: clamp(26px, 3.4vw, 34px); max-width: 24em; }
+.band .intro { color: var(--muted); max-width: 40em; margin-top: 10px; }
+.arch { margin-top: 32px; overflow-x: auto; }
+.arch-inner { min-width: 760px; display: grid; gap: 14px; }
+.arch-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.arch-row.screens { grid-template-columns: repeat(4, 1fr); }
+.node { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; text-decoration: none; color: var(--ink); display: block; position: relative; }
+a.node:hover { border-color: var(--accent); }
+.node b { font-weight: 600; display: block; }
+.node .steps { font: 12px var(--mono); color: var(--muted); }
+.node .ask { font-size: 13px; color: var(--muted); margin-top: 6px; display: block; }
+.node .tag { position: absolute; top: 10px; right: 10px; }
+.node.soon { background: transparent; border-style: dashed; }
+.node.gate .ask { color: var(--block); }
+.arch-mid { display: flex; align-items: center; gap: 14px; }
+.arch-mid .line { flex: 1; height: 1px; background: var(--line); }
+.approved { border: 1.5px solid var(--accent); background: var(--accent-soft); border-radius: var(--r); padding: 10px 22px; font-weight: 600; white-space: nowrap; }
+.label { font: 12px var(--mono); color: var(--muted); }
+
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 30px; }
+.three h3 { font-size: 20px; margin: 8px 0 6px; }
+.three p { color: var(--muted); font-size: 14.5px; }
+.three .ref { font: 12px var(--mono); color: var(--accent); }
+.gates { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 40px; margin-top: 30px; align-items: start; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+.badgelist { display: grid; gap: 12px; }
+.badgelist div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; font-size: 14px; }
+.badgelist .badge { justify-self: start; align-self: start; }
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); padding: 20px; color: var(--muted); font-size: 14px; }
+footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 960px) { .hero, .gates, .three { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .topnav a.link { display: none; } .badgelist div { grid-template-columns: 1fr; gap: 4px; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" rx="6" fill="var(--accent)"/><path d="M4 19 C8 19 9 7 13 7 C17 7 18 19 22 19" stroke="var(--surface)" stroke-width="2" fill="none"/></svg>
+      Meridian MMM Tool
+    </a>
+    <nav class="topnav" aria-label="Main">
+      <a class="link" href="#how">How it works</a>
+      <a class="link" href="#runs">Recent runs</a>
+      <a class="btn primary" href="/app">Start a run</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <span class="eyebrow">Marketing mix modelling · built on Google Meridian</span>
+      <h1>What caused sales, and what is each channel worth?</h1>
+      <p class="lede">Upload a raw spend-and-sales export and answer a few prompts. You get back a validated Bayesian model, a model summary, what-if scenarios and an optimized budget plan.</p>
+      <div class="ctas">
+        <a class="btn primary" href="/app">Upload an export</a>
+        <a class="btn" href="#how">How it works</a>
+      </div>
+      <p class="fine">CSV or Excel · weekly, daily or monthly · one region or several · at least 104 weeks of history</p>
+    </div>
+    <div class="roi-card">
+      <header>
+        <h3>ROI per channel, with the 90% range</h3>
+        <span class="muted" style="font-size:13px">Example output · sample data</span>
+      </header>
+      <div class="roi-chart" id="hero-roi"></div>
+      <div class="legend">
+        <span>₹ premium returned per ₹ spent</span>
+        <span><span class="badge cal">calibrated</span> lift test behind it</span>
+        <span><span class="badge prior">prior-driven</span> data taught little</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="band" id="how">
+  <div class="wrap">
+    <span class="eyebrow">How it works</span>
+    <h2>Five phases build the model once. Four screens use it.</h2>
+    <p class="intro">Fitting takes minutes, so it never runs inside a screen. The pipeline turns your upload into an approved model; the screens only read that model, so they open instantly. Phase A is live; the rest are being built in order.</p>
+    <div class="arch">
+      <div class="arch-inner">
+        <span class="label">PIPELINE · runs once per fit</span>
+        <div class="arch-row">
+          <a class="node" href="/app"><span class="pill pass tag">live</span><b>A · Ingest</b><span class="steps">steps 1–6</span><span class="ask">you map column roles</span></a>
+          <div class="node soon"><b>B · Clean</b><span class="steps">steps 7–13</span><span class="ask">you set gap rules</span></div>
+          <div class="node soon"><b>C · Profile</b><span class="steps">steps 14–20</span><span class="ask">gate: 104+ weeks</span></div>
+          <div class="node soon"><b>D · Configure</b><span class="steps">steps 21–27</span><span class="ask">you add lift tests</span></div>
+          <div class="node soon gate"><b>E · Validate</b><span class="steps">steps 28–36</span><span class="ask">3 pass/fail gates</span></div>
+        </div>
+        <div class="arch-mid"><span class="line"></span><span class="approved">Approved model</span><span class="line"></span></div>
+        <div class="arch-row screens">
+          <div class="node soon"><b>F · Model Summary</b><span class="steps">steps 37–42</span><span class="ask">what drove sales</span></div>
+          <div class="node soon"><b>G · What-If</b><span class="steps">steps 43–47</span><span class="ask">you move spend</span></div>
+          <div class="node soon"><b>H · Plan, Optimize</b><span class="steps">steps 48–54</span><span class="ask">best split within limits</span></div>
+          <div class="node soon"><b>I · Export, refit</b><span class="steps">steps 55–58</span><span class="ask">bundle and registry; new weeks refit from A</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <span class="eyebrow">Your part</span>
+    <h2>You decide at three points. Every other step reports a verdict.</h2>
+    <div class="three">
+      <div>
+        <span class="ref">Step 3</span>
+        <h3>Column roles</h3>
+        <p>The tool suggests a role for every column: KPI, spend, exposure, control, unpaid media. You confirm or change each one, and exclude anything marketing itself causes, such as branded search.</p>
+      </div>
+      <div>
+        <span class="ref">Steps 8, 10, 12</span>
+        <h3>Rules for gaps and duplicates</h3>
+        <p>A zero is never treated as missing. Flags take the maximum, never the sum. When the KPI has gaps or spend goes negative, you choose: interpolate, trim, correct or keep.</p>
+      </div>
+      <div>
+        <span class="ref">Step 26</span>
+        <h3>Past lift tests</h3>
+        <p>Enter geo or holdout experiments you have run. Each becomes that channel's ROI prior and earns it a <span class="badge cal">calibrated</span> badge on every later screen.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <span class="eyebrow">Trust before results</span>
+    <h2>A model is accepted only if it passes every gate.</h2>
+    <p class="intro">An MMM is never graded by reality the way a forecast is, so the main risk is a confident ROI that is wrong. More steps go into checking the model than fitting it, and a failed gate is shown with its reason.</p>
+    <div class="gates">
+      <div class="scroll">
+        <table style="min-width:460px">
+          <thead><tr><th>Step</th><th>Gate</th><th>Pass rule</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">14</td><td>Enough history</td><td>104+ weeks; 3+ observations per parameter</td></tr>
+            <tr><td class="mono">30</td><td>Convergence</td><td>R-hat below 1.1 for every parameter</td></tr>
+            <tr><td class="mono">31</td><td>Holdout accuracy</td><td>Test MAPE below 10% and better than a seasonal-naive forecast</td></tr>
+            <tr><td class="mono">32</td><td>Plausibility</td><td>ROI between 0.05 and 20; baseline 20–95% of KPI; contributions reconcile exactly</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="badgelist">
+        <div><span class="badge cal">calibrated</span><span>A lift test sets this channel's prior (step 26).</span></div>
+        <div><span class="badge model">model only</span><span>No experiment behind it; the estimate comes from the data alone.</span></div>
+        <div><span class="badge hard">hard to measure</span><span>Spend barely varies (coefficient of variation under 0.3, step 16).</span></div>
+        <div><span class="badge prior">prior-driven</span><span>Posterior range less than 30% narrower than the prior (step 33).</span></div>
+        <div><span class="badge unstable">unstable</span><span>ROI moves when the first or last 26 weeks are dropped (step 34).</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="runs">
+  <div class="wrap">
+    <span class="eyebrow">Recent runs</span>
+    <h2>Pick up where you left off.</h2>
+    <div id="runlist" style="margin-top:24px"><div class="empty">Loading runs…</div></div>
+  </div>
+</section>
+
+<footer><div class="wrap">Meridian MMM Tool · the chart at the top is example output on sample insurance data.</div></footer>
+
+<script>
+(() => {
+  // ---------- example ROI chart (sample data) ----------
+  const CH = [
+    ["TV", 1.9, 1.3, 2.6, "cal"], ["Search", 2.7, 1.1, 4.6, "prior"], ["Aggregator", 1.1, 0.4, 2.2, "prior"],
+    ["YouTube", 1.4, 0.9, 2.0], ["Meta", 1.6, 1.0, 2.3], ["Outdoor", 1.2, 0.5, 2.1, "unstable"],
+    ["Display", 0.8, 0.4, 1.3], ["Radio", 0.9, 0.3, 1.7], ["Print", 0.6, 0.1, 1.4],
+  ];
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, a, parent) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); parent && parent.appendChild(e); return e; };
+  const txt = (p, x, y, s, a = {}) => { const t = el("text", { x, y, ...a }, p); t.textContent = s; };
+  const W = 560, rowH = 30, top = 22, left = 92, right = 150, H = top + CH.length * rowH + 26, max = 5;
+  const x = v => left + (v / max) * (W - left - right);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Example ROI per channel with 90% range" });
+  for (let t = 0; t <= max; t++) {
+    el("line", { x1: x(t), x2: x(t), y1: top - 6, y2: H - 22, stroke: "var(--line)" }, svg);
+    txt(svg, x(t), H - 8, t, { "text-anchor": "middle", fill: "var(--muted)", "font-size": 11, "font-family": "var(--mono)" });
+  }
+  el("line", { x1: x(1), x2: x(1), y1: top - 10, y2: H - 22, stroke: "var(--muted)", "stroke-dasharray": "3 3" }, svg);
+  txt(svg, x(1) + 4, top - 10, "break-even", { fill: "var(--muted)", "font-size": 10.5 });
+  const tagText = { cal: ["calib.", "var(--pass)"], prior: ["prior", "var(--block)"], unstable: ["unstable", "var(--warn)"] };
+  CH.forEach(([name, roi, lo, hi, badge], i) => {
+    const y = top + i * rowH + rowH / 2, prior = badge === "prior";
+    txt(svg, left - 10, y + 4, name, { "text-anchor": "end", fill: "var(--ink)", "font-size": 13 });
+    el("rect", { x: x(lo), y: y - 4, width: x(hi) - x(lo), height: 8, rx: 4, fill: prior ? "var(--block-soft)" : "var(--accent-soft)", stroke: prior ? "var(--block)" : "var(--accent)" }, svg);
+    el("circle", { cx: x(roi), cy: y, r: 4.5, fill: prior ? "var(--block)" : "var(--accent)" }, svg);
+    txt(svg, x(max) + 10, y + 4, roi.toFixed(1), { fill: "var(--ink)", "font-size": 12.5, "font-family": "var(--mono)", "font-weight": 500 });
+    txt(svg, x(max) + 38, y + 4, `${lo.toFixed(1)}–${hi.toFixed(1)}`, { fill: "var(--muted)", "font-size": 11.5, "font-family": "var(--mono)" });
+    if (badge) txt(svg, x(max) + 96, y + 4, tagText[badge][0], { fill: tagText[badge][1], "font-size": 11, "font-family": "var(--mono)" });
+  });
+  document.getElementById("hero-roi").appendChild(svg);
+
+  // ---------- recent runs ----------
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const when = t => {
+    const s = (Date.now() / 1000 - t);
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return new Date(t * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  };
+  const status = r => r.status === "complete" ? '<span class="pill pass">Phase A complete</span>'
+    : r.status === "failed" ? '<span class="pill block">Failed</span>'
+    : `<span class="pill wait">${r.decisions || 1} decision${r.decisions === 1 ? "" : "s"} needed</span>`;
+  fetch("/api/runs").then(r => r.json()).then(runs => {
+    const host = document.getElementById("runlist");
+    if (!runs.length) { host.innerHTML = `<div class="empty">No runs yet. <a href="/app">Upload an export</a> or try one of the sample files to start.</div>`; return; }
+    host.innerHTML = `<div class="scroll"><table style="min-width:560px"><thead><tr><th>File</th><th>Run</th><th>Status</th><th>Last change</th><th></th></tr></thead><tbody>${
+      runs.map(r => `<tr><td class="mono">${esc(r.file)}</td><td class="mono muted">${esc(r.run_id)}</td><td>${status(r)}</td><td class="muted">${when(r.updated)}</td><td><a href="/app#run=${esc(r.run_id)}">Open</a></td></tr>`).join("")
+    }</tbody></table></div>`;
+  }).catch(() => { document.getElementById("runlist").innerHTML = `<div class="empty">Couldn't load runs. Is the server running?</div>`; });
+})();
+</script>
+</body>
+</html>

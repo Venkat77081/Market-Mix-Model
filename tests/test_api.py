@@ -13,8 +13,9 @@ def client(tmp_path, monkeypatch):
     return TestClient(app_module.app)
 
 
-def test_index_and_samples(client):
-    assert "Meridian MMM Tool" in client.get("/").text
+def test_pages_and_samples(client):
+    assert "What caused sales" in client.get("/").text
+    assert "Upload a spend-and-sales export" in client.get("/app").text
     names = [s["name"] for s in client.get("/api/samples").json()]
     assert "ins_clean" in names and "ins_monthly" in names
 
@@ -53,3 +54,12 @@ def test_rejects_bad_input(client):
     assert client.get("/api/runs/0123456789ab").status_code == 404
     r = client.post("/api/runs/sample/ins_clean").json()
     assert client.get(f"/api/runs/{r['run_id']}/table.csv").status_code == 409
+
+
+def test_recent_runs_list(client):
+    assert client.get("/api/runs").json() == []
+    a = client.post("/api/runs/sample/ins_clean").json()
+    b = client.post("/api/runs/sample/ins_monthly").json()
+    runs = client.get("/api/runs").json()
+    assert [r["run_id"] for r in runs] == [b["run_id"], a["run_id"]]
+    assert runs[0]["status"] == "needs_input" and runs[0]["decisions"] == 1

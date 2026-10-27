@@ -10,7 +10,8 @@ pip install -e '.[ui]'
 mmm-ui                     # then open http://127.0.0.1:8000
 ```
 
-Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
+`/` is the landing page (what the tool does, the phases, the validation gates, and your recent runs);
+`/app` is the Phase A screen. Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
 ingested table when all six steps pass. Runs and answers are saved under `./runs/` (set `MMM_RUNS_DIR`
 to change it), so a page reload keeps your place. The API is under `/api/` (docs at `/docs`).
 

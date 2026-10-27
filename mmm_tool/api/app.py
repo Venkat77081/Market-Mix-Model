@@ -13,6 +13,7 @@ import math
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,8 @@ def _evaluate(d: Path) -> dict:
             "rows": [[None if v is None else str(v)[:10] if hasattr(v, "date") else v for v in r] for r in t.itertuples(index=False)],
         }
         result.table.to_csv(d / "ingested.csv", index=False)
+    meta.update(status=result.status, updated=time.time(), decisions=len(result.pending))
+    (d / "meta.json").write_text(json.dumps(meta))
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "result": _clean(out)}
 
 
@@ -87,8 +90,27 @@ def _new_run(filename: str) -> Path:
 
 
 @app.get("/", response_class=HTMLResponse)
+def landing() -> FileResponse:
+    return FileResponse(WEB_DIR / "landing.html")
+
+
+@app.get("/app", response_class=HTMLResponse)
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/api/runs")
+def list_runs(limit: int = 10) -> list[dict]:
+    """Most recent runs first, with the status saved at their last evaluation."""
+    if not RUNS_DIR.exists():
+        return []
+    runs = []
+    for d in RUNS_DIR.iterdir():
+        if RUN_ID.match(d.name) and (d / "meta.json").exists():
+            meta = _meta(d)
+            runs.append({"run_id": d.name, "file": meta["file"], "status": meta.get("status"),
+                         "decisions": meta.get("decisions", 0), "updated": meta.get("updated") or d.stat().st_mtime})
+    return sorted(runs, key=lambda r: r["updated"], reverse=True)[:limit]
 
 
 @app.get("/api/samples")
