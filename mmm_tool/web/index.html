@@ -227,6 +227,20 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .fdecay { display: grid; grid-template-columns: 100px minmax(0, 1fr) max-content; gap: 10px; align-items: center; font-size: 13.5px; }
 .fbanner { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: var(--r); padding: 10px 14px; font-size: 14px; }
 
+/* Phase G: What-If */
+.wi { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.wi-col { display: grid; gap: 14px; min-width: 0; }
+.wi-col > .card, .wi-col .body > * { min-width: 0; }
+.wi-row { display: grid; grid-template-columns: minmax(80px, 120px) minmax(0, 1fr) 58px minmax(70px, 96px); gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.wi-row input[type=range] { width: 100%; accent-color: var(--accent); }
+.wi-row .pct { font: 13px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.wi-row .amt { font: 12px var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.wi-row.out .pct { color: var(--block); }
+.wi-row .name { font-weight: 500; overflow-wrap: anywhere; }
+.delta.up { color: var(--pass); } .delta.down { color: var(--block); }
+.wi-move { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13.5px; }
+@media (max-width: 1000px) { .wi { grid-template-columns: minmax(0, 1fr); } }
+
 @media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -277,8 +291,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report",
     "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout",
     "Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save",
-    "Fit health", "Sales breakdown", "ROI table", "Trust badges", "Response curves", "Carryover"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42] };
+    "Fit health", "Sales breakdown", "ROI table", "Trust badges", "Response curves", "Carryover",
+    "Enter a scenario", "Quick result", "Exact result", "Extrapolation warning", "Save and compare"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42], g: [43, 44, 46, 45, 47] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -327,7 +342,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
-    if (view === "f" && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
+    if ((view === "f" || view === "g") && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
     if (view === "e" && !(data.result_d && data.result_d.status === "complete")) view = "d";
     if (view === "d" && !data.result_d) view = "c";
     if (view === "c" && !data.result_c) view = "b";
@@ -1205,7 +1220,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
       done: "The model is configured. Phase E fits and validates it.", next: "e", nextLabel: "Continue to E · Validate" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail() };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail(), g: () => summaryRail() };
   // Phase F opens once a model is accepted; its dot is amber when the model is out of date.
   function summaryRail() {
     const f = run.fit, res = fitResult();
@@ -1241,6 +1256,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
     if (view === "e") return renderFit();
     if (view === "f") return renderSummary();
+    if (view === "g") return renderWhatIf();
     const r = phaseResult(view);
     const info = PHASE_INFO[view];
     const nums = PHASE_STEPS[view];
@@ -1628,13 +1644,187 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           ${v.not_converged ? '<span class="pill fail">did not converge</span>' : ""}</div></div>
       ${stale}
       <div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between">${per}
-        <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/api/runs/${run.run_id}/summary" download="model_summary.json">Summary (JSON)</a>
+        <span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-view="g">What-If (G)</button><a class="btn" href="/api/runs/${run.run_id}/summary" download="model_summary.json">Summary (JSON)</a>
         ${S.downloads && S.downloads.meridian_html ? `<a class="btn" href="/api/runs/${run.run_id}/model_results_summary.html">Meridian report (HTML)</a>` : ""}
         ${S.downloads && S.downloads.model ? `<a class="btn" href="/api/runs/${run.run_id}/model.pkl">Model (.pkl)</a>` : ""}</span></div>
       <div class="fs">${F_ORDER.map(n => panels[n]).join("")}</div>`;
     wire();
     $("main").querySelectorAll("[data-fperiod]").forEach(b => b.onclick = () => { fPeriod = b.dataset.fperiod; renderSummary(); });
     fDraw();
+  }
+
+  // ---------- Phase G: What-If (steps 43-47) ----------
+  // The period's response curves come from the saved model once (a background job); moving a
+  // slider then interpolates them here, with no server call. "Run exact result" runs the same
+  // scenario on every posterior draw (a few seconds) for 90% ranges. Saved scenarios stay with the run.
+  let wiData = null, wiMult = {}, wiPeriod = "all", wiExact = null, wiPoll = null;
+  const wiInterp = (xs, ys, x) => { if (!ys) return null; if (x <= xs[0]) return ys[0];
+    for (let i = 1; i < xs.length; i++) if (x <= xs[i]) { const t = (x - xs[i - 1]) / (xs[i] - xs[i - 1]); return ys[i - 1] + t * (ys[i] - ys[i - 1]); }
+    return ys[ys.length - 1]; };
+  const wiBase = c => wiData.curves.channels[c].spend[wiData.curves.channels[c].multiplier.indexOf(1)];
+  function wiQuick(mult) {
+    const C = wiData.curves.channels, money = wiData.curves.money, out = { spend: 0, kpi: 0, revenue: money ? 0 : null, by: {} };
+    for (const c of Object.keys(C)) {
+      const x = C[c], m = mult[c] ?? 1, k = wiInterp(x.multiplier, x.kpi, m), rv = money ? wiInterp(x.multiplier, x.revenue, m) : null;
+      out.by[c] = { spend: wiBase(c) * m, kpi: k, revenue: rv };
+      out.spend += wiBase(c) * m; out.kpi += k; if (money) out.revenue += rv;
+    }
+    return out;
+  }
+  const wiSettings = () => wiData.settings;
+  const wiOutside = (c, m) => { const e = wiSettings().extrapolation; return wiBase(c) > 0 && m !== 1 && (m < e.low || m > e.high); };
+
+  async function renderWhatIf(fetchAgain = true) {
+    $("rail").innerHTML = railHtml();
+    const head = `<div class="runhead"><div><span class="eyebrow">Screen G · steps 43–47</span><h1>What-If</h1></div>`;
+    if (fetchAgain || !wiData || wiData.run !== run.run_id || wiData.period !== wiPeriod) {
+      clearTimeout(wiPoll);
+      try { wiData = { ...(await api("GET", `/api/runs/${run.run_id}/whatif?period=${wiPeriod}`)), run: run.run_id }; }
+      catch (e) { $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); return; }
+    }
+    const D = wiData;
+    if (D.curves_error) {
+      $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px;display:grid;gap:8px"><p>The response curves for this period could not be worked out from the saved model:</p><p class="mono small">${esc(D.curves_error)}</p></div>`;
+      wire(); return;
+    }
+    if (!D.curves) {
+      $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><span class="pill warn">Working</span> Working out each channel's response curve for this period from the saved model (usually under a minute). The sliders open when it's done.</div>`;
+      wire(); wiPoll = setTimeout(() => { if (view === "g") renderWhatIf(); }, 3000); return;
+    }
+    const C = D.curves.channels, chans = Object.keys(C), st = wiSettings(), kpi = D.kpi || "KPI", money = D.curves.money;
+    for (const c of chans) if (wiMult[c] == null || wiMult.__run !== run.run_id) wiMult[c] = 1;
+    wiMult.__run = run.run_id;
+    const per = D.periods.length > 1 ? `<div class="seg" role="group" aria-label="Period">${D.periods.map(k => `<button data-wiperiod="${k}" aria-pressed="${wiPeriod === k}">${k === "all" ? (D.weeks_all ? `All ${D.weeks_all} weeks` : "All weeks") : "Last 52 weeks"}</button>`).join("")}</div>` : "";
+    const rows = chans.map(c => { const zero = !(wiBase(c) > 0), pctv = Math.round((wiMult[c] - 1) * 100);
+      return `<div class="wi-row" id="wi-row-${esc(c)}"><span class="name">${esc(c)}${D.no_saturation.includes(c) ? ' <span class="badge model_only" title="No diminishing returns (step 23)">straight line</span>' : ""}</span>
+        <input type="range" data-wi="${esc(c)}" min="${st.slider.min}" max="${st.slider.max}" step="${st.slider.step}" value="${pctv}" ${zero ? "disabled" : ""} aria-label="Change in ${esc(c)} spend, %">
+        <span class="pct" data-wipct="${esc(c)}"></span><span class="amt" data-wiamt="${esc(c)}">${zero ? "no spend" : ""}</span></div>`; }).join("");
+    const live = chans.filter(c => wiBase(c) > 0);
+    const opts = sel => live.map(c => `<option ${c === sel ? "selected" : ""}>${esc(c)}</option>`).join("");
+    $("main").innerHTML = `${head}
+        <div class="chips"><span class="chip">${esc(D.curves.first_week)} to ${esc(D.curves.last_week)}</span><span class="chip">${D.curves.weeks} weeks</span>
+          <span class="chip">${esc(kpi)} from paid media</span></div></div>
+      ${D.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so these scenarios use the earlier model. Refit in Phase E to update them.</div>` : ""}
+      ${per}
+      <div class="wi">
+        <div class="wi-col">
+          <article class="card" id="step-43"><header><span class="n">43</span><h3>Enter a scenario</h3><span></span>
+            <p class="sum">Each channel's spend over the period, up or down, as a % of what it was (${st.slider.min}% to +${st.slider.max}%). Weekly spend scales by the same factor.</p></header>
+            <div class="body"><div>${rows}</div>
+              <form class="wi-move" id="wi-move"><span>Move</span><input id="wi-amt" type="number" min="0" step="any" placeholder="amount" style="width:110px" aria-label="Amount to move">
+                <span>from</span><select id="wi-from" aria-label="From channel">${opts(live[0])}</select><span>to</span><select id="wi-to" aria-label="To channel">${opts(live[1] || live[0])}</select><button class="btn" type="submit">Move</button></form>
+              <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="wi-reset">Reset to current</button></div></div></article>
+          <article class="card" id="step-46"><header><span class="n">46</span><h3>Extrapolation warning</h3><span></span>
+            <p class="sum">The model has only seen each channel's spend near its history. Outside ${Math.round(st.extrapolation.low * 100)}–${Math.round(st.extrapolation.high * 100)}% of it, a result is a guess.</p></header>
+            <div class="body" id="wi-warn"></div></article>
+        </div>
+        <div class="wi-col">
+          <article class="card" id="step-44"><header><span class="n">44</span><h3>Quick result</h3><span></span>
+            <p class="sum">From the response curves, as you move the sliders. The exact result below adds 90% ranges.</p></header>
+            <div class="body" id="wi-quick"></div></article>
+          <article class="card" id="step-45"><header><span class="n">45</span><h3>Exact result</h3><span></span>
+            <p class="sum">The same scenario on every draw of the saved model, so the change gets its own 90% range.</p></header>
+            <div class="body"><div><button class="btn primary" id="wi-exact">Run exact result</button></div><div id="wi-exact-out"></div></div></article>
+          <article class="card" id="step-47"><header><span class="n">47</span><h3>Save and compare</h3><span></span>
+            <p class="sum">Up to ${st.saved_max} scenarios, kept with this run, against the current plan.</p></header>
+            <div class="body"><form class="wi-move" id="wi-save"><input id="wi-name" placeholder="Scenario name" style="width:180px" aria-label="Scenario name"><button class="btn" type="submit">Save scenario</button></form><div id="wi-saved"></div></div></article>
+        </div>
+      </div>`;
+    wire();
+    wiUpdate();
+    $("main").querySelectorAll("[data-wiperiod]").forEach(b => b.onclick = () => { wiPeriod = b.dataset.wiperiod; wiExact = null; renderWhatIf(); });
+    $("main").querySelectorAll("[data-wi]").forEach(r => r.oninput = () => { wiMult[r.dataset.wi] = 1 + Number(r.value) / 100; wiExact = null; wiUpdate(); });
+    $("wi-reset").onclick = () => { chans.forEach(c => wiMult[c] = 1); wiExact = null; renderWhatIf(false); };
+    $("wi-move").onsubmit = e => { e.preventDefault();
+      const a = Number($("wi-amt").value), f = $("wi-from").value, t = $("wi-to").value;
+      if (!(a > 0) || f === t) return;
+      const take = Math.min(a, wiBase(f) * wiMult[f]);
+      wiMult[f] = Math.max(0, wiMult[f] - take / wiBase(f));
+      wiMult[t] = Math.min(1 + st.slider.max / 100, wiMult[t] + take / wiBase(t));
+      wiExact = null; renderWhatIf(false); };
+    $("wi-exact").onclick = wiRunExact;
+    $("wi-save").onsubmit = async e => { e.preventDefault();
+      const saved = [...D.saved];
+      if (saved.length >= st.saved_max) { alert(`At most ${st.saved_max} saved scenarios: remove one first.`); return; }
+      const q = wiQuick(wiMult), mult = Object.fromEntries(chans.map(c => [c, +wiMult[c].toFixed(4)]));
+      saved.push({ name: $("wi-name").value.trim() || `Scenario ${saved.length + 1}`, period: wiPeriod, multipliers: mult,
+        quick: { spend: q.spend, kpi: q.kpi, revenue: q.revenue }, exact: wiExact && wiExact.period === wiPeriod ? wiExact : null, saved_at: new Date().toISOString() });
+      try { D.saved = (await api("PUT", `/api/runs/${run.run_id}/whatif/saved`, { scenarios: saved })).saved; wiSaved(); } catch (err) { alert(err.message); } };
+    wiSaved();
+  }
+
+  function wiUpdate() {
+    const D = wiData, C = D.curves.channels, chans = Object.keys(C), money = D.curves.money, kpi = D.kpi || "KPI";
+    const out = [], straight = [];
+    for (const c of chans) {
+      const m = wiMult[c], p = Math.round((m - 1) * 100), row = $(`wi-row-${c}`);
+      const pe = document.querySelector(`[data-wipct="${CSS.escape(c)}"]`), ae = document.querySelector(`[data-wiamt="${CSS.escape(c)}"]`);
+      if (pe) pe.textContent = (p > 0 ? "+" : "") + p + "%";
+      if (ae && wiBase(c) > 0) ae.textContent = fmoney(wiBase(c) * m);
+      const o = wiOutside(c, m); if (row) row.classList.toggle("out", o);
+      if (o) out.push(`${c} (${Math.round(m * 100)}% of its spend)`);
+      if (m > 1 && D.no_saturation.includes(c)) straight.push(c);
+    }
+    const q = wiQuick(wiMult), b = wiQuick({}), sign = v => (v >= 0 ? "+" : "−");
+    const delta = (v, f) => `<small class="delta ${v >= 0 ? "up" : "down"}">${sign(v)}${f(Math.abs(v))} vs current</small>`;
+    const roi = x => money ? x.revenue / x.spend : x.kpi / x.spend;
+    $("wi-quick").innerHTML = `<div class="fstats">
+        <div class="fstat"><b>${fnum(q.kpi)}</b><span>${esc(kpi)} from paid media</span><br>${delta(q.kpi - b.kpi, fnum)}</div>
+        ${money && D.kpi_type !== "revenue" ? `<div class="fstat"><b>${fmoney(q.revenue)}</b><span>Revenue from paid media</span><br>${delta(q.revenue - b.revenue, fmoney)}</div>` : ""}
+        <div class="fstat"><b>${fmoney(q.spend)}</b><span>Total spend</span><br><small class="muted">${sign(q.spend - b.spend)}${fmoney(Math.abs(q.spend - b.spend))}</small></div>
+        <div class="fstat"><b>${roi(q).toFixed(money ? 2 : 4)}</b><span>ROI${money ? "" : ` (${esc(kpi)} per ${esc(symOr("unit of spend"))})`}</span><br><small class="muted">current ${roi(b).toFixed(money ? 2 : 4)}</small></div>
+        <div class="fstat"><b>${q.kpi > 0 ? fmoney(q.spend / q.kpi) : "–"}</b><span>Cost per ${esc(kpi)}</span><br><small class="muted">current ${b.kpi > 0 ? fmoney(b.spend / b.kpi) : "–"}</small></div></div>
+      <div class="scroll"><table style="min-width:460px"><thead><tr><th>Channel</th><th class="r">Spend</th><th class="r">${esc(kpi)}</th><th class="r">Change</th></tr></thead><tbody>
+        ${chans.map(c => { const x = q.by[c], y = b.by[c], dk = x.kpi - y.kpi;
+          return `<tr><td>${esc(c)}</td><td class="num">${fmoney(x.spend)}</td><td class="num">${fnum(x.kpi)}</td><td class="num ${Math.abs(dk) < 0.5 ? "" : dk > 0 ? "delta up" : "delta down"}">${Math.abs(dk) < 0.5 ? "–" : sign(dk) + fnum(Math.abs(dk))}</td></tr>`; }).join("")}</tbody></table></div>`;
+    $("wi-warn").innerHTML = (out.length ? `<div class="fbanner" style="border-color:var(--block);background:var(--block-soft)"><b>Beyond what the model has seen:</b> ${out.map(esc).join(", ")}. Treat ${out.length > 1 ? "these results" : "this result"} as a guess.</div>` : '<p class="muted small">Every channel is within the spend the model has seen.</p>')
+      + (straight.length ? `<p class="small" style="margin-top:8px"><b>${straight.map(esc).join(", ")}</b>: no diminishing returns (step 23), so ${esc(kpi)} grows in a straight line with spend; more spend always looks good there.</p>` : "");
+    $("wi-exact-out").innerHTML = wiExactHtml();
+  }
+
+  function wiExactHtml() {
+    const x = wiExact, kpi = (wiData && wiData.kpi) || "KPI";
+    if (!x) return '<p class="muted small">Not run for this scenario yet.</p>';
+    if (x.building) return '<p><span class="pill warn">Working</span> Running the scenario on the saved model…</p>';
+    if (x.error) return `<p style="color:var(--block)">${esc(x.error)}</p>`;
+    const r = x.result, rng = (s, f) => `${f(s.mean)} <span class="muted small">(90%: ${f(s.lo)}–${f(s.hi)})</span>`;
+    const sg = v => (v >= 0 ? "+" : "−"), dr = (s, f) => `${sg(s.mean)}${f(Math.abs(s.mean))} <span class="muted small">(90%: ${sg(s.lo)}${f(Math.abs(s.lo))} to ${sg(s.hi)}${f(Math.abs(s.hi))})</span>`;
+    const quick = wiQuick(r.multipliers).kpi;
+    return `<dl class="kv"><div><dt>${esc(kpi)} from paid media</dt><dd>${rng(r.scenario.kpi, fnum)}</dd></div>
+        <div><dt>Change vs current</dt><dd>${dr(r.delta_kpi, fnum)}</dd></div>
+        ${r.scenario.revenue && wiData.kpi_type !== "revenue" ? `<div><dt>Revenue from paid media</dt><dd>${rng(r.scenario.revenue, fmoney)}</dd></div><div><dt>Revenue change</dt><dd>${dr(r.delta_revenue, fmoney)}</dd></div>` : ""}
+        <div><dt>Current plan</dt><dd>${rng(r.current.kpi, fnum)}</dd></div></dl>
+      <p class="muted small">The quick result was ${fnum(quick)}; ${(r.delta_kpi.lo > 0 || r.delta_kpi.hi < 0) ? "the change is clear of zero across the 90% range." : "the 90% range of the change includes zero: the model can't tell this scenario from the current plan."}</p>`;
+  }
+
+  async function wiRunExact() {
+    const chans = Object.keys(wiData.curves.channels), mult = Object.fromEntries(chans.map(c => [c, +wiMult[c].toFixed(4)]));
+    wiExact = { building: true, period: wiPeriod }; $("wi-exact-out").innerHTML = wiExactHtml();
+    try {
+      let r = await api("POST", `/api/runs/${run.run_id}/whatif/exact`, { period: wiPeriod, multipliers: mult });
+      while (r.building) { await new Promise(ok => setTimeout(ok, 2000)); if (view !== "g") return; r = await api("GET", `/api/runs/${run.run_id}/whatif/exact/${r.key}`); }
+      wiExact = r.result.error ? { error: r.result.error, period: wiPeriod } : { result: r.result, period: wiPeriod };
+    } catch (e) { wiExact = { error: e.message, period: wiPeriod }; }
+    if ($("wi-exact-out")) $("wi-exact-out").innerHTML = wiExactHtml();
+  }
+
+  function wiSaved() {
+    const D = wiData, host = $("wi-saved"), kpi = D.kpi || "KPI", money = D.curves.money;
+    if (!host) return;
+    const b = wiQuick({});
+    const here = D.saved.map((x, i) => ({ ...x, i })).filter(x => x.period === wiPeriod), elsewhere = D.saved.map((x, i) => ({ ...x, i })).filter(x => x.period !== wiPeriod);
+    const rows = [{ name: "Current plan", period: wiPeriod, quick: { spend: b.spend, kpi: b.kpi, revenue: b.revenue }, current: true }, ...here];
+    const roi = q => money ? q.revenue / q.spend : q.kpi / q.spend;
+    const other = elsewhere.length ? `<p class="muted small" style="margin-top:6px">Saved for ${wiPeriod === "all" ? "the last 52 weeks" : "all weeks"}, so not comparable here: ${elsewhere.map(x => `<b>${esc(x.name)}</b> <button class="btn" data-wiload="${x.i}">Load</button>`).join(" ")}</p>` : "";
+    host.innerHTML = (!here.length ? '<p class="muted small">Save a scenario to compare it with the current plan.</p>' : `<div class="scroll"><table style="min-width:520px"><thead><tr><th></th><th class="r">Spend</th><th class="r">${esc(kpi)}</th>${money && D.kpi_type !== "revenue" ? '<th class="r">Revenue</th>' : ""}<th class="r">ROI</th><th>90% range (exact)</th><th></th></tr></thead><tbody>
+      ${rows.map(x => `<tr><td><b>${esc(x.name)}</b></td><td class="num">${fmoney(x.quick.spend)}</td><td class="num">${fnum(x.quick.kpi)}</td>
+        ${money && D.kpi_type !== "revenue" ? `<td class="num">${fmoney(x.quick.revenue)}</td>` : ""}<td class="num">${roi(x.quick).toFixed(money ? 2 : 4)}</td>
+        <td class="small">${x.exact && x.exact.result ? `${fnum(x.exact.result.scenario.kpi.lo)}–${fnum(x.exact.result.scenario.kpi.hi)}` : x.current ? "" : '<span class="muted">not run</span>'}</td>
+        <td>${x.current ? "" : `<span style="display:inline-flex;gap:6px"><button class="btn" data-wiload="${x.i}">Load</button><button class="btn" data-widel="${x.i}">Remove</button></span>`}</td></tr>`).join("")}</tbody></table></div>`) + other;
+    host.querySelectorAll("[data-wiload]").forEach(bt => bt.onclick = () => { const sc = D.saved[+bt.dataset.wiload];
+      wiPeriod = sc.period; Object.assign(wiMult, sc.multipliers); wiExact = sc.exact || null; renderWhatIf(); });
+    host.querySelectorAll("[data-widel]").forEach(bt => bt.onclick = async () => { const saved = D.saved.filter((_, i) => i !== +bt.dataset.widel);
+      D.saved = (await api("PUT", `/api/runs/${run.run_id}/whatif/saved`, { scenarios: saved })).saved; wiSaved(); });
   }
 
   function fsumPoll() {
@@ -1909,7 +2099,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdef]))?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdefg]))?$/);
   if (m) {
     view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(e => { console.error(e); startScreen(); });

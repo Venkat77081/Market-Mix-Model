@@ -527,6 +527,142 @@ def rebuild_summary(run_id: str) -> dict:
     return {"building": True}
 
 
+# ---------- Phase G: What-If (steps 43-47) ----------
+# Curves (step 44) and exact results (step 45) are computed from the saved model in a
+# background process, so Meridian never loads in the server; results are cached by model.
+
+class ExactIn(BaseModel):
+    period: str = "all"
+    multipliers: dict[str, float]
+
+
+class SavedIn(BaseModel):
+    scenarios: list[dict[str, Any]]
+
+
+_whatif_jobs: dict[str, subprocess.Popen] = {}
+
+
+def _accepted_model(d: Path) -> dict:
+    st = job.status(d) or {}
+    res = st.get("result") or {}
+    if res.get("status") != "accepted" or not (job.fit_dir(d) / "model.pkl").exists():
+        raise HTTPException(409, "What-If needs an accepted model: fit and accept one in Phase E first.")
+    return st
+
+
+def _whatif_job(d: Path, name: str, args: list[str]) -> bool:
+    """Start a What-If job unless one with this name is running; True while it runs."""
+    tag = f"{d.name}|{name}"
+    proc = _whatif_jobs.get(tag)
+    if proc is not None and proc.poll() is None:
+        return True
+    from .. import whatif
+
+    folder = whatif.folder(d)
+    folder.mkdir(parents=True, exist_ok=True)
+    root = str(Path(__file__).resolve().parents[2])
+    env = {**os.environ, "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}
+    log = open(folder / f"log_{name}.txt", "w", encoding="utf-8")
+    _whatif_jobs[tag] = subprocess.Popen([sys.executable, "-m", "mmm_tool.whatif", "--run-dir", str(d), *args],
+                                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+    return True
+
+
+def _cached(path: Path, key: str) -> dict | None:
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if data.get("model_key") == key else None
+
+
+@app.get("/api/runs/{run_id}/whatif")
+def whatif(run_id: str, period: str = "all") -> dict:
+    """Everything the What-If screen needs: settings, model facts, the period's curves (or that
+    they are being computed) and the saved scenarios."""
+    from .. import whatif as wi
+    from ..whatif.scenario import settings as wsettings
+
+    d = _run_dir(run_id)
+    st = _accepted_model(d)
+    fd, key = job.fit_dir(d), wi.model_key(d)
+    summary = json.loads((fd / "summary.json").read_text(encoding="utf-8")) if (fd / "summary.json").exists() else {}
+    version = summary.get("version") or {}
+    meta = json.loads((fd / "model_meta.json").read_text(encoding="utf-8")) if (fd / "model_meta.json").exists() else {}
+    periods = ["all"] + (["last_52"] if int(version.get("weeks") or meta.get("weeks") or 0) >= 104 else [])
+    if period not in periods:
+        raise HTTPException(400, f"Unknown period '{period}'; use {', '.join(periods)}.")
+    curves = _cached(wi.folder(d) / f"curves_{period}.json", key)
+    building = False
+    if curves is None:
+        building = _whatif_job(d, f"curves_{period}", ["--curves", period])
+    saved = _cached(wi.folder(d) / "saved.json", key) or {"scenarios": []}
+    out = {
+        "settings": wsettings(), "periods": periods, "period": period, "model_key": key,
+        "weeks_all": int(version.get("weeks") or meta.get("weeks") or 0) or None,
+        "kpi": version.get("kpi") or (st.get("result") or {}).get("model", {}).get("kpi"), "kpi_type": version.get("kpi_type"),
+        "money": version.get("money"), "currency": version.get("currency"),
+        "no_saturation": sorted(c for c, v in ((meta.get("config") or {}).get("saturation") or {}).items() if v == "none"),
+        "curves": None if curves and curves.get("error") else curves, "curves_error": (curves or {}).get("error"),
+        "building": building and curves is None, "saved": saved["scenarios"],
+    }
+    built_from = (st.get("result") or {}).get("inputs")
+    if built_from:
+        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        out["stale"] = bool(run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
+    return _clean(out)
+
+
+@app.post("/api/runs/{run_id}/whatif/exact")
+def whatif_exact(run_id: str, body: ExactIn) -> dict:
+    """Step 45: the scenario on every posterior draw of the saved model (a few seconds, in the background)."""
+    from .. import whatif as wi
+
+    d = _run_dir(run_id)
+    _accepted_model(d)
+    if any(not (v >= 0) for v in body.multipliers.values()):
+        raise HTTPException(400, "Spend can't go below zero.")
+    k, key = wi.scenario_key(body.period, body.multipliers), wi.model_key(d)
+    done = _cached(wi.folder(d) / f"exact_{k}.json", key)
+    if done is not None:
+        return _clean({"key": k, "result": done})
+    wi.write(wi.folder(d) / f"request_{k}.json", {"period": body.period, "multipliers": body.multipliers})
+    _whatif_job(d, f"exact_{k}", ["--exact", k])
+    return {"key": k, "building": True}
+
+
+@app.get("/api/runs/{run_id}/whatif/exact/{key}")
+def whatif_exact_result(run_id: str, key: str) -> dict:
+    from .. import whatif as wi
+
+    d = _run_dir(run_id)
+    done = _cached(wi.folder(d) / f"exact_{key}.json", wi.model_key(d))
+    if done is not None:
+        return _clean({"key": key, "result": done})
+    proc = _whatif_jobs.get(f"{d.name}|exact_{key}")
+    if proc is None or proc.poll() is not None:
+        raise HTTPException(404, "No exact result for this scenario: run it again.")
+    return {"key": key, "building": True}
+
+
+@app.put("/api/runs/{run_id}/whatif/saved")
+def whatif_saved(run_id: str, body: SavedIn) -> dict:
+    """Step 47: the saved scenarios (at most saved_max), kept with the run and the model they came from."""
+    from .. import whatif as wi
+    from ..whatif.scenario import settings as wsettings
+
+    d = _run_dir(run_id)
+    _accepted_model(d)
+    most = int(wsettings()["saved_max"])
+    if len(body.scenarios) > most:
+        raise HTTPException(400, f"At most {most} saved scenarios; remove one first.")
+    for sc in body.scenarios:
+        if not isinstance(sc.get("name"), str) or not isinstance(sc.get("multipliers"), dict):
+            raise HTTPException(400, "Each scenario needs a name and its multipliers.")
+    wi.write(wi.folder(d) / "saved.json", {"scenarios": body.scenarios, "model_key": wi.model_key(d)})
+    return {"saved": body.scenarios}
+
+
 @app.get("/api/runs/{run_id}/model_results_summary.html")
 def download_meridian_summary(run_id: str) -> Response:
     """Meridian's own HTML results summary, written next to the accepted model."""

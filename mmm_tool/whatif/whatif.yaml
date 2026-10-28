@@ -1,0 +1,16 @@
+# Phase G (What-If, steps 43-47). Judgment calls, not facts about any file.
+
+slider:                 # step 43: each channel's spend change, in % of its spend in the period
+  min: -100
+  max: 200
+  step: 5
+
+curve_grid:             # step 44: response curves are computed at these spend multipliers
+  max: 3.0              # (0 to 3x the period's spend), then interpolated in the browser
+  step: 0.1
+
+extrapolation:          # step 46: outside this share of a channel's spend in the period,
+  low: 0.5              # the model hasn't seen such spend: the result is a guess
+  high: 2.0
+
+saved_max: 3            # step 47: scenarios kept to compare with the current plan

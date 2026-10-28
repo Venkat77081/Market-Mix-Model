@@ -339,3 +339,24 @@ settings change after the fit, the screen says the numbers describe the earlier 
 `tests/test_phase_f.py` checks the stored summary (parts add up, curves match the table, carryover
 fades) and the screen in a browser, using `tests/data/phase_f/summary.json`, a summary produced by
 the real Phase E path. With `MMM_FIT_TESTS=1` it also fits a model and builds the summary.
+
+## Phase G: What-If (steps 43–47)
+
+Opens once a model is accepted (the **What-If (G)** button on the Model Summary, or the rail). A
+scenario changes each paid channel's spend over a period, all weeks or the last 52, by a share of
+what it was: weekly spend, and media units with it, scale by the same factor, as in Meridian's own
+response curves (for a reach-and-frequency channel, reach scales and frequency stays).
+
+| Step | What it shows |
+|---|---|
+| 43 Enter a scenario | a slider per channel, −100% to +200% of its spend in the period; **Move** an amount from one channel to another; **Reset** |
+| 44 Quick result | KPI (and revenue, with a money value) from paid media, total spend, ROI and cost per KPI, against the current plan, per channel too. It comes from response curves worked out once per period from the saved model, so a slider redraws in the browser with no server call |
+| 45 Exact result | the same scenario on every posterior draw of the saved model: the KPI and revenue with their 90% ranges, and the change, whose 90% range is the range of the draw-by-draw difference (it says when that range includes zero) |
+| 46 Extrapolation warning | a channel outside 50–200% of its spend in the period: the model hasn't seen such spend, so the result is a guess; a channel with no diminishing returns (step 23) grows in a straight line |
+| 47 Save and compare | up to 3 named scenarios, kept with the run, against the current plan, with the exact range when it was run; **Load** puts one back on the sliders |
+
+The quick and exact results agree (Meridian's channel effects add up); `tests/test_phase_g.py`
+checks that on a real fit with `MMM_FIT_TESTS=1`. The curves and exact results are computed in a
+background process (`python -m mmm_tool.whatif`) and cached in `runs/<id>/fit/whatif/` for the saved
+model, so a refit recomputes them. The slider range, the curve grid, the 50–200% limits and the
+number of saved scenarios are in `mmm_tool/whatif/whatif.yaml`.
