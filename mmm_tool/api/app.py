@@ -14,6 +14,8 @@ import math
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -351,6 +353,56 @@ def download_model(run_id: str) -> Response:
         raise HTTPException(404, "No saved model: the fit hasn't finished, or a gate failed.")
     stem = Path(_meta(d)["file"]).stem
     return FileResponse(path, media_type="application/octet-stream", filename=f"{stem}_model.pkl")
+
+
+_summary_jobs: dict[str, subprocess.Popen] = {}
+
+
+@app.get("/api/runs/{run_id}/summary")
+def get_summary(run_id: str) -> dict:
+    """The Model Summary (Phase F), stored when the model was accepted."""
+    d = _run_dir(run_id)
+    path = job.fit_dir(d) / "summary.json"
+    if not path.exists():
+        proc = _summary_jobs.get(run_id)
+        building = proc is not None and proc.poll() is None
+        raise HTTPException(404, "The Model Summary is being built." if building else
+                            "No Model Summary: Phase F opens once a model is accepted in Phase E.")
+    st = job.status(d) or {}
+    out = json.loads(path.read_text(encoding="utf-8"))
+    built_from = (st.get("result") or {}).get("inputs")
+    if built_from:
+        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        out["stale"] = bool(run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
+    out["downloads"] = {"meridian_html": (job.fit_dir(d) / "model_results_summary.html").exists(),
+                        "model": (job.fit_dir(d) / "model.pkl").exists()}
+    return _clean(out)
+
+
+@app.post("/api/runs/{run_id}/summary")
+def rebuild_summary(run_id: str) -> dict:
+    """Rebuild the Model Summary from the saved model, in the background (for models fitted before Phase F)."""
+    d = _run_dir(run_id)
+    if not (job.fit_dir(d) / "model.pkl").exists():
+        raise HTTPException(409, "No accepted model to summarise: fit one in Phase E first.")
+    proc = _summary_jobs.get(run_id)
+    if proc is None or proc.poll() is not None:
+        root = str(Path(__file__).resolve().parents[2])
+        env = {**os.environ, "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}
+        log = open(job.fit_dir(d) / "summary_log.txt", "w", encoding="utf-8")
+        _summary_jobs[run_id] = subprocess.Popen([sys.executable, "-m", "mmm_tool.summary", "--run-dir", str(d)],
+                                                 stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+    return {"building": True}
+
+
+@app.get("/api/runs/{run_id}/model_results_summary.html")
+def download_meridian_summary(run_id: str) -> Response:
+    """Meridian's own HTML results summary, written next to the accepted model."""
+    d = _run_dir(run_id)
+    path = job.fit_dir(d) / "model_results_summary.html"
+    if not path.exists():
+        raise HTTPException(404, "No Meridian summary: it is written when a model is accepted.")
+    return FileResponse(path, media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_meridian_summary.html")
 
 
 @app.get("/api/role-memory")

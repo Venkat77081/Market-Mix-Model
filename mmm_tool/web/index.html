@@ -14,6 +14,8 @@
   --bg: #f3f5f7; --surface: #ffffff; --sunken: #e9edf1; --ink: #15202b; --muted: #586675; --line: #d8dfe6;
   --accent: #1d5bbf; --accent-soft: #e3ecfa; --pass: #1b7a4b; --pass-soft: #e2f3ea; --warn: #a66300; --warn-soft: #fbefd9;
   --block: #b42a20; --block-soft: #fbe4e1; --kpi: #8a97a5;
+  /* chart series, fixed order (validated: dataviz reference palette, light on #fff) */
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --base: #b8c2cc;
   --display: "Newsreader", "Iowan Old Style", Georgia, serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -25,6 +27,7 @@
     --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1; --line: #283440;
     --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f; --warn: #e7a94a; --warn-soft: #33270f;
     --block: #f07f74; --block-soft: #3a1a17; --kpi: #5f6f7e; color-scheme: dark;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --base: #3a4754;
   }
 }
 * { box-sizing: border-box; }
@@ -199,6 +202,30 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .kp-apply { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: var(--sunken); border-radius: var(--r); padding: 12px 14px; }
 .kp-apply p { font-size: 14px; }
 
+/* Phase F: Model Summary */
+.fs { display: grid; gap: 14px; min-width: 0; }
+.fs .card > .body { gap: 12px; }
+.fstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.fstat b { display: block; font: 500 22px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.fstat span { font-size: 12px; color: var(--muted); }
+.fchart { position: relative; min-width: 0; }
+.fchart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.ftip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.4; padding: 6px 8px; border-radius: 4px; white-space: nowrap; z-index: 3; transform: translate(-50%, calc(-100% - 10px)); }
+.flegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.flegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.badge { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap; display: inline-block; }
+.badge.calibrated { color: var(--pass); border-color: currentColor; }
+.badge.model_only { color: var(--muted); border-color: var(--line); }
+.badge.hard_to_measure, .badge.rarely_on, .badge.moves_with, .badge.season_timed { color: var(--warn); border-color: currentColor; }
+.badge.prior_driven { color: var(--block); border-color: currentColor; }
+.badge.unstable { color: var(--warn); border-color: currentColor; border-style: dashed; }
+.froi td.r, .froi th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fsmalls { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.fsmalls figure { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.fsmalls figcaption { font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; gap: 6px; }
+.fdecay { display: grid; grid-template-columns: 100px minmax(0, 1fr) max-content; gap: 10px; align-items: center; font-size: 13.5px; }
+.fbanner { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: var(--r); padding: 10px 14px; font-size: 14px; }
+
 @media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -248,8 +275,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     "Coerce types", "Collapse duplicate weeks", "Resample to weeks", "Label every gap", "Flag outliers", "Check impossible values", "Normalise money",
     "Data sufficiency", "Channel activity", "Spend variation", "Channels moving together", "Marketing-caused variables", "Spend timed with seasons", "Profile report",
     "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout",
-    "Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36] };
+    "Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save",
+    "Fit health", "Sales breakdown", "ROI table", "Trust badges", "Response curves", "Carryover"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -290,6 +318,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
+    if (view === "f" && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
     if (view === "e" && !(data.result_d && data.result_d.status === "complete")) view = "d";
     if (view === "d" && !data.result_d) view = "c";
     if (view === "c" && !data.result_c) view = "b";
@@ -1098,7 +1127,13 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
       done: "The model is configured. Phase E fits and validates it.", next: "e", nextLabel: "Continue to E · Validate" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail() };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail() };
+  // Phase F opens once a model is accepted; its dot is amber when the model is out of date.
+  function summaryRail() {
+    const f = run.fit, res = fitResult();
+    if (!f || !res || res.status !== "accepted") return null;
+    return { status: f.stale ? "running" : "complete", steps: [], pending: [] };
+  }
   // Phase E in the rail: open once D is complete; its dot shows the fit's outcome.
   function fitRail() {
     if (!run.result_d || run.result_d.status !== "complete") return null;
@@ -1127,6 +1162,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function render() {
     $("start").hidden = true; $("app").hidden = false; $("new-run").hidden = false;
     if (view === "e") return renderFit();
+    if (view === "f") return renderSummary();
     const r = phaseResult(view);
     const info = PHASE_INFO[view];
     const nums = PHASE_STEPS[view];
@@ -1292,7 +1328,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <div class="progress" aria-hidden="true" style="grid-template-columns:repeat(${nums.length},1fr)">${statuses.map(v => `<span class="${v}"></span>`).join("")}</div>
       <div class="cols">
         <div class="steps">${body}<div class="nextbar"><span class="muted small">${res && res.status === "accepted" ? "The model is accepted. Phase F, the Model Summary screen, reads it." : "A model is accepted only if it passes steps 30, 31 and 32."}</span>
-          <button class="btn primary" disabled>Continue to F · Model Summary (not built yet)</button></div></div>
+          <button class="btn primary" ${res && res.status === "accepted" ? 'data-view="f"' : "disabled"}>Continue to F · Model Summary</button></div></div>
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div></div>` : ""}
           <div class="card"><h4>Gates</h4><div class="log">${[[28, "warning"], [30, "gate"], [31, "gate"], [32, "gate"], [33, "badge"], [34, "badge, optional"], [35, "warning, optional"]].map(([n, k]) => `<div>${n} ${esc(STEP_NAMES[n - 1])} <span class="muted">(${k})</span></div>`).join("")}</div></div>
@@ -1326,6 +1362,225 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const cancel = $("fit-cancel");
     if (cancel) cancel.onclick = async () => { await api("DELETE", `/api/runs/${run.run_id}/fit`).catch(() => {}); show(await api("GET", `/api/runs/${run.run_id}`)); };
   }
+
+  // ---------- Phase F: Model Summary (steps 37-42) ----------
+  // Every number comes from summary.json, stored when the model was accepted, so nothing is
+  // computed here. Panel order is trust before results: fit health and badges above the ROI table.
+  let fsum = null;            // { run, key, data }
+  let fPeriod = "all";        // ROI table and sales totals: "all" weeks or "last_52"
+  const F_ORDER = [37, 40, 39, 38, 41, 42];
+  const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)"];
+  const fnum = (v, d = 0) => v == null ? "–" : Number(v).toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d });
+  const fmoney = v => v == null ? "–" : Math.abs(v) >= 1e7 ? `₹${(v / 1e7).toFixed(2)} Cr` : Math.abs(v) >= 1e5 ? `₹${(v / 1e5).toFixed(1)} L` : `₹${fnum(v)}`;
+  const fpct = v => v == null ? "–" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+  const fpanel = (n, title, sub, body) => `<article class="card" id="step-${n}"><header><span class="n">${n}</span><h3>${esc(title)}</h3><span></span>
+      ${sub ? `<p class="sum">${sub}</p>` : ""}</header><div class="body">${body}</div></article>`;
+  const fwidth = id => Math.max(300, Math.round(($(id) || {}).clientWidth || 680));
+  const fbadges = rows => (rows || []).map(b => `<span class="badge ${esc(b.badge)}" title="${esc(b.why)}">${esc(b.text)}</span>`).join(" ");
+
+  async function renderSummary() {
+    $("rail").innerHTML = railHtml();
+    const f = run.fit || {};
+    const key = `${run.run_id}|${(f.result && f.result.model && f.result.model.saved_at) || ""}`;
+    if (!fsum || fsum.key !== key) {
+      $("main").innerHTML = `<div class="runhead"><div><span class="eyebrow">Screen F · steps 37–42</span><h1>Model Summary</h1></div></div><p class="muted">Loading the stored summary…</p>`;
+      try { fsum = { key, data: await api("GET", `/api/runs/${run.run_id}/summary`) }; }
+      catch (e) {
+        $("main").innerHTML = `<div class="runhead"><div><span class="eyebrow">Screen F · steps 37–42</span><h1>Model Summary</h1></div></div>
+          <div class="card" style="padding:14px 16px;display:grid;gap:10px"><p>${esc(e.message)}</p>
+          ${f.result && f.result.status === "accepted" ? `<p class="muted small">This model was accepted before the summary was stored with it. Build it from the saved model (a minute or two).</p><div><button class="btn primary" id="f-build">Build the Model Summary</button></div>` : ""}</div>`;
+        const b = $("f-build");
+        if (b) b.onclick = async () => { await api("POST", `/api/runs/${run.run_id}/summary`); b.disabled = true; b.textContent = "Building…"; fsumPoll(); };
+        wire();
+        return;
+      }
+    }
+    const S = fsum.data, v = S.version, kpi = v.kpi;
+    const roi = S.roi[fPeriod] || S.roi.all, br = S.breakdown[fPeriod] || S.breakdown.all;
+    const per = S.roi.last_52 ? `<div class="seg" role="group" aria-label="Period">${[["all", `All ${v.weeks} weeks`], ["last_52", "Last 52 weeks"]].map(([k, l]) =>
+      `<button data-fperiod="${k}" aria-pressed="${fPeriod === k}">${l}</button>`).join("")}</div>` : "";
+    const fit = S.fit, acc = fit.accuracy || {}, rh = fit.rhat || {};
+    const holdTxt = fit.holdout ? `The last ${fit.holdout.weeks} weeks (${esc(fit.holdout.start)} to ${esc(fit.holdout.end)}) were held back in step 31, then the model was refit on every week` : "";
+    const panels = {
+      37: fpanel(37, "Fit health", `Predicted against actual ${esc(kpi)}. ${holdTxt}.`,
+        `<div class="fstats">
+          <div class="fstat"><b>${fpct(acc.Train && acc.Train.MAPE)}</b><span>Train MAPE</span></div>
+          <div class="fstat"><b>${fpct(acc.Test && acc.Test.MAPE)}</b><span>Test MAPE (gate: under ${fpct(fit.test_mape_max || 0.1)})</span></div>
+          <div class="fstat"><b>${acc.Test && acc.Test.R_Squared != null ? acc.Test.R_Squared.toFixed(2) : "–"}</b><span>Test R²</span></div>
+          <div class="fstat"><b>${fpct(fit.naive_mape)}</b><span>Same week last year (MAPE)</span></div>
+          <div class="fstat"><b>${rh.worst && rh.worst.rhat != null ? rh.worst.rhat.toFixed(3) : "–"}</b><span>Highest R-hat, final fit (limit ${rh.limit})</span></div>
+        </div><div class="fchart" id="f-fit"></div>
+        <div class="flegend"><span><i style="background:var(--kpi)"></i>actual</span><span><i style="background:var(--accent)"></i>predicted, with its 90% range</span></div>`),
+      40: fpanel(40, "Trust badges", "How much to trust each channel's numbers. Hover a badge for the reason.",
+        `<div class="scroll"><table style="min-width:520px"><tbody>${S.paid.map(c => `<tr><td style="width:120px;font-weight:500">${esc(c)}</td>
+          <td style="width:260px">${fbadges(S.badges[c])}</td><td class="muted small">${(S.badges[c] || []).filter(b => b.badge !== "model_only").map(b => esc(b.why)).join(" ") || "No experiment behind it; the estimate comes from the data and the default prior."}</td></tr>`).join("")}</tbody></table></div>`),
+      39: fpanel(39, "ROI table", `${esc(v.roi_unit)}, mean and 90% range${fPeriod === "last_52" ? " · last 52 weeks" : ""}. Next-₹ ROI is the return on one more rupee at current spend.`,
+        `<div class="fchart" id="f-roi"></div>
+        <div class="scroll"><table class="froi" style="min-width:860px"><thead><tr><th>Channel</th><th class="r">Spend</th><th class="r">ROI</th><th class="r">90% range</th><th class="r">Next-₹ ROI</th>
+          <th class="r">${esc(kpi)} driven</th><th class="r">90% range</th><th class="r">Cost per ${esc(kpi)}</th><th>Trust</th></tr></thead><tbody>
+          ${roi.rows.map(r => `<tr${r.channel === "all paid" ? ' style="font-weight:600"' : ""}><td>${esc(r.channel === "all paid" ? "All paid media" : r.channel)}</td><td class="r">${fmoney(r.spend)}</td>
+            <td class="r">${r.roi.mean.toFixed(2)}</td><td class="r muted">${r.roi.lo.toFixed(2)}–${r.roi.hi.toFixed(2)}</td><td class="r">${r.channel === "all paid" ? "" : r.mroi.mean.toFixed(2)}</td>
+            <td class="r">${fnum(r.kpi_driven.mean)}</td><td class="r muted">${fnum(r.kpi_driven.lo)}–${fnum(r.kpi_driven.hi)}</td><td class="r">${fmoney(r.cost_per_kpi.mean)}</td>
+            <td>${r.channel === "all paid" ? "" : fbadges(S.badges[r.channel])}</td></tr>`).join("")}</tbody></table></div>`),
+      38: fpanel(38, "Sales breakdown", `${esc(kpi)} from the baseline and from each channel${fPeriod === "last_52" ? ", last 52 weeks" : ""}; the parts add up to the predicted total.`,
+        `<div class="fchart" id="f-total"></div><div class="fchart" id="f-weekly"></div><div class="flegend" id="f-legend"></div>
+        <div class="scroll"><table class="froi" style="min-width:420px"><thead><tr><th>Part</th><th class="r">${esc(kpi)}</th><th class="r">90% range</th><th class="r">Share</th></tr></thead><tbody>
+          ${[["baseline", br.baseline], ...Object.entries(br.channels).sort((a, b) => b[1].mean - a[1].mean)].map(([c, x]) =>
+            `<tr><td>${esc(c)}${S.paid.includes(c) || c === "baseline" ? "" : ' <span class="muted small">(not paid media)</span>'}</td><td class="r">${fnum(x.mean)}</td><td class="r muted">${fnum(x.lo)}–${fnum(x.hi)}</td><td class="r">${fpct(x.mean / br.total)}</td></tr>`).join("")}
+          </tbody></table></div>`),
+      41: fpanel(41, "Response curves", `${esc(kpi)} driven against total spend over the period, if each week's spend were scaled up or down. The dot is current spend.`,
+        `<div class="fsmalls">${S.paid.filter(c => S.curves[c]).map(c => `<figure><figcaption><span>${esc(c)}</span><span class="mono muted">next ₹: ${(roi.rows.find(r => r.channel === c) || { mroi: { mean: NaN } }).mroi.mean.toFixed(2)}</span></figcaption>
+          <div class="fchart" data-curve="${esc(c)}"></div></figure>`).join("")}</div>`),
+      42: fpanel(42, "Carryover", "Share of a week's effect still working in each following week (week 0 = 100%), with the half-life.",
+        `<div style="display:grid;gap:8px">${S.paid.filter(c => S.carryover[c]).map(c => `<div class="fdecay"><span style="font-weight:500">${esc(c)}</span><span class="fchart" data-decay="${esc(c)}"></span>
+          <span class="mono muted small">${S.carryover[c].half_life == null ? "lasts past the window" : `half-life ${S.carryover[c].half_life.toFixed(1)} wk`}</span></div>`).join("")}</div>`),
+    };
+    const stale = S.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so these numbers describe the earlier version. Refit in Phase E to update them.</div>` : "";
+    $("main").innerHTML = `
+      <div class="runhead"><div><span class="eyebrow">Screen F · steps 37–42</span><h1>Model Summary</h1></div>
+        <div class="chips"><span class="chip mono">model ${esc(v.data_version || "–")}</span><span class="chip">data to ${esc(v.last_week)}</span>
+          <span class="chip">${v.weeks} weeks · ${v.geos === 1 ? "national" : `${v.geos} regions`}</span><span class="chip">${esc((v.sampler && v.sampler.label) || "")} sampler</span></div></div>
+      ${stale}
+      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between">${per}
+        <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/api/runs/${run.run_id}/summary" download="model_summary.json">Summary (JSON)</a>
+        ${S.downloads && S.downloads.meridian_html ? `<a class="btn" href="/api/runs/${run.run_id}/model_results_summary.html">Meridian report (HTML)</a>` : ""}
+        ${S.downloads && S.downloads.model ? `<a class="btn" href="/api/runs/${run.run_id}/model.pkl">Model (.pkl)</a>` : ""}</span></div>
+      <div class="fs">${F_ORDER.map(n => panels[n]).join("")}</div>`;
+    wire();
+    $("main").querySelectorAll("[data-fperiod]").forEach(b => b.onclick = () => { fPeriod = b.dataset.fperiod; renderSummary(); });
+    fDraw();
+  }
+
+  function fsumPoll() {
+    setTimeout(async () => {
+      try { await api("GET", `/api/runs/${run.run_id}/summary`); show(await api("GET", `/api/runs/${run.run_id}`)); }
+      catch (e) { if (view === "f") fsumPoll(); }
+    }, 5000);
+  }
+
+  function fDraw() {
+    const S = fsum.data;
+    fFitChart(S);
+    fRoiChart(S);
+    fBreakdown(S);
+    document.querySelectorAll("[data-curve]").forEach(h => fCurve(h, S.curves[h.dataset.curve], S));
+    document.querySelectorAll("[data-decay]").forEach(h => fDecay(h, S.carryover[h.dataset.decay]));
+  }
+  // A crosshair tooltip for week-based charts: nearest week to the pointer.
+  function fHover(host, g, n, text) {
+    const svg = host.querySelector("svg"), tip = document.createElement("div"), line = svg.querySelector(".fx");
+    tip.className = "ftip"; tip.hidden = true; host.appendChild(tip);
+    const at = e => {
+      const r = svg.getBoundingClientRect(), sc = r.width / g.W, x = (e.clientX - r.left) / sc;
+      const i = Math.max(0, Math.min(n - 1, Math.round((x - g.l) / ((g.W - g.l - g.r) / Math.max(1, n - 1)))));
+      line.setAttribute("x1", g.x(i)); line.setAttribute("x2", g.x(i)); line.style.display = "";
+      tip.innerHTML = text(i); tip.hidden = false;
+      tip.style.left = Math.min(Math.max(g.x(i) * sc, 90), r.width - 90) + "px"; tip.style.top = "8px";
+    };
+    svg.onpointermove = at; svg.onpointerdown = at;
+    svg.onpointerleave = () => { tip.hidden = true; line.style.display = "none"; };
+  }
+  function fAxisY(g, ticks, fmt) {
+    return ticks.map(v => `<line x1="${g.l}" x2="${g.W - g.r}" y1="${g.y(v)}" y2="${g.y(v)}" stroke="var(--line)"/><text x="${g.l - 8}" y="${g.y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${fmt(v)}</text>`).join("");
+  }
+  function fTicks(lo, hi, n = 4) {
+    const span = Math.max(hi - lo, 1e-9), step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= n) || 10 * mag;
+    // From the step at or below lo to the first step at or above hi, so every mark sits inside the axis.
+    const out = []; let v = Math.floor(lo / step) * step;
+    out.push(Math.round(v * 1e6) / 1e6);
+    while (v < hi - step * 1e-6) { v += step; out.push(Math.round(v * 1e6) / 1e6); }
+    return out;
+  }
+  function fGeom(id, h, l = 64) {
+    const W = fwidth(id), g = { W, H: h, l, r: 12, t: 10, b: 24 };
+    return g;
+  }
+  function fFitChart(S) {
+    const F = S.fit, n = F.weeks.length, g = fGeom("f-fit", 230);
+    const lo = Math.min(...F.actual, ...F.expected_lo), hi = Math.max(...F.actual, ...F.expected_hi), ticks = fTicks(lo, hi);
+    g.x = i => g.l + (i / Math.max(1, n - 1)) * (g.W - g.l - g.r);
+    g.y = v => g.t + (1 - (v - ticks[0]) / (ticks[ticks.length - 1] - ticks[0])) * (g.H - g.t - g.b);
+    const path = a => a.map((v, i) => `${i ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("");
+    const band = path(F.expected_hi) + F.expected_lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + "Z";
+    const h0 = F.holdout ? F.weeks.indexOf(F.holdout.start) : -1;
+    const shade = h0 >= 0 ? `<rect x="${g.x(h0)}" y="${g.t}" width="${g.x(n - 1) - g.x(h0)}" height="${g.H - g.t - g.b}" fill="var(--sunken)"/><text x="${g.W - g.r - 4}" y="${g.t + 12}" text-anchor="end" fill="var(--muted)" font-size="11" paint-order="stroke" stroke="var(--surface)" stroke-width="3">held back in step 31</text>` : "";
+    $("f-fit").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Actual and predicted weekly ${esc(S.version.kpi)}">${shade}${fAxisY(g, ticks, v => fnum(v))}
+      <path d="${band}" fill="var(--accent)" fill-opacity="0.14"/><path d="${path(F.actual)}" fill="none" stroke="var(--kpi)" stroke-width="1.2"/>
+      <path d="${path(F.expected)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      <line class="fx" y1="${g.t}" y2="${g.H - g.b}" stroke="var(--ink)" stroke-dasharray="2 3" style="display:none"/>
+      <text x="${g.l}" y="${g.H - 6}" fill="var(--muted)" font-size="11">${esc(F.weeks[0])}</text><text x="${g.W - g.r}" y="${g.H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(F.weeks[n - 1])}</text></svg>`;
+    fHover($("f-fit"), g, n, i => `<b>${esc(F.weeks[i])}</b><br>actual ${fnum(F.actual[i])} · predicted ${fnum(F.expected[i])}<br><span style="opacity:.75">90% range ${fnum(F.expected_lo[i])}–${fnum(F.expected_hi[i])}</span>`);
+  }
+  function fRoiChart(S) {
+    const rows = (S.roi[fPeriod] || S.roi.all).rows.filter(r => r.channel !== "all paid");
+    const W = fwidth("f-roi"), rowH = 28, l = 110, r = 16, t = 18, H = t + rows.length * rowH + 24;
+    const hi = Math.max(...rows.map(x => x.roi.hi), S.version.money ? 1.5 : 0), ticks = fTicks(0, hi, 5);
+    const x = v => l + (v / ticks[ticks.length - 1]) * (W - l - r);
+    const breakeven = S.version.money ? `<line x1="${x(1)}" x2="${x(1)}" y1="${t - 8}" y2="${H - 20}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${x(1) + 4}" y="${t - 6}" fill="var(--muted)" font-size="10.5">break-even</text>` : "";
+    const prior = c => (S.badges[c] || []).some(b => b.badge === "prior_driven");
+    $("f-roi").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="ROI per channel with its 90% range">
+      ${ticks.map(v => `<line x1="${x(v)}" x2="${x(v)}" y1="${t - 4}" y2="${H - 20}" stroke="var(--line)"/><text x="${x(v)}" y="${H - 6}" text-anchor="middle" fill="var(--muted)" font-size="11">${v}</text>`).join("")}${breakeven}
+      ${rows.map((c, i) => { const y = t + i * rowH + rowH / 2, pd = prior(c.channel);
+        return `<g><title>${esc(c.channel)}: ROI ${c.roi.mean.toFixed(2)} (90% ${c.roi.lo.toFixed(2)}–${c.roi.hi.toFixed(2)})${pd ? ", prior-driven" : ""}</title>
+          <text x="${l - 10}" y="${y + 4}" text-anchor="end" fill="var(--ink)" font-size="12.5">${esc(c.channel)}</text>
+          <rect x="${x(c.roi.lo)}" y="${y - 4}" width="${Math.max(2, x(c.roi.hi) - x(c.roi.lo))}" height="8" rx="4" fill="${pd ? "var(--block-soft)" : "var(--accent-soft)"}" stroke="${pd ? "var(--block)" : "var(--accent)"}"/>
+          <circle cx="${x(c.roi.mean)}" cy="${y}" r="5" fill="${pd ? "var(--block)" : "var(--accent)"}" stroke="var(--surface)" stroke-width="2"/></g>`; }).join("")}</svg>`;
+  }
+  function fBreakdown(S) {
+    const br = S.breakdown[fPeriod] || S.breakdown.all, wk = S.breakdown.weekly;
+    // Paid channels by contribution: the top five keep their colour slot, the rest fold into "other paid".
+    const paid = S.paid.filter(c => br.channels[c]).sort((a, b) => br.channels[b].mean - br.channels[a].mean);
+    const named = paid.slice(0, 5), other = paid.slice(5), unpaid = Object.keys(br.channels).filter(c => !S.paid.includes(c));
+    const colour = c => named.includes(c) ? SERIES[S.paid.indexOf(c) % 5] : "var(--s6)";
+    // Total bar
+    const W = fwidth("f-total"), H = 46, l = 0, r = 0, total = br.total;
+    const parts = [["baseline", br.baseline.mean, "var(--base)"], ...named.map(c => [c, br.channels[c].mean, colour(c)]),
+      ...(other.length ? [["other paid", other.reduce((s, c) => s + br.channels[c].mean, 0), "var(--s6)"]] : [])];
+    const unpaidSum = unpaid.reduce((s, c) => s + br.channels[c].mean, 0);
+    let x0 = l; const sc = (W - l - r) / Math.max(1, parts.reduce((s, p) => s + Math.max(0, p[1]), 0));
+    $("f-total").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of ${esc(S.version.kpi)} by part">${parts.map(([c, v, col]) => {
+      const w = Math.max(0, v) * sc, out = `<rect x="${x0.toFixed(1)}" y="4" width="${Math.max(0, w - 2).toFixed(1)}" height="22" rx="3" fill="${col}"><title>${esc(c)}: ${fnum(v)} (${fpct(v / total)})</title></rect>
+        ${w > 70 ? `<text x="${(x0 + 6).toFixed(1)}" y="40" fill="var(--muted)" font-size="11">${esc(c)} ${fpct(v / total)}</text>` : ""}`; x0 += w; return out; }).join("")}</svg>`;
+    // Weekly stack: baseline, then each named channel, then other paid; unpaid levers are listed in the table.
+    const n = wk.weeks.length, g = fGeom("f-weekly", 210);
+    const series = [["baseline", wk.baseline, "var(--base)"], ...named.map(c => [c, wk.channels[c], colour(c)]),
+      ...(other.length ? [["other paid", wk.baseline.map((_, i) => other.reduce((s, c) => s + wk.channels[c][i], 0)), "var(--s6)"]] : [])];
+    const cum = []; let acc = wk.baseline.map(() => 0);
+    series.forEach(([c, vals, col]) => { const top = acc.map((a, i) => a + Math.max(0, vals[i])); cum.push([c, acc, top, col, vals]); acc = top; });
+    const hi = Math.max(...acc), ticks = fTicks(0, hi);
+    g.x = i => g.l + (i / Math.max(1, n - 1)) * (g.W - g.l - g.r);
+    g.y = v => g.t + (1 - v / ticks[ticks.length - 1]) * (g.H - g.t - g.b);
+    const area = (lo, top) => top.map((v, i) => `${i ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + "Z";
+    $("f-weekly").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Weekly ${esc(S.version.kpi)} by part, stacked">${fAxisY(g, ticks, v => fnum(v))}
+      ${cum.map(([c, lo, top, col]) => `<path d="${area(lo, top)}" fill="${col}" fill-opacity="${c === "baseline" ? 1 : 0.85}" stroke="var(--surface)" stroke-width="0.6"/>`).join("")}
+      <line class="fx" y1="${g.t}" y2="${g.H - g.b}" stroke="var(--ink)" stroke-dasharray="2 3" style="display:none"/>
+      <text x="${g.l}" y="${g.H - 6}" fill="var(--muted)" font-size="11">${esc(wk.weeks[0])}</text><text x="${g.W - g.r}" y="${g.H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(wk.weeks[n - 1])}</text></svg>`;
+    fHover($("f-weekly"), g, n, i => `<b>${esc(wk.weeks[i])}</b><br>${series.map(([c, vals]) => `${esc(c)} ${fnum(vals[i])}`).join("<br>")}`);
+    $("f-legend").innerHTML = series.map(([c, , col]) => `<span><i style="background:${col}"></i>${esc(c)}</span>`).join("")
+      + (unpaid.length ? `<span class="muted">not stacked: ${unpaid.map(esc).join(", ")} (${fnum(unpaidSum)} in total; see the table)</span>` : "");
+  }
+  function fCurve(host, C, S) {
+    if (!C) return;
+    const W = Math.max(200, Math.round(host.clientWidth || 220)), H = 130, l = 44, r = 8, t = 8, b = 20;
+    const xs = C.spend, ys = C.kpi, hi = Math.max(...C.kpi_hi), xmax = Math.max(...xs), ty = fTicks(0, hi, 3);
+    const x = v => l + (v / xmax) * (W - l - r), y = v => t + (1 - v / ty[ty.length - 1]) * (H - t - b);
+    const p = arr => arr.map((v, i) => `${i ? "L" : "M"}${x(xs[i]).toFixed(1)} ${y(v).toFixed(1)}`).join("");
+    const band = p(C.kpi_hi) + C.kpi_lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${x(xs[i]).toFixed(1)} ${y(v).toFixed(1)}`).join("") + "Z";
+    const i1 = C.multiplier.indexOf(1);
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(S.version.kpi)} driven against spend">
+      ${ty.map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="10">${fnum(v)}</text>`).join("")}
+      <path d="${band}" fill="var(--accent)" fill-opacity="0.14"/><path d="${p(ys)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      ${i1 >= 0 ? `<circle cx="${x(xs[i1])}" cy="${y(ys[i1])}" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"><title>Current spend ${fmoney(xs[i1])}: ${fnum(ys[i1])} ${esc(S.version.kpi)} (90% ${fnum(C.kpi_lo[i1])}–${fnum(C.kpi_hi[i1])})</title></circle>` : ""}
+      <text x="${l}" y="${H - 5}" fill="var(--muted)" font-size="10">₹0</text><text x="${W - r}" y="${H - 5}" text-anchor="end" fill="var(--muted)" font-size="10">${fmoney(xmax)}</text></svg>`;
+  }
+  function fDecay(host, D) {
+    if (!D) return;
+    const W = Math.max(160, Math.round(host.clientWidth || 300)), H = 28, n = D.mean.length, bw = W / n;
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of effect left each week">${D.mean.map((v, i) =>
+      `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - 2 - v * (H - 4)).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${Math.max(1, v * (H - 4)).toFixed(1)}" rx="2" fill="var(--accent)"><title>week ${D.weeks[i]}: ${fpct(v)} left (90% ${fpct(D.lo[i])}–${fpct(D.hi[i])})</title></rect>`).join("")}</svg>`;
+  }
+  window.addEventListener("resize", () => { clearTimeout(fDraw.t); fDraw.t = setTimeout(() => { if (view === "f" && fsum && $("f-fit")) fDraw(); }, 150); });
 
   const hashFor = v => `#run=${run.run_id}${v === "a" ? "" : "/" + v}`;
   function switchView(v) {
@@ -1461,7 +1716,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcde]))?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdef]))?$/);
   if (m) {
     view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);

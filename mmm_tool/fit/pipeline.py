@@ -50,6 +50,26 @@ class PhaseEResult:
         }
 
 
+def write_summary(mmm, d, steps: list[StepResult], badges: dict, model: dict, out_dir: Path) -> None:
+    """Phase F's stored numbers (summary.json) and Meridian's own HTML report. A failure
+    here never rejects the model: the reason is kept in the model info instead."""
+    import json
+
+    from ..summary import build_summary, meridian_html
+
+    try:
+        summary = build_summary(mmm, d, {s.step: s.details for s in steps}, badges, model)
+        (out_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        model["summary"] = True
+    except Exception as e:  # noqa: BLE001 - shown on the Phase F screen
+        model["summary_error"] = f"{type(e).__name__}: {e}"
+    try:
+        meridian_html(mmm, out_dir)
+        model["meridian_html"] = True
+    except Exception as e:  # noqa: BLE001
+        model["meridian_html_error"] = f"{type(e).__name__}: {e}"
+
+
 def run_phase_e(d, options: FitOptions | dict | None = None, out_dir: Path | None = None,
                 progress: Progress | None = None) -> PhaseEResult:
     if d is None or d.status != "complete":
@@ -84,6 +104,9 @@ def run_phase_e(d, options: FitOptions | dict | None = None, out_dir: Path | Non
         status = "failed"
     else:
         status = "accepted" if all(ctx.gates.get(n) for n in GATES) else "rejected"
+        if status == "accepted" and ctx.final is not None and out_dir is not None:
+            report(36, "Computing the Model Summary (Phase F)", 0.97)
+            write_summary(ctx.final, d, steps, ctx.badges, ctx.model, out_dir)
         report(36, "Done", 1.0)
     channels = []
     if ctx.metrics is not None:

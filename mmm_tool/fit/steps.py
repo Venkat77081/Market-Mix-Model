@@ -131,7 +131,9 @@ def holdout_accuracy(ctx: ECtx) -> StepResult:
     ctx.gates[31] = res["ok"]
     details = {"accuracy": acc, "naive_mape": naive, "test_mape_max": cfg["test_mape_max"], **res, "chart": chart}
     head = (f"Test MAPE {t_mape:.1%} (R² {t_r2:.2f}) on {int(test.sum())} held-back weeks; "
-            f"train MAPE {acc['Train']['MAPE']:.1%}; same-week-last-year forecast {naive:.1%}")
+            f"train MAPE {acc['Train']['MAPE']:.1%}; "
+            + (f"same-week-last-year forecast {naive:.1%}" if naive == naive
+               else "no same-week-last-year forecast (under a year of history before the test weeks)"))
     if res["ok"]:
         return _step(31, Verdict.PASS, head + ".", details)
     why = []

@@ -1,8 +1,8 @@
 # Meridian MMM Tool
 
 Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)**, **Phase C,
-Profile (steps 14–20)**, **Phase D, Configure (steps 21–27)** and **Phase E, Fit and validate
-(steps 28–36)** from the roadmap, a web UI for all five, and a clickable design mock of the later screens in `mock/` (sample data only,
+Profile (steps 14–20)**, **Phase D, Configure (steps 21–27)**, **Phase E, Fit and validate
+(steps 28–36)** and the **Model Summary screen (Phase F, steps 37–42)** from the roadmap, a web UI for all of them, and a clickable design mock of the later screens in `mock/` (sample data only,
 not connected).
 
 ## Web UI
@@ -199,3 +199,29 @@ Download the accepted model at `/api/runs/<id>/model.pkl` and load it with
 
 `pytest` checks the gate rules and the job bookkeeping in seconds. The tests that really fit with
 Meridian take several minutes, so they run only with `MMM_FIT_TESTS=1 pytest tests/test_phase_e.py`.
+
+## Phase F: Model Summary (steps 37–42)
+
+Opens once Phase E accepts a model. Every number is computed once, right after the final fit, and
+stored as `fit/summary.json` (`mmm_tool/summary/build.py`), so the screen opens instantly and draws
+its own charts from the stored tables. Panels follow the roadmap's rule, trust before results: fit
+health and badges sit above the ROI table. The header shows the model version (its data version)
+and the data's last week.
+
+| Panel | Shows | Meridian source |
+|---|---|---|
+| 37 Fit health | actual vs predicted KPI by week with a 90% band; train and test MAPE and R² from the holdout fit (step 31); highest R-hat of the final fit | `expected_vs_actual_data`, `get_rhat` |
+| 40 Trust badges | per channel: calibrated or model only, hard to measure, prior-driven, unstable (and Phase C's), each with its reason | Phases C, D and E |
+| 39 ROI table | ROI, next-₹ ROI, KPI driven, cost per KPI unit, each with a 90% range; all weeks or the last 52 | `summary_metrics(confidence_level=0.9)` |
+| 38 Sales breakdown | baseline and each channel, in total and week by week; the parts add up to the predicted KPI | `summary_metrics`, `baseline_summary_metrics` |
+| 41 Response curves | KPI driven against spend, current spend marked | `response_curves` |
+| 42 Carryover | share of a week's effect left in each following week, with the half-life | `adstock_decay` |
+
+Meridian's own HTML report (`output_model_results_summary`) is written next to the model and stays
+available as a download. For a model accepted before Phase F existed, the screen offers to build the
+summary from the saved model (`python -m mmm_tool.summary --run-dir runs/<id>`). If the data or
+settings change after the fit, the screen says the numbers describe the earlier version.
+
+`tests/test_phase_f.py` checks the stored summary (parts add up, curves match the table, carryover
+fades) and the screen in a browser, using `tests/data/phase_f/summary.json`, a summary produced by
+the real Phase E path. With `MMM_FIT_TESTS=1` it also fits a model and builds the summary.

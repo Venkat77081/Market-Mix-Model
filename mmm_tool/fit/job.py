@@ -74,6 +74,7 @@ def status(run_dir: Path) -> dict | None:
     res = _read(fd / "result.json")
     if res is not None and st.get("state") not in ACTIVE:
         st["result"] = res
+    st["summary"] = (fd / "summary.json").exists()           # Phase F's stored numbers
     return st
 
 
