@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
@@ -142,7 +142,8 @@ def _evaluate(d: Path) -> dict:
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
             "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d),
             "fit": _clean(fit), "meridian_installed": meridian_installed(),
-            "answer_key": {"loaded": bool(key), "file": (key or {}).get("_file")}}
+            "answer_key": {"loaded": bool(key), "file": (key or {}).get("_file")},
+            "refit_of": meta.get("refit_of"), "refit_options": meta.get("refit_options")}
 
 
 ANSWER_KEY = "answer_key.json"
@@ -811,6 +812,187 @@ def plan_report(run_id: str, key: str) -> Response:
     if not path.exists():
         raise HTTPException(404, "No Meridian report for this optimization.")
     return FileResponse(path, media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_optimization.html")
+
+
+# ---------- Phase I: Export, refit (steps 55-58) ----------
+
+class RegisterIn(BaseModel):
+    line: str
+    note: str = ""
+
+
+class VersionIn(BaseModel):
+    line: str
+    version: int
+
+
+def _run_log(d: Path):
+    meta = _meta(d)
+    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    return run, run.last.decision_log if run.last else []
+
+
+def _stale(d: Path, run) -> bool:
+    st = job.status(d) or {}
+    built_from = (st.get("result") or {}).get("inputs")
+    return bool(built_from and run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
+
+
+def _period(run) -> dict | None:
+    """The weeks the model table covers (its time column, as Meridian reads it)."""
+    if run.d is None or run.d.status != "complete":
+        return None
+    t = pd.to_datetime(run.d.table[run.d.coord_to_columns()["coord_to_columns"]["time"]])
+    return {"data_from": str(t.min())[:10], "data_to": str(t.max())[:10], "weeks": int(t.nunique())}
+
+
+def _registry_entry(d: Path) -> dict | None:
+    from ..export import registry as reg
+
+    hit = reg.find_run(reg.load(RUNS_DIR), d.name)
+    return {"line": hit[0], **hit[1]} if hit else None
+
+
+@app.get("/api/runs/{run_id}/export")
+def export_screen(run_id: str) -> dict:
+    """Phase I: what can be downloaded, the registry, and (for a refit) its comparison."""
+    from ..export import refit as rf
+    from ..export import registry as reg
+    from ..export import report as rpt
+
+    d = _run_dir(run_id)
+    meta = _meta(d)
+    fd = job.fit_dir(d)
+    run, log = _run_log(d)
+    st = job.status(d) or {}
+    res = st.get("result") or {}
+    mine = _registry_entry(d)
+    R = reg.load(RUNS_DIR)
+    comparison = mine.get("refit") if mine else None
+    base = None
+    if meta.get("refit_of"):
+        ro = meta["refit_of"]
+        base = next((v for v in R["lines"].get(ro["line"], {}).get("versions", []) if v["version"] == ro["version"]), None)
+        if comparison is None and base and res.get("status") in ("accepted", "rejected"):
+            try:
+                comparison = rf.compare(base, reg.snapshot(d, _period(run)))            # before it is registered
+            except reg.RegistryError:
+                comparison = None
+    g = rpt.gather(d, log, run.d.kpi if run.d else (run.a.kpi if run.a and run.a.status == "complete" else {}), mine)
+    return _clean({
+        "fit_status": res.get("status"), "stale": _stale(d, run), "not_converged": bool(res.get("not_converged")),
+        "parts": {"model": (fd / "model.pkl").exists(), "summary": (fd / "summary.json").exists(),
+                  "meridian_html": (fd / "model_results_summary.html").exists(), "whatif": (fd / "whatif" / "saved.json").exists(),
+                  "plan": (fd / "plan" / "last.json").exists(), "answer_key": (d / ANSWER_KEY).exists()},
+        "csv": sorted(rpt.csv_tables(g)), "decisions": len(log) + len(res.get("decision_log", [])),
+        "registry": reg.rows(R), "this": mine, "refit_of": meta.get("refit_of"), "base": base, "comparison": comparison,
+        "seed": res.get("seed"), "file": meta["file"],
+    })
+
+
+@app.get("/api/runs/{run_id}/bundle.zip")
+def download_bundle(run_id: str) -> Response:
+    """Step 55: one zip that reproduces the model and every decision."""
+    from ..export import bundle
+
+    d = _run_dir(run_id)
+    run, log = _run_log(d)
+    kpi = run.d.kpi if run.d else {}
+    data = bundle.build(d, log, kpi, _registry_entry(d), roles=run.a.roles if run.a and run.a.status == "complete" else None)
+    name = f"{Path(_meta(d)['file']).stem}_{d.name}_bundle.zip"
+    return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/runs/{run_id}/report.html")
+def download_report(run_id: str) -> Response:
+    """Step 56: the run as one self-contained HTML report."""
+    from ..export import report as rpt
+
+    d = _run_dir(run_id)
+    run, log = _run_log(d)
+    res = (job.status(d) or {}).get("result") or {}
+    g = rpt.gather(d, log + res.get("decision_log", []), run.d.kpi if run.d else {}, _registry_entry(d))
+    return HTMLResponse(rpt.html_report(g))
+
+
+@app.get("/api/runs/{run_id}/exports/{name}")
+def download_csv(run_id: str, name: str) -> Response:
+    from ..export import report as rpt
+
+    d = _run_dir(run_id)
+    run, log = _run_log(d)
+    res = (job.status(d) or {}).get("result") or {}
+    tables = rpt.csv_tables(rpt.gather(d, log + res.get("decision_log", []), run.d.kpi if run.d else {}, _registry_entry(d)))
+    if name not in tables:
+        raise HTTPException(404, f"No table '{name}' for this run; there are {', '.join(sorted(tables)) or 'none yet'}.")
+    return Response(tables[name], media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/registry")
+def get_registry() -> dict:
+    from ..export import registry as reg
+
+    return _clean({"lines": reg.rows(reg.load(RUNS_DIR))})
+
+
+@app.post("/api/runs/{run_id}/register")
+def register_run(run_id: str, body: RegisterIn) -> dict:
+    """Step 57: add this run's model to a product line as a new (draft) version."""
+    from ..export import registry as reg
+
+    d = _run_dir(run_id)
+    try:
+        entry = reg.register(RUNS_DIR, d, body.line, body.note, _meta(d).get("refit_of"), _period(_run_log(d)[0]))
+    except reg.RegistryError as e:
+        raise HTTPException(400, str(e)) from e
+    return _clean({"entry": entry, "registry": reg.rows(reg.load(RUNS_DIR))})
+
+
+@app.post("/api/registry/{action}")
+def registry_action(action: str, body: VersionIn) -> dict:
+    """Approve a version (an accepted, converged, up-to-date model) or retire one."""
+    from ..export import registry as reg
+
+    if action not in ("approve", "retire"):
+        raise HTTPException(404, "Unknown registry action.")
+    R = reg.load(RUNS_DIR)
+    v = next((x for x in R["lines"].get(body.line, {}).get("versions", []) if x["version"] == body.version), None)
+    stale = False
+    if v is not None and action == "approve" and (RUNS_DIR / v["run_id"]).exists():
+        d = RUNS_DIR / v["run_id"]
+        stale = _stale(d, _run_log(d)[0])
+    try:
+        entry = reg.set_status(RUNS_DIR, body.line, body.version, action, stale=stale)
+    except reg.RegistryError as e:
+        raise HTTPException(400, str(e)) from e
+    return _clean({"entry": entry, "registry": reg.rows(reg.load(RUNS_DIR))})
+
+
+@app.post("/api/refit")
+async def start_refit(line: str = Form(...), version: int = Form(...), file: UploadFile = File(...)) -> dict:
+    """Step 58: a new run on the new export, from Phase A, with the approved run's answers, seed and sampler."""
+    from ..export import refit as rf
+    from ..export import registry as reg
+
+    R = reg.load(RUNS_DIR)
+    v = next((x for x in R["lines"].get(line, {}).get("versions", []) if x["version"] == version), None)
+    if v is None or not (RUNS_DIR / v["run_id"]).exists():
+        raise HTTPException(404, f"No version {version} of '{line}' with its run on this machine.")
+    if v["status"] != "approved":
+        raise HTTPException(400, "Refit from the approved version of a product line.")
+    name = Path(file.filename or "upload.csv").name
+    if Path(name).suffix.lower() not in EXCEL_EXT | TEXT_EXT:
+        raise HTTPException(400, "Upload a CSV, TSV, TXT or Excel file.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File is over 50 MB.")
+    d = RUNS_DIR / uuid.uuid4().hex[:12]
+    d.mkdir(parents=True)
+    (d / name).write_bytes(data)
+    src_run = _run_log(RUNS_DIR / v["run_id"])[0]
+    roles = src_run.a.roles if src_run.a and src_run.a.status == "complete" else None
+    rf.start(RUNS_DIR / v["run_id"], d, d / name, line, version, roles=roles)
+    return _evaluate(d)
 
 
 @app.get("/api/runs/{run_id}/model_results_summary.html")

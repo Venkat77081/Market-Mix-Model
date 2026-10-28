@@ -1,8 +1,8 @@
 # Meridian MMM Tool
 
-Built so far: **Phase A, Ingest (steps 1–6)**, **Phase B, Clean (steps 7–13)**, **Phase C,
-Profile (steps 14–20)**, **Phase D, Configure (steps 21–27)**, **Phase E, Fit and validate
-(steps 28–36)** and the **Model Summary screen (Phase F, steps 37–42)** from the roadmap, a web UI for all of them, and a clickable design mock of the later screens in `mock/` (sample data only,
+Built: every phase of the roadmap, **A, Ingest (steps 1–6)**, **B, Clean (7–13)**, **C, Profile
+(14–20)**, **D, Configure (21–27)**, **E, Fit and validate (28–36)**, **F, Model Summary (37–42)**,
+**G, What-If (43–47)**, **H, Plan, Optimize (48–54)** and **I, Export, refit (55–58)**, a web UI for all of them, and a clickable design mock of the later screens in `mock/` (sample data only,
 not connected).
 
 ## Web UI
@@ -383,3 +383,25 @@ answer key loaded (step 32), the table adds the true next-₹ ROI. A channel wit
 returns (step 23) is flagged: the optimizer adds budget there up to its upper limit. Defaults are in
 `mmm_tool/plan/plan.yaml`; `tests/test_phase_h.py` checks the mapping and, with `MMM_FIT_TESTS=1`,
 a real optimization (budget kept, limits and locks respected, never worse than the current split).
+
+## Phase I: Export, refit (steps 55–58)
+
+Opens once a fit has finished, accepted or rejected (the rail). It reads what the earlier phases
+saved; nothing here needs Meridian except a refit's own Phase E.
+
+| Step | What it gives |
+|---|---|
+| 55 Model bundle | one zip: the export as uploaded, every answer (confirmed roles written out in full), the decision log for phases A–E with who decided each (JSON and CSV), the table after each phase and the model configuration, `model.pkl`, Phase E's result and fit request, the Model Summary, saved What-If scenarios, the last optimization, the answer key, the keyword packs and calendar file the run was read with, the reports, `MANIFEST.json` (tool commit, Python and Meridian versions, seed, sampler and a SHA-256 for every file) and `REPRODUCE.md` |
+| 56 Reports | a self-contained HTML report (validation steps and gates, ROI table, sales breakdown, saved What-If scenarios, the last optimized plan, a refit's comparison, every decision) and the tables as CSV: decisions, ROI, breakdown, weekly breakdown, weekly fit, response curves, the optimized plan; Meridian's own HTML summary |
+| 57 Model registry | `runs/registry.json`: every registered version per product line, with its period, gates, ROI and 90% ranges. A version starts as a draft; **Approve** needs an accepted, converged model whose data and settings haven't changed since the fit, and supersedes the line's previous approved version; **Retire** keeps it in the list |
+| 58 Refit | upload a newer export against an approved version: a new run from Phase A with that version's answers, confirmed roles (for columns still in the file), seed and sampler, so only what is new asks for a decision, and the Phase E form starts with the same options. Once fitted, each channel's ROI is compared with the approved version's: a mean outside the approved 90% range is flagged, and new or dropped channels are listed. Registering the refit adds the comparison to the registry |
+
+```bash
+python -m mmm_tool.export --verify mix_<run>_bundle.zip
+```
+
+reruns phases A–D from the bundle's own input, answers and settings (not the machine's) and checks
+the checksums and that the model table and configuration come out identical; refitting with the
+bundle's seed and sampler (the command is in `REPRODUCE.md`) then gives the same posterior on the
+same versions. `tests/test_phase_i.py` covers the bundle and verify (and a tampered file), the
+registry rules, the refit comparison, and the API.

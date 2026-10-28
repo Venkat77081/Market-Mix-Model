@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("file", nargs="?", help="CSV or Excel export")
     p.add_argument("--answers", help="JSON file of answers to the phase A-D questions")
     p.add_argument("--defaults", action="store_true", help="take the default for every unanswered question")
-    p.add_argument("--sampler", default="quick", help="quick or full (fit.yaml)")
+    p.add_argument("--sampler", default="quick", help='quick or full (fit.yaml), or Custom numbers as JSON: \'{"n_chains": 4, "n_adapt": 500, "n_burnin": 500, "n_keep": 1000}\'')
     p.add_argument("--stability", action="store_true", help="step 34: three extra fits on shorter windows")
     p.add_argument("--placebo", action="store_true", help="step 35: one extra fit with a random channel")
     p.add_argument("--out", default="fit", help="folder for model.pkl and result.json (default ./fit)")
@@ -61,7 +61,8 @@ def main(argv: list[str] | None = None) -> int:
 
     seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1) + 1
     print(f"seed {seed}")
-    options = {"sampler": args.sampler, "stability": args.stability, "placebo": args.placebo, "seed": seed,
+    sampler = json.loads(args.sampler) if args.sampler.strip().startswith("{") else args.sampler   # a preset or Custom numbers
+    options = {"sampler": sampler, "stability": args.stability, "placebo": args.placebo, "seed": seed,
                "seed_source": "user" if args.seed is not None else "default"}
     result = run_phase_e(run.d, options, out_dir=out,
                          progress=lambda step, msg, frac: print(f"[{frac:4.0%}] step {step}: {msg}", flush=True))
