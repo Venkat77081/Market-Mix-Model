@@ -299,7 +299,9 @@ def knots_suggestion(run_id: str) -> dict:
 
     if not baseline.meridian_installed():
         raise HTTPException(503, "Suggestions use Meridian: pip install -r requirements-model.txt.")
-    return _clean(baseline.suggest(_phase_d(_run_dir(run_id)).d))
+    run = _phase_d(_run_dir(run_id))
+    cvs = {c["channel"]: c["cv"] for s in run.c.steps if s.step == 16 for c in s.details.get("channels", [])}
+    return _clean(baseline.suggest(run.d, cvs))
 
 
 @app.get("/api/fit-settings")

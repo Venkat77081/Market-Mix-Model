@@ -38,17 +38,31 @@ const { chromium } = require("playwright");
         await page.locator(".kp-knot").nth(3).hover();
         out.tooltip = await page.locator("#kp-tip").textContent();
         out.alert_at_39 = await page.locator("#kp-alerts").textContent();
-        out.follow_tile_class = await page.locator(".kp-tile").nth(1).getAttribute("class");
-        await page.evaluate(() => { const s = document.getElementById("kp-range"); s.value = 1; s.dispatchEvent(new Event("input")); });
+        const tiles = async () => Promise.all([0, 1, 2].map(i => page.locator(".kp-tile").nth(i).getAttribute("class")));
+        const setK = k => page.evaluate(k => { const s = document.getElementById("kp-range"); s.value = k; s.dispatchEvent(new Event("input")); }, k);
+        out.cards = {};
+        for (const k of [1, 12, 24, 39]) {
+          await setK(k);
+          out.cards[k] = { classes: await tiles(), card2: (await page.locator(".kp-tile").nth(1).textContent()).replace(/\s+/g, " ").trim() };
+          if (k === 12 || k === 39) await page.locator(".kp-chart").screenshot({ path: `${shots}/step24_chart_${k}.png` });
+        }
+        await setK(1);
         out.trend_tile = await page.locator(".kp-tile").nth(2).textContent();
+        // Suggest, then preview the suggestion (it may lie beyond the slider).
+        await page.click("#kp-suggest");
+        await page.waitForSelector("#kp-use-aks", { timeout: 60000 });
+        out.suggestion = (await page.locator("#kp-suggest-out").textContent()).replace(/\s+/g, " ").trim();
+        await page.click("#kp-use-aks");
+        out.suggested_preview = { k: await page.textContent("#kp-k"), apply: await page.textContent("#kp-apply"),
+          beyond: await page.isVisible("#kp-beyond"), card2: await page.locator(".kp-tile").nth(1).getAttribute("class") };
         // Apply 19 through the quick button and the Apply button.
         await page.click('#kp-quick button[data-kp="19"]');
         await page.click("#kp-apply");
         await page.waitForFunction(() => document.getElementById("kp") && document.getElementById("kp").dataset.saved === "19", null, { timeout: 60000 });
         await page.waitForSelector("#kp-dyn path");
         out.log = await page.locator(".log").filter({ hasText: "#24" }).textContent();
-        out.summary_after_apply = await page.locator("#step-24 .sum").textContent();
-        out.pill_after_apply = await page.locator("#step-24 .pill").textContent();
+        out.summary_after_apply = await page.locator("#step-24 > header .sum").textContent();
+        out.pill_after_apply = await page.locator("#step-24 > header .pill").textContent();
       }
       await card.screenshot({ path: `${shots}/step24_${scheme}.png` });
       out[`bg_${scheme}`] = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);

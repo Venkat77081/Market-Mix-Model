@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import gen
 from mmm_tool.configure import baseline
 from mmm_tool.pipeline import run_pipeline
 
@@ -88,34 +89,102 @@ def test_decision_log_keeps_the_default():
 
 @needs_meridian
 def test_preview_covers_every_k(preview):
-    assert sorted(preview["fits"]) == list(range(1, 40))
+    assert sorted(preview["fits"]) == list(range(1, 40)) and preview["ref_k"] == 2
     f12 = preview["fits"][12]
     assert len(f12["baseline"]) == 156 and len(f12["levels"]) == 12
     assert f12["locations"] == [0, 14, 28, 42, 56, 70, 84, 98, 112, 126, 140, 155]
-    # The baseline is the knot part only: at a knot week it equals that knot's level.
+    # The chart's baseline is the knot part only: at a knot week it equals that knot's level.
     assert all(np.isclose(f12["baseline"][t], lv, atol=0.02) for t, lv in zip(f12["locations"], f12["levels"]))
-    assert set(preview["strips"]) == {"outdoor", "print", "radio", "tv", "youtube_ott"}  # CV above 0.5 in step 16
+    assert set(preview["strips"]) == set(preview["group"])
 
 
 @needs_meridian
-def test_more_knots_leave_less_for_media(preview):
-    s12, s39 = preview["share"][11], preview["share"][38]
-    print(f"\nleft for media: K=12 {s12:.1%}, K=39 {s39:.1%}")
-    assert s39 < s12
+def test_insurance_sample_values_for_review(preview, tmp_path):
+    """No pass/fail on these numbers: printed for review (run with -s)."""
+    print(f"\ninsurance_mmm_sample.csv  burst group: {preview['group']}  reference K = {preview['ref_k']}"
+          f"  trend t = {preview['trend']['t']:.2f}")
+    print(f"{'K':>4} {'card 1: media share of ups and downs':>38} {'card 2: credit kept':>20}  per channel")
+    for k in (1, 2, 6, 12, 18, 24, 39):
+        f = preview["fits"][k]
+        by = ", ".join(f"{c} {v:.0%}" for c, v in f["by_channel"].items() if v is not None)
+        print(f"{k:>4} {f['media_ups_downs']:>38.1%} {f['kept']:>14.0%} {f['tone']:>5}  {by}")
 
 
-@needs_meridian
-def test_more_knots_follow_the_bursts(preview):
-    f12, f39 = preview["follow"][11], preview["follow"][38]
-    print(f"\nbaseline follows bursts: K=12 {f12:.3f} ({preview['follow_name'][11]}), K=39 {f39:.3f} ({preview['follow_name'][38]})")
-    assert f39 > f12
-    assert preview["follow"][0] is None  # a flat baseline can't follow anything
+# Property tests on synthetic data where the truth is known (tests/gen.py) --------------
+
+SEEDS = (1, 2, 3, 4, 5)
 
 
-@needs_meridian
-def test_flat_baseline_misses_the_trend(preview):
-    print(f"\ntrend after controls: {preview['trend']['slope']:.2f} a week, t = {preview['trend']['t']:.2f}")
-    assert preview["trend"]["warn"] and abs(preview["trend"]["t"]) > 2
+def _case(tmp_path, kind, seed):
+    r = run_pipeline(gen.write_knots_case(tmp_path, kind, seed), {}, accept_defaults=True)
+    assert r.d is not None and r.d.status == "complete", r.last.steps[-1].summary
+    cvs = {c["channel"]: c["cv"] for s in r.c.steps if s.step == 16 for c in s.details["channels"]}
+    return baseline.preview(r.d, cvs)
+
+
+@pytest.fixture(scope="module")
+def cases(tmp_path_factory):
+    if not baseline.meridian_installed():
+        pytest.skip("needs google-meridian")
+    d = tmp_path_factory.mktemp("knots")
+    return {(kind, seed): _case(d, kind, seed) for kind in gen.KNOT_CASES for seed in SEEDS}
+
+
+def test_baseline_mean_matches_kpi_less_controls(cases):
+    """At every K, the chart baseline's mean is within 2% of mean KPI minus the controls' fitted mean."""
+    for p in cases.values():
+        kpi = np.mean(p["kpi"])
+        for f in p["fits"].values():
+            assert abs(np.mean(f["baseline"]) - (kpi - f["controls_mean"])) <= 0.02 * kpi
+
+
+def test_flat_truth_with_tv_bursts(cases):
+    """Credit kept is green at the default K and falls below 75% by K = weeks/4. The trend card is
+    silent at K = 1 on most files: a |t| > 2 rule false-alarms on about 1 in 20 trend-free files."""
+    below, silent = 0, 0
+    for seed in SEEDS:
+        p = cases[("flat_tv", seed)]
+        assert p["group"] == ["tv"]
+        assert p["fits"][p["default"]]["kept"] >= 0.90 and p["fits"][p["default"]]["tone"] == "good"
+        below += min(p["fits"][k]["kept"] for k in range(1, p["max"] + 1)) < 0.75
+        silent += not p["trend"]["warn"]
+    assert below >= 4 and silent >= 4, (below, silent)
+
+
+def test_strong_trend_with_tv_bursts(cases):
+    for seed in SEEDS:
+        p = cases[("trend_tv", seed)]
+        assert p["trend"]["warn"]                                       # the trend card fires at K = 1
+        assert p["fits"][p["default"]]["tone"] == "good"                # and the default K is green on card 2
+
+
+def test_only_always_on_channels_is_not_checked(cases):
+    for seed in SEEDS:
+        p = cases[("always_on", seed)]
+        assert p["group"] == [] and p["strips"] == {}
+        assert all(f["kept"] is None and f["tone"] is None for f in p["fits"].values())
+
+
+def test_tiny_noisy_burst_channel_never_joins_the_group(cases):
+    for seed in SEEDS:
+        p = cases[("tiny_burst", seed)]
+        assert "print" not in p["group"] and p["group"] == ["tv"]
+
+
+def test_burst_group_rule():
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    chans = [SimpleNamespace(name=c, spend=f"{c}_spend") for c in ("tv", "outdoor", "print", "search")]
+    t = pd.DataFrame({"tv_spend": [60.0], "outdoor_spend": [10.0], "print_spend": [4.0], "search_spend": [26.0]})
+    r = SimpleNamespace(channels=chans, table=t)
+    cvs = {"tv": 1.1, "outdoor": 0.5, "print": 1.8, "search": 0.2}
+    assert baseline.burst_group(r, cvs) == ["tv", "outdoor"]   # print is 4% of spend; search is always on
+
+
+def test_colours():
+    assert [baseline.tone(v) for v in (1.04, 0.90, 0.89, 0.75, 0.74, None)] == ["good", "good", "warn", "warn", "fail", None]
 
 
 # API and browser -----------------------------------------------------------------
@@ -146,8 +215,9 @@ def test_preview_and_suggestion_endpoints(client):
     p = client.get(f"/api/runs/{run_id}/baseline-preview").json()
     assert p["default"] == 12 and p["max"] == 39 and len(p["fits"]) == 39
     s = client.get(f"/api/runs/{run_id}/knots-suggestion").json()
-    print(f"\nMeridian AKS suggests {s['knots']} knots")
+    print(f"\nMeridian AKS suggests {s['knots']} knots; burst credit kept there: {s['fit']['kept']:.0%} ({s['fit']['tone']})")
     assert s["knots"] == len(s["locations"]) and s["knots"] > 1
+    assert len(s["fit"]["baseline"]) == 156 and len(s["fit"]["locations"]) == s["knots"]
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {**ANSWERS, "knots": 19}}).json()
     assert r["result_d"]["config"]["knots"] == 19
 
@@ -198,6 +268,16 @@ def test_slider_in_the_browser(tmp_path):
         assert m["tooltip"].startswith("Knot 4 of 39") and "level" in m["tooltip"]
         assert "likely to absorb campaign effects" in m["alert_at_39"]
         assert "credited to media" in m["trend_tile"]
+        print("card colours (card 1, 2, 3):", {k: v["classes"] for k, v in m["cards"].items()})
+        print("card 2 at 24:", m["cards"]["24"]["card2"][:160])
+        print("suggestion:", m["suggestion"][:200], "| preview:", m["suggested_preview"])
+        assert all(v["classes"][0].strip() == "kp-tile" for v in m["cards"].values())     # card 1 has no colour
+        assert m["cards"]["12"]["classes"][2].strip() == "kp-tile"                        # card 3 not checked at K >= 2
+        assert "warn" in m["cards"]["1"]["classes"][2]                                    # the sample's trend fires at K = 1
+        assert "Burst channels (" in m["cards"]["24"]["card2"]
+        assert "check card 2 before using it" in m["suggestion"]
+        sp = m["suggested_preview"]
+        assert sp["apply"] == f"Apply {sp['k']} knots" and (sp["beyond"] == (int(sp["k"]) > 39))
         assert "#24 knots = 19 (you; default 12)" in m["log"]
         assert m["summary_after_apply"].startswith("19 knots, one about every 9 weeks")
         assert m["bg_light"] != m["bg_dark"]                      # both themes render

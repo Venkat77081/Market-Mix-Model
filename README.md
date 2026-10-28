@@ -133,15 +133,25 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 
 **Step 24 preview.** Before you choose, the step shows what each number of knots does. Knot
 placement and weights come from Meridian's `knots.get_knot_info`. For every K from 1 to weeks/4, a
-quick ridge regression (media effects held at zero or above) splits weekly sales into baseline,
-controls and media; the chart draws the baseline (the knot part), with the burst channels from step
-16 as strips underneath. The slider redraws in the browser with no server call; nothing is saved
-until **Apply**, which records the choice in the decision log and marks a Phase E fit out of date.
-Three diagnostics show the trade-off rather than a fit error: *left for media* (media's share of
-the preview, for every K), *baseline follows bursts* (how closely the baseline's week-to-week change
-tracks a burst channel's spend; amber above 0.3, red above 0.5) and, with one knot, *trend left out*.
-**Suggest** marks Meridian's automatic knot selection on the slider and never applies it. The
-preview is a guide; Meridian estimates the real baseline in step 29. Code: `configure/baseline.py`.
+quick regression splits weekly sales into baseline (the knots), controls and media: knot levels
+are not penalised (Meridian's knot prior is very wide), controls and media get a light ridge, media
+effects are held at zero or above, and media and controls are centred, so the knots own the
+average level. The chart draws the baseline, with the burst channels as strips underneath. The
+slider redraws in the browser with no server call; nothing is saved until **Apply**, which
+records the choice in the decision log and marks a Phase E fit out of date. Three cards:
+
+1. *Media's share of the ups and downs*: the share of the fitted week-to-week movement that the
+   preview gives media, for every K. A guide, with no colour.
+2. *Burst credit kept*: burst channels (spend CV 0.5 or more in step 16, and at least 5% of paid
+   spend) keep this share of their total contribution compared with a straight-line baseline
+   (2 knots). Green at 90% or more, amber 75–90%, red below; each channel's own figure is
+   listed. White when there is no burst channel.
+3. *Trend left out*, with one knot: a linear trend in sales after controls (|t| above 2).
+
+**Suggest** shows Meridian's automatic knot selection, with card 2's value for it; **Preview** loads
+it (it can lie beyond the slider) and **Apply** saves it. The preview is a guide; Meridian
+estimates the real baseline in step 29. Code: `configure/baseline.py`; property tests on synthetic
+data with a known truth in `tests/test_step24.py` and `tests/gen.py`.
 
 With Meridian installed (`pip install -r requirements-model.txt`, about 1.5 GB with TensorFlow),
 `mmm_tool.configure.spec.build_input_data(result)` and `build_model_spec(result.config, input_data)`
