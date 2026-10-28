@@ -183,8 +183,9 @@ def test_step34_stable_but_prior_driven_gets_the_note(tmp_path, monkeypatch):
     s = fsteps.stability(ctx)
     notes = {c["channel"]: c.get("note") for c in s.details["channels"]}
     print(f"\nstep 34: {s.summary}")
-    assert notes[names[0]] == fsteps.NEAR_ASSUMPTION and notes[names[1]] == fsteps.NEAR_ASSUMPTION
-    assert notes[names[2]] is None and fsteps.NEAR_ASSUMPTION in s.summary
+    near = "Stable because it stays near the starting assumption"
+    assert notes[names[0]] == near and notes[names[1]] == near
+    assert notes[names[2]] == "Stable, and the data supports it" and "because they stay near the starting assumption" in s.summary
 
 
 def test_stability_window_leaves_out_a_control_that_is_flat_inside_it(tmp_path):
@@ -362,3 +363,23 @@ def test_ins_full_answer_key_matching(ins):
     truth.validate(key, r.a.kpi["kpi"])
     with pytest.raises(truth.TruthError):
         truth.validate({**key, "kpi_column": "something else"}, r.a.kpi["kpi"])
+
+
+@needs_ins
+@needs_meridian
+@pytest.mark.skipif(__import__("os").environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
+def test_ins_full_step34_notes(ins, tmp_path):
+    from mmm_tool.fit import run_phase_e
+
+    r, _, answers = ins
+    e = run_phase_e(r.d, {"sampler": answers.get("sampler", "quick"), "seed": answers.get("seed"), "stability": True},
+                    out_dir=tmp_path / "fit")
+    rows = {c["channel"]: c for c in next(s for s in e.steps if s.step == 34).details["channels"]}
+    for ch, c in rows.items():
+        print(f"{ch:16} CV {c['cv']:.2f}  {c['status']:16} {c['note']}")
+    assert all(c["note"] for c in rows.values())
+    for ch in ("meta", "tv_you_tube"):
+        assert rows[ch]["note"] == "Stable, and the data supports it"
+    assert rows["radio"]["status"] == "unstable" and rows["radio"]["note"].startswith("Unstable: ROI ranges 0.65–1.53 across windows")
+    for ch in ("affiliate", "google_search", "policy_bazaar"):
+        assert rows[ch]["note"] == "Stable because it stays near the starting assumption"

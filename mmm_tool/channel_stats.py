@@ -9,6 +9,7 @@ table (the same table the preview regression and the fit see).
   cv     sample standard deviation of weekly spend ÷ its mean (step 16's rule:
          in a regional model, the median of each region's CV)
   share  the channel's total spend ÷ all paid spend
+  active the share of weeks with any spend (step 15's rule: summed over regions)
 """
 from __future__ import annotations
 
@@ -43,5 +44,7 @@ def channel_stats(result) -> dict[str, dict[str, Any]]:
             cv = float(np.median([_cv(part) for _, part in t.groupby(geo)[c.spend]]))
         else:
             cv = _cv(t.groupby(date)[c.spend].sum())
-        out[c.name] = {"cv": cv, "share": totals[c.name] / paid, "spend": totals[c.name], "sources": c.sources()}
+        weekly = t.groupby(date)[c.spend].sum()
+        out[c.name] = {"cv": cv, "share": totals[c.name] / paid, "spend": totals[c.name], "sources": c.sources(),
+                       "active": float((weekly > 0).mean()) if len(weekly) else 0.0}
     return out

@@ -310,6 +310,31 @@ def prior_driven(ctx: ECtx) -> StepResult:
 
 
 NEAR_ASSUMPTION = "stable because it stays near the starting assumption, not because the data confirms it"
+NOTE_BADGES = ("hard_to_measure", "prior_driven")
+
+
+def stability_note(cv: float, limit: float, rois: list[float], badges: list[str], active: float | None,
+                   few_active: float, drop_weeks: int = 26) -> dict:
+    """Step 34's status and note for one channel; never empty. A CV that can't be computed counts as unstable."""
+    if cv is not None and cv == cv and cv < limit:
+        why = [b for b in NOTE_BADGES if b in badges]
+        if why:
+            return {"status": "near_assumption", "note": "Stable because it stays near the starting assumption",
+                    "note_badges": why}
+        return {"status": "supported", "note": "Stable, and the data supports it", "note_badges": []}
+    vals = [v for v in rois if v is not None and v == v]
+    note = (f"Unstable: ROI ranges {min(vals):.2f}–{max(vals):.2f} across windows" if vals
+            else "Unstable: ROI could not be compared across windows")
+    reasons, evidence = [], []
+    if active is not None and active < few_active:
+        reasons.append("few active weeks")
+        evidence.append(f"active in {active:.0%} of weeks")
+    if "season_timed" in badges:
+        reasons.append("mostly in one season")
+        evidence.append("timed with a season")
+    if reasons:
+        note += f"; {' and '.join(reasons)}, so removing {drop_weeks} weeks removes much of its evidence"
+    return {"status": "unstable", "note": note, "note_badges": [], "evidence": evidence}
 
 
 def _date_col(ctx: ECtx) -> str:
@@ -346,15 +371,23 @@ def stability(ctx: ECtx) -> StepResult:
     unstable = [r["channel"] for r in table if not (r["cv"] < limit)]
     for ch in unstable:
         ctx.badge(ch, "unstable")
-    near = []
+    from ..channel_stats import channel_stats
+
+    try:
+        active = {ch: s["active"] for ch, s in channel_stats(ctx.d).items()}
+    except Exception:  # noqa: BLE001 - the note just leaves out the activity reason
+        active = {}
+    few = float(cfg.get("few_active_share", 0.3))
     for r in table:          # stable is not the same as confirmed
-        why = [b for b in ("hard_to_measure", "prior_driven") if b in ctx.badges.get(r["channel"], [])]
-        if r["channel"] not in unstable and why:
-            r["note"], r["note_badges"] = NEAR_ASSUMPTION, why
-            near.append(r["channel"])
-    details = {"windows": list(rois), "channels": table, "cv_max": limit, "unstable": unstable, "skipped": skipped,
+        r.update(stability_note(r["cv"], limit, list(r["roi"].values()), ctx.badges.get(r["channel"], []),
+                                active.get(r["channel"]), few, drop))
+        if r["channel"] in active:
+            r["active_share"] = active[r["channel"]]
+    near = [r["channel"] for r in table if r["status"] == "near_assumption"]
+    details = {"windows": list(rois), "channels": table, "cv_max": limit, "few_active_share": few, "unstable": unstable, "skipped": skipped,
                "near_assumption": near, "controls_left_out": left_out}
-    tail = (f"; {', '.join(near)} {'is' if len(near) == 1 else 'are'} {NEAR_ASSUMPTION}" if near else "")
+    tail = (f"; {', '.join(near)} {'is' if len(near) == 1 else 'are'} "
+            + (NEAR_ASSUMPTION if len(near) == 1 else NEAR_ASSUMPTION.replace("it stays", "they stay")) if near else "")
     warnings = [f"Window skipped: {s}." for s in skipped]
     warnings += [f"Refit {label}: {', '.join(cols)} left out (no change inside those weeks)." for label, cols in left_out.items()]
     if len(rois) < 2:

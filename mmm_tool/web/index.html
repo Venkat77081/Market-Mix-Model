@@ -253,6 +253,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .pl-bar i { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
 @media (max-width: 1000px) { .pl { grid-template-columns: minmax(0, 1fr); } }
 
+/* Step 34: each channel's note sits on its own line under its numbers */
+.s34 tr:has(+ .s34-note) td { border-bottom: 0; padding-bottom: 2px; }
+.s34 .s34-note td { padding-top: 0; }
+@media (max-width: 760px) { .s34 .s34-note td > div { position: sticky; left: 10px; max-width: calc(100vw - 92px); } }
+
 /* Phase I: Export, refit */
 .ex-parts { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
 .ex-parts li { break-inside: avoid; margin-bottom: 2px; }
@@ -1393,9 +1398,18 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         ${T ? `<p class="small">${num(T.inside)} of ${num(T.compared)} channels have the truth inside their 90% range.${T.mean_abs_error != null ? ` Mean absolute ${esc(money ? "ROI" : T.label)} error: ${(T.mean_abs_error * 100).toFixed(0)}%.` : ""}${T.compared < T.channels ? ` ${num(T.channels - T.compared)} channel(s) have no truth to compare.` : ""}</p>` : ""}`; },
     33: s => `<div class="scroll"><table style="min-width:480px"><thead><tr><th>Channel</th><th>Prior 90%${s.details.channels.every(c => c.prior_source === "exact") ? ' <span class="muted small">(exact)</span>' : ""}</th><th>Posterior 90%</th><th>Narrower by</th></tr></thead><tbody>${s.details.channels.map(c =>
       `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${range(...c.prior)}</td><td class="num">${range(...c.posterior)}</td><td class="num" ${c.narrowing < s.details.min_narrowing ? 'style="color:var(--warn)"' : ""}>${pct(Math.max(0, c.narrowing))}</td></tr>`).join("")}</tbody></table></div>`,
-    34: s => s.details.skipped === true ? "" : `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th>${s.details.windows.map(w => `<th class="small">${esc(w)}</th>`).join("")}<th>CV</th><th></th></tr></thead><tbody>${s.details.channels.map(c =>
-      `<tr><td><b>${esc(c.channel)}</b></td>${s.details.windows.map(w => `<td class="num">${r2(c.roi[w])}</td>`).join("")}<td class="num" ${s.details.unstable.includes(c.channel) ? 'style="color:var(--warn)"' : ""}>${r2(c.cv)}</td>
-        <td class="small muted">${c.note ? `${esc(c.note)} (${c.note_badges.map(b => esc(b.replace(/_/g, " "))).join(", ")})` : ""}</td></tr>`).join("")}</tbody></table></div>`,
+    34: s => { const d = s.details; if (d.skipped === true) return "";
+      const SHORT = w => w.startsWith("all weeks") ? "All weeks" : w.replace("without the first and last ", "No first+last ").replace("without the first ", "No first ").replace("without the last ", "No last ").replace(/ weeks$/, "");
+      const ST = { supported: ["pass", "supported"], near_assumption: ["wait", "near assumption"], unstable: ["warn", "unstable"] };
+      // A result saved before notes existed: derive the status the same way
+      const status = c => c.status || (d.unstable.includes(c.channel) ? "unstable" : c.note ? "near_assumption" : "supported");
+      const note = c => c.status ? c.note : status(c) === "unstable" ? "Unstable" : status(c) === "near_assumption" ? "Stable because it stays near the starting assumption" : "Stable, and the data supports it";
+      const why = c => { const w = [...(c.note_badges || []).map(b => b.replace(/_/g, " ")), ...(c.evidence || [])]; return w.length ? ` <span class="muted">(${w.map(esc).join("; ")})</span>` : ""; };
+      return `<div class="scroll"><table class="s34" style="min-width:480px"><thead><tr><th>Channel</th>${d.windows.map(w => `<th class="small r" title="${esc(w)}">${esc(SHORT(w))}</th>`).join("")}<th class="r">CV</th></tr></thead><tbody>${d.channels.map(c => { const [cls, lbl] = ST[status(c)];
+        return `<tr><td><b>${esc(c.channel)}</b></td>${d.windows.map(w => `<td class="num">${r2(c.roi[w])}</td>`).join("")}<td class="num" ${status(c) === "unstable" ? 'style="color:var(--warn)"' : ""}>${r2(c.cv)}</td>
+</tr>
+        <tr class="s34-note"><td colspan="${d.windows.length + 2}" class="small"><div><span class="pill ${cls}">${lbl}</span> ${esc(note(c))}${why(c)}</div></td></tr>`; }).join("")}</tbody></table></div>
+        <p class="muted small">Stable means CV under ${d.cv_max} across the ${d.windows.length} fits. A stable channel badged hard to measure (step 16) or prior-driven (step 33) only repeats its prior. An unstable channel active in under ${pct(d.few_active_share ?? 0.3)} of weeks, or timed with a season (step 19), loses much of its evidence when weeks are removed.</p>`; },
     35: s => { const d = s.details; if (d.skipped) return "";
       const row = (label, x, cls) => `<tr><td>${label}</td><td class="num" ${cls || ""}>${r2(x.mean)}</td><td class="num">${range(x.lo, x.hi)}</td></tr>`;
       return `<p class="small">Shaped like <b>${esc(d.shaped_like)}</b>: ${esc(d.why)} (spend CV ${r2(d.shape_cv)}, ${pct(d.shape_share)} of paid spend). Same weekly amounts, in random weeks.</p>

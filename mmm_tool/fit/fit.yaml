@@ -39,6 +39,7 @@ stability:                 # step 34 (badge, optional)
   drop_weeks: 26
   min_weeks: 104           # a window shorter than this is skipped
   cv_max: 0.3
+  few_active_share: 0.3    # an unstable channel active in fewer weeks than this is noted as having few active weeks
 
 placebo:                   # step 35 (warning, optional)
   name: placebo
