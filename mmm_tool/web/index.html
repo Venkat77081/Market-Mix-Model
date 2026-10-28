@@ -13,7 +13,7 @@
 :root {
   --bg: #f3f5f7; --surface: #ffffff; --sunken: #e9edf1; --ink: #15202b; --muted: #586675; --line: #d8dfe6;
   --accent: #1d5bbf; --accent-soft: #e3ecfa; --pass: #1b7a4b; --pass-soft: #e2f3ea; --warn: #a66300; --warn-soft: #fbefd9;
-  --block: #b42a20; --block-soft: #fbe4e1;
+  --block: #b42a20; --block-soft: #fbe4e1; --kpi: #8a97a5;
   --display: "Newsreader", "Iowan Old Style", Georgia, serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -24,7 +24,7 @@
   :root {
     --bg: #0e141a; --surface: #151d25; --sunken: #1b2530; --ink: #e5ebf0; --muted: #94a3b1; --line: #283440;
     --accent: #77a6f2; --accent-soft: #1b2b44; --pass: #5cc48d; --pass-soft: #15301f; --warn: #e7a94a; --warn-soft: #33270f;
-    --block: #f07f74; --block-soft: #3a1a17; color-scheme: dark;
+    --block: #f07f74; --block-soft: #3a1a17; --kpi: #5f6f7e; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -151,6 +151,46 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .log { font: 12px var(--mono); color: var(--muted); display: grid; gap: 4px; overflow-wrap: anywhere; }
 .nextbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 .busy { position: fixed; right: 20px; bottom: 20px; background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: var(--r); font-size: 13px; z-index: 20; }
+
+/* step 24: knots preview */
+.kp { display: grid; gap: 16px; min-width: 0; }
+.kp-row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.kp-val { display: grid; min-width: 84px; }
+.kp-val b { font: 500 34px/1 var(--display); font-variant-numeric: tabular-nums; }
+.kp-val span { font-size: 12px; color: var(--muted); }
+.kp-slider { flex: 1 1 280px; min-width: 0; display: grid; gap: 4px; }
+.kp-slider input { width: 100%; accent-color: var(--accent); margin: 0; }
+.kp-ruler { position: relative; height: 22px; margin: 0 8px; }
+.kp-ruler .zone { position: absolute; top: 2px; height: 4px; border-radius: 2px; }
+.kp-ruler .lbl { position: absolute; top: 8px; font: 11px var(--mono); color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.kp-ruler .aks { position: absolute; top: -4px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--ink); transform: translateX(-5px); }
+.kp-quick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.kp-quick .seg button { text-align: left; line-height: 1.3; }
+.kp-quick .seg button small { display: block; font-size: 11px; opacity: 0.75; }
+.kp-chart { position: relative; }
+.kp-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.kp-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted); }
+.kp-legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2px solid; }
+.kp-tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.35; padding: 6px 8px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; }
+.kp-knot { cursor: pointer; }
+.kp-knot:focus { outline: none; }
+.kp-knot:focus-visible circle, .kp-knot:hover circle { r: 6; }
+.kp-caption { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
+.kp-diag { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.kp-tile { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.kp-tile.warn { border-color: var(--warn); background: var(--warn-soft); }
+.kp-tile.fail { border-color: var(--block); background: var(--block-soft); }
+.kp-tile .lab { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 500; }
+.kp-tile .val { font: 500 26px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.kp-tile .val small { font: 400 13px var(--body); color: var(--muted); margin-left: 6px; }
+.kp-tile p { font-size: 13px; }
+.kp-tile svg { width: 100%; height: auto; display: block; }
+.kp-alert { border-radius: var(--r); padding: 10px 12px; font-size: 13.5px; display: grid; grid-template-columns: 18px 1fr; gap: 8px; }
+.kp-alert.warn { background: var(--warn-soft); } .kp-alert.fail { background: var(--block-soft); }
+.kp-alert b { font: 600 13px var(--mono); }
+.kp-alert.warn b { color: var(--warn); } .kp-alert.fail b { color: var(--block); }
+.kp-apply { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: var(--sunken); border-radius: var(--r); padding: 12px 14px; }
+.kp-apply p { font-size: 14px; }
 
 @media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
 @media (max-width: 760px) {
@@ -668,10 +708,202 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <td class="muted small">${sug.includes(c) ? "often peaks later: consider binomial" : ""}</td></tr>`).join("")}</tbody></table></div>`;
   }
 
+  // Step 24: the knots preview. The server computes every K once (baseline-preview);
+  // the slider then redraws here with no server call. Nothing is saved until Apply.
+  let kp = null;        // preview data for this run and data version
+  let kpDraft = null;   // the slider's value while it differs from the applied one
+  let kpAks = null;     // Meridian's suggestion, once asked for
   function step24(s) {
     const dec = decision(s, "knots");
-    return `<form id="knots-form" class="decide soft"><p>${esc(dec.question)} <span class="muted">Default ${s.details.default} for ${s.details.weeks} weeks.</span></p>
-      <span style="display:inline-flex;gap:8px"><input id="knots-v" type="number" min="1" max="${s.details.weeks}" value="${current(dec)}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--surface)" aria-label="Knots"><button class="btn" type="submit">Apply</button></span></form>`;
+    if (!run.meridian_installed) {
+      return `<p class="muted small">Install Meridian (<span class="mono">pip install -r requirements-model.txt</span>) to preview the baseline for each number of knots.</p>
+        <form id="knots-form" class="decide soft"><p>${esc(dec.question)} <span class="muted">Default ${s.details.default} for ${s.details.weeks} weeks.</span></p>
+        <span style="display:inline-flex;gap:8px"><input id="knots-v" type="number" min="1" max="${s.details.weeks - 1}" value="${current(dec)}" style="width:90px" aria-label="Knots"><button class="btn" type="submit">Apply</button></span></form>`;
+    }
+    return `<div class="kp" id="kp" data-saved="${current(dec)}">
+      <p class="small muted">The baseline is sales with no marketing: a line through the period that can bend at each knot. More knots let it bend more often, and a baseline that bends a lot takes credit that belongs to media.</p>
+      <div class="kp-row">
+        <div class="kp-val"><b id="kp-k" class="num">${current(dec)}</b><span id="kp-unit">knots</span></div>
+        <div class="kp-slider"><label for="kp-range" class="small muted">Knots, 1 to <span id="kp-max">${s.details.max}</span></label>
+          <input type="range" id="kp-range" min="1" max="${s.details.max}" step="1" value="${current(dec)}">
+          <div class="kp-ruler" id="kp-ruler" aria-hidden="true"></div></div>
+      </div>
+      <div class="kp-quick"><div class="seg" role="group" aria-label="Quick choices" id="kp-quick">${s.details.quick.map(q =>
+        `<button type="button" data-kp="${q.k}" aria-pressed="false">${q.k}<small>${esc(q.label)}${q.k === s.details.default ? " · default" : ""}</small></button>`).join("")}</div>
+        <button class="btn" id="kp-suggest" type="button">Suggest</button></div>
+      <p class="small muted" id="kp-suggest-out" hidden></p>
+      <div><div class="kp-chart" id="kp-chart"><p class="muted small">Fitting the preview for every number of knots…</p></div><div class="kp-legend" id="kp-legend"></div></div>
+      <p class="kp-caption">Preview from a quick regression. The real baseline is estimated in step 29 and will differ.</p>
+      <div class="kp-diag" id="kp-diag"></div>
+      <div id="kp-alerts" style="display:grid;gap:8px"></div>
+      <div class="kp-apply"><p id="kp-apply-text"></p><span style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="kp-reset" type="button"><span>Back to <span id="kp-saved"></span></span></button><button class="btn primary" id="kp-apply" type="button">Apply</button></span></div>
+      ${run.fit && run.fit.stale ? `<p class="small" style="border:1px solid var(--warn);background:var(--warn-soft);border-radius:var(--r);padding:10px 14px">Steps 28–36 ran with different settings and need a rerun: refit in Phase E.</p>` : ""}
+    </div>`;
+  }
+
+  async function kpInit() {
+    const el = $("kp");
+    if (!el) return;
+    if (!kp || kp.run !== run.run_id) {
+      try {
+        const res = await fetch(`/api/runs/${run.run_id}/baseline-preview`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.status);
+        kp = { ...data, run: run.run_id };
+      } catch (e) { $("kp-chart").innerHTML = `<p class="error">The preview couldn't be computed: ${esc(e.message)}</p>`; return; }
+      if (!$("kp")) return;
+    }
+    kpStatic();
+    kpUpdate();
+    $("kp-range").oninput = e => { kpDraft = +e.target.value; kpUpdate(); };
+    $("kp-quick").onclick = e => { const b = e.target.closest("button"); if (b) { kpDraft = +b.dataset.kp; kpUpdate(); } };
+    $("kp-reset").onclick = () => { kpDraft = null; kpUpdate(); };
+    $("kp-apply").onclick = () => { const k = kpK(); kpDraft = null; answer({ knots: k }); };
+    $("kp-suggest").onclick = async () => {
+      const out = $("kp-suggest-out");
+      out.hidden = false; out.textContent = "Asking Meridian's automatic knot selection…";
+      try {
+        if (!kpAks || kpAks.run !== run.run_id) kpAks = { ...(await api("GET", `/api/runs/${run.run_id}/knots-suggestion`)), run: run.run_id };
+        kpSuggestText(); kpRuler();
+      } catch (e) { out.textContent = e.message; }
+    };
+    if (kpAks && kpAks.run === run.run_id) kpSuggestText();
+  }
+  const kpSaved = () => +$("kp").dataset.saved;
+  const kpK = () => kpDraft ?? kpSaved();
+  const kpPos = k => ((k - 1) / Math.max(1, kp.max - 1)) * 100;
+  function kpSuggestText() {
+    const out = $("kp-suggest-out"), n = kp.weeks.length;
+    out.hidden = false;
+    out.innerHTML = kpAks.knots > kp.max
+      ? `Meridian's automatic selection suggests <b style="color:var(--ink)">${kpAks.knots} knots</b>, beyond this slider's ${kp.max}. It places knots wherever sales bend, which on this data means about every ${Math.max(1, Math.round(n / kpAks.knots))} weeks. Not applied.`
+      : `Meridian's automatic selection suggests <b style="color:var(--ink)">${kpAks.knots} knots</b> (marked on the slider). It places them where sales bend; applying ${kpAks.knots} spaces them evenly. Not applied.`;
+  }
+  function kpRuler() {
+    const a = Math.floor(kp.amber) + 1, r = Math.floor(kp.red) + 1;
+    let h = `<span class="zone" style="left:0;width:${kpPos(a)}%;background:var(--pass);opacity:.35"></span>
+      <span class="zone" style="left:${kpPos(a)}%;width:${kpPos(r) - kpPos(a)}%;background:var(--warn);opacity:.55"></span>
+      <span class="zone" style="left:${kpPos(r)}%;width:${100 - kpPos(r)}%;background:var(--block);opacity:.55"></span>`;
+    h += [...new Set([1, kp.default, a, r, kp.max])].filter(k => k <= kp.max).map(k => `<span class="lbl" style="left:${kpPos(k)}%">${k}</span>`).join("");
+    if (kpAks && kpAks.run === run.run_id) h += `<span class="aks" style="left:${kpPos(Math.min(kpAks.knots, kp.max))}%" title="Meridian's suggestion: ${kpAks.knots}"></span>`;
+    $("kp-ruler").innerHTML = h;
+  }
+
+  // Chart geometry shared by the lines and the burst strips, so both use one x axis.
+  // Drawn at the container's real width so labels stay 11px on a phone.
+  const KPG = { l: 96, r: 14, top: 10 };
+  function kpGeom() {
+    const n = kp.weeks.length, W = Math.max(300, Math.round($("kp-chart").clientWidth) || 680);
+    const g = { ...KPG, n, W, ph: W < 520 ? 160 : 196 };
+    g.axisY = g.top + g.ph + 18; g.stripTop = g.axisY + 14; g.stripH = 12; g.gap = 5;
+    g.H = g.stripTop + Object.keys(kp.strips).length * (g.stripH + g.gap) + 4;
+    g.x = i => g.l + (i / Math.max(1, n - 1)) * (g.W - g.l - g.r);
+    const out = new Set(kp.outliers);   // step 11 weeks: drawn hollow, kept out of the y range
+    const vals = kp.kpi.filter((v, i) => !out.has(i)).concat(Object.values(kp.fits).flatMap(f => f.baseline));
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const unit = Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1) / 3)));
+    const nice = Math.ceil((hi - lo) / 3 / unit) * unit || 1;
+    g.y0 = Math.floor(lo / nice) * nice; g.y1 = Math.ceil(hi / nice) * nice; g.nice = nice;
+    g.y = v => g.top + (1 - (Math.min(Math.max(v, g.y0), g.y1) - g.y0) / (g.y1 - g.y0 || 1)) * g.ph;
+    g.path = arr => arr.map((v, i) => `${i ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("");
+    g.out = out;
+    return g;
+  }
+  function kpStatic() {
+    const g = kpGeom(), n = g.n, fmt = v => Math.round(v).toLocaleString("en-IN");
+    const ticks = []; for (let v = g.y0; v <= g.y1 + 1e-9; v += g.nice) ticks.push(v);
+    const strips = Object.entries(kp.strips), bw = (g.W - g.l - g.r) / Math.max(1, n - 1);
+    $("kp-chart").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Weekly KPI with the preview baseline, and when each burst channel spends">
+      ${ticks.map(v => `<line x1="${g.l}" x2="${g.W - g.r}" y1="${g.y(v)}" y2="${g.y(v)}" stroke="var(--line)"/><text x="${g.l - 8}" y="${g.y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${fmt(v)}</text>`).join("")}
+      <path d="${g.path(kp.kpi)}" fill="none" stroke="var(--kpi)" stroke-width="1"/>
+      ${[...g.out].map(i => `<circle cx="${g.x(i)}" cy="${g.y(kp.kpi[i])}" r="3.5" fill="var(--surface)" stroke="var(--kpi)" stroke-width="1.5"><title>${esc(kp.weeks[i])}: ${fmt(kp.kpi[i])} (unusual week from step 11, left out of the scale)</title></circle>`).join("")}
+      <text x="${g.l}" y="${g.axisY}" fill="var(--muted)" font-size="11">${esc(kp.weeks[0])}</text><text x="${g.W - g.r}" y="${g.axisY}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(kp.weeks[n - 1])}</text>
+      ${strips.map(([c, vals], j) => { const yy = g.stripTop + j * (g.stripH + g.gap);
+        return `<text x="${g.l - 8}" y="${yy + g.stripH - 2}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(c)}</text>` +
+          vals.map((v, i) => `<rect x="${(g.x(i) - bw / 2).toFixed(1)}" y="${yy}" width="${(bw + 0.4).toFixed(2)}" height="${g.stripH}" fill="var(--accent)" fill-opacity="${v === 0 ? 0.06 : (0.2 + 0.8 * v).toFixed(2)}"/>`).join(""); }).join("")}
+      <g id="kp-dyn"></g></svg><div class="kp-tip" id="kp-tip" hidden></div>`;
+    kp.g = g;
+    kpRuler();
+  }
+  let kpResize = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(kpResize);
+    kpResize = setTimeout(() => { if (kp && $("kp") && kp.g && Math.abs($("kp-chart").clientWidth - kp.g.W) > 4) { kpStatic(); kpUpdate(); } }, 120);
+  });
+  function kpSpacing(locs) {
+    if (locs.length < 2) return null;
+    const d = locs.slice(1).map((v, i) => v - locs[i]).sort((a, b) => a - b);
+    return d[Math.floor(d.length / 2)];
+  }
+  function kpUpdate() {
+    const K = kpK(), saved = kpSaved(), g = kp.g, f = kp.fits[K], DEF = kp.default, n = g.n;
+    if (!f) return;
+    const fmt = v => Math.round(v).toLocaleString("en-IN"), pc = v => (v * 100).toFixed(1) + "%";
+    $("kp-k").textContent = K; $("kp-unit").textContent = K === 1 ? "knot" : "knots"; $("kp-range").value = K;
+    document.querySelectorAll("#kp-quick button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.kp === K)));
+    // lines and knots
+    let h = "";
+    if (K !== DEF) h += `<path d="${g.path(kp.fits[DEF].baseline)}" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4"/>
+      <text x="${g.l + 6}" y="${g.top + 12}" fill="var(--muted)" font-size="11" paint-order="stroke" stroke="var(--surface)" stroke-width="4">- - default (${DEF})</text>`;
+    h += `<path d="${g.path(f.baseline)}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round"/>`;
+    h += f.locations.map((t, k) => `<g class="kp-knot" tabindex="0" role="button" data-i="${k}" aria-label="Knot ${k + 1}, ${esc(kp.weeks[t])}, level ${fmt(f.levels[k])}">
+      <circle cx="${g.x(t).toFixed(1)}" cy="${g.y(f.baseline[t]).toFixed(1)}" r="4.5" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/></g>`).join("");
+    $("kp-dyn").innerHTML = h;
+    const tip = $("kp-tip"); tip.hidden = true;
+    document.querySelectorAll(".kp-knot").forEach(el => {
+      const show = () => {
+        const k = +el.dataset.i, t = f.locations[k], box = el.ownerSVGElement.getBoundingClientRect(), sc = box.width / g.W;
+        tip.innerHTML = `<b>Knot ${k + 1} of ${K}</b><br>${esc(kp.weeks[t])} · level ${fmt(f.levels[k])} a week`;
+        tip.style.left = Math.min(Math.max(g.x(t) * sc, 70), box.width - 70) + "px"; tip.style.top = g.y(f.baseline[t]) * sc + "px"; tip.hidden = false;
+      };
+      el.onmouseenter = show; el.onfocus = show; el.onclick = show;
+      el.onmouseleave = () => tip.hidden = true; el.onblur = () => tip.hidden = true;
+    });
+    $("kp-legend").innerHTML = `<span><i style="border-color:var(--kpi);border-top-width:1px"></i>weekly KPI (${esc(kp.kpi_name)})</span>
+      <span><i style="border-color:var(--accent);border-top-width:3px"></i>baseline, ${K} knot${K === 1 ? "" : "s"}</span>
+      ${K !== DEF ? `<span><i style="border-color:var(--muted);border-top-style:dashed"></i>default (${DEF})</span>` : ""}
+      <span>○ knot: hover or tap for its date and level</span>${kp.outliers.length ? `<span>○ unusual week (step 11)</span>` : ""}`;
+
+    // diagnostics
+    const fv = kp.follow[K - 1], fc = kp.follow_name[K - 1];
+    const fcls = fv == null ? "" : fv > kp.follow_red ? "fail" : fv > kp.follow_amber ? "warn" : "";
+    const trendWarn = K === 1 && kp.trend.warn;
+    $("kp-diag").innerHTML = `
+      <div class="kp-tile"><span class="lab">Left for media</span><span class="val">${pc(kp.share[K - 1])}<small>at ${K}; ${pc(kp.share[DEF - 1])} at the default</small></span>
+        ${kpShareChart(K)}<p class="muted">Media's share of the preview's explained sales, for every number of knots. A steep fall means the baseline is taking media's credit.</p></div>
+      <div class="kp-tile ${fcls}"><span class="lab">Baseline follows bursts</span>
+        <span class="val">${fv == null ? "–" : `${fv.toFixed(2)}<small>with ${esc(fc)}</small>`}</span>
+        <p class="${fcls ? "" : "muted"}">${fv == null ? (Object.keys(kp.strips).length ? "A flat baseline can't move with anything." : "No burst channels (CV above 0.5 in step 16) to check against.")
+          : fcls ? `The baseline is moving with ${esc(fc)} bursts, so ${esc(fc)}'s effect is being counted as baseline.`
+          : `How closely the baseline's week-to-week change follows the burst channel it tracks most. Amber above ${kp.follow_amber}, red above ${kp.follow_red}.`}</p></div>
+      <div class="kp-tile ${trendWarn ? "warn" : ""}"><span class="lab">Trend left out</span>
+        <span class="val">${K === 1 ? `t = ${kp.trend.t.toFixed(2)}<small>${kp.trend.slope.toFixed(2)} a week</small>` : "–"}</span>
+        <p class="${trendWarn ? "" : "muted"}">${K !== 1 ? "Checked only with 1 knot. With 2 or more, the baseline can follow a trend."
+          : trendWarn ? "Sales have a trend that a flat baseline can't follow; it will be credited to media." : "No clear trend after the controls, so a flat baseline is fine here."}</p></div>`;
+
+    // spacing warnings for a choice not yet applied (the applied one's are in the step's warnings below)
+    const sp = kpSpacing(f.locations), al = [];
+    if (K !== saved && K > kp.red) al.push(["fail", `${K} knots bend the baseline about every ${sp} weeks: likely to absorb campaign effects.`]);
+    else if (K !== saved && K > kp.amber) al.push(["warn", `${K} knots bend the baseline about every ${sp} weeks, more than every 2 months.`]);
+    $("kp-alerts").innerHTML = al.map(([c, t]) => `<div class="kp-alert ${c}"><b>!</b><span>${t}</span></div>`).join("");
+
+    $("kp-saved").textContent = saved;
+    $("kp-apply").disabled = $("kp-reset").disabled = K === saved;
+    $("kp-apply").textContent = K === saved ? "Applied" : `Apply ${K} knot${K === 1 ? "" : "s"}`;
+    $("kp-apply-text").textContent = K === saved
+      ? `The model uses ${saved} knot${saved === 1 ? "" : "s"}. Move the slider to compare; nothing is saved until you apply.`
+      : `Previewing ${K}${sp ? `, one about every ${sp} weeks` : ""}. Nothing is saved until you apply${K > kp.amber ? "; this step will then pass with a warning" : ""}.`;
+    kpRuler();
+  }
+  function kpShareChart(K) {
+    const w = 220, h = 70, pl = 4, pr = 4, pt = 6, pb = 16, s = kp.share, mx = Math.max(...s, 1e-9);
+    const sx = k => pl + ((k - 1) / Math.max(1, kp.max - 1)) * (w - pl - pr), sy = v => pt + (1 - v / mx) * (h - pt - pb);
+    const p = s.map((v, i) => `${i ? "L" : "M"}${sx(i + 1).toFixed(1)} ${sy(v).toFixed(1)}`).join("");
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Share left for media at every number of knots">
+      <path d="${p}L${sx(kp.max)} ${sy(0)}L${sx(1)} ${sy(0)}Z" fill="var(--accent)" fill-opacity="0.1"/><path d="${p}" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+      <line x1="${sx(K)}" x2="${sx(K)}" y1="${pt}" y2="${sy(0)}" stroke="var(--ink)" stroke-dasharray="2 2"/><circle cx="${sx(K)}" cy="${sy(s[K - 1])}" r="3.5" fill="var(--ink)"/>
+      <text x="${sx(1)}" y="${h - 3}" fill="var(--muted)" font-size="10">1 knot</text><text x="${sx(kp.max)}" y="${h - 3}" text-anchor="end" fill="var(--muted)" font-size="10">${kp.max}</text></svg>`;
   }
 
   function step25(s) {
@@ -899,11 +1131,12 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div><p class="muted small">Shown beside these channels' ROI on every later screen.</p></div>` : ""}
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
-          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
+          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"}${l.source === "user" && l.default != null && typeof l.default !== "object" && l.default !== l.answer ? `; default ${esc(l.default)}` : ""})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
           ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
         </aside>
       </div>`;
     wire();
+    kpInit();
     const first = r.steps.find(s => s.blocks);
     if (first && render.scrolled !== view) { render.scrolled = view; setTimeout(() => $("step-" + first.step)?.scrollIntoView({ block: "start" }), 0); }
   }

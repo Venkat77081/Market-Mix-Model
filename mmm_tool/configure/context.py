@@ -22,6 +22,9 @@ CALENDARS = Path(__file__).with_name("calendars.yaml")
 # Roadmap defaults and limits.
 DEFAULT_MAX_LAG, MAX_LAG_RANGE = 8, (2, 13)
 WEEKS_PER_KNOT = 13
+# Step 24: knots above weeks/8 bend the baseline more than every 2 months (amber);
+# above weeks/6, likely to absorb campaign effects (red). The slider stops at weeks/4.
+KNOTS_AMBER_WEEKS, KNOTS_RED_WEEKS, KNOTS_MAX_WEEKS = 8, 6, 4
 DEFAULT_HOLDOUT, HOLDOUT_RANGE = 13, (8, 26)
 MIN_TRAIN_WEEKS = 104
 # Meridian's default ROI prior: LogNormal(0.2, 0.9), median about 1.2.

@@ -126,10 +126,22 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 | 21 Calendar flags | India insurance preset in `mmm_tool/configure/calendars.yaml`: tax season, financial year-end, Diwali and festive weeks | events on or off (`calendar_events`), your own date ranges (`custom_events`) | added to `controls` |
 | 22 Carryover length | 8 weeks | 2–13 (`max_lag`) | `max_lag` |
 | 23 Carryover shape | geometric; binomial suggested for TV and outdoor | per channel (`adstock_shape`) | `adstock_decay_spec` |
-| 24 Baseline flexibility | one knot per quarter | any number (`knots`), warned above 1.5× the default | `knots` |
+| 24 Baseline flexibility | one knot per quarter | `knots`, with a live preview (below); amber above weeks/8, red above weeks/6 | `knots` |
 | 25 ROI priors | Meridian's LogNormal(0.2, 0.9) | a 90% ROI range per channel (`roi_ranges`) | `roi_m` / `roi_rf` |
 | 26 Lift-test calibration | none | tests: channel, dates, ROI and 90% range (`lift_tests`); several per channel are combined | prior + `roi_calibration` |
 | 27 Holdout | last 13 weeks | 8–26 (`holdout_weeks`) | `holdout` |
+
+**Step 24 preview.** Before you choose, the step shows what each number of knots does. Knot
+placement and weights come from Meridian's `knots.get_knot_info`. For every K from 1 to weeks/4, a
+quick ridge regression (media effects held at zero or above) splits weekly sales into baseline,
+controls and media; the chart draws the baseline (the knot part), with the burst channels from step
+16 as strips underneath. The slider redraws in the browser with no server call; nothing is saved
+until **Apply**, which records the choice in the decision log and marks a Phase E fit out of date.
+Three diagnostics show the trade-off rather than a fit error: *left for media* (media's share of
+the preview, for every K), *baseline follows bursts* (how closely the baseline's week-to-week change
+tracks a burst channel's spend; amber above 0.3, red above 0.5) and, with one knot, *trend left out*.
+**Suggest** marks Meridian's automatic knot selection on the slider and never applies it. The
+preview is a guide; Meridian estimates the real baseline in step 29. Code: `configure/baseline.py`.
 
 With Meridian installed (`pip install -r requirements-model.txt`, about 1.5 GB with TensorFlow),
 `mmm_tool.configure.spec.build_input_data(result)` and `build_model_spec(result.config, input_data)`
@@ -172,6 +184,8 @@ In the UI the job writes to `runs/<id>/fit/` (`status.json`, `result.json`, `mod
 `log.txt`). If you change any answer after a fit, the fit is marked out of date until you refit.
 Download the accepted model at `/api/runs/<id>/model.pkl` and load it with
 `meridian.model.model.load_mmm` using the same Meridian version.
+
+`tests/test_step24.py` also drives the step 24 panel in a real browser (it needs Node with Playwright, and skips otherwise).
 
 `pytest` checks the gate rules and the job bookkeeping in seconds. The tests that really fit with
 Meridian take several minutes, so they run only with `MMM_FIT_TESTS=1 pytest tests/test_phase_e.py`.

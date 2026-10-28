@@ -119,6 +119,7 @@ class Answers:
                 "question": decision.question,
                 "answer": value,
                 "source": source,
+                "default": decision.default,
             }
         )
         return True, value

@@ -4,19 +4,18 @@
 23 Carryover shape    adstock_decay_spec per channel: geometric (strongest the week it
                       runs, then fading) by default; binomial (a delayed peak) is
                       suggested for channels like TV and outdoor.
-24 Baseline flexibility  knots: about one per quarter. More knots let the trend bend
-                      more, and a very flexible trend absorbs media effects.
+24 Baseline flexibility  knots: about one per quarter. More knots let the baseline bend
+                      more, and a very flexible baseline absorbs media effects. The
+                      UI previews every choice first (baseline.py).
 27 Holdout            the last 13 weeks (8-26) are held out to test the fit.
 """
 from __future__ import annotations
 
-import math
 import re
 
 from ..ingest.keywords import words_of
 from ..ingest.types import Answers, Decision, StepResult, Verdict
-from .context import (DEFAULT_HOLDOUT, DEFAULT_MAX_LAG, HOLDOUT_RANGE, MAX_LAG_RANGE, MIN_TRAIN_WEEKS, WEEKS_PER_KNOT,
-                      DCtx, load_calendars)
+from .context import DEFAULT_HOLDOUT, DEFAULT_MAX_LAG, HOLDOUT_RANGE, MAX_LAG_RANGE, MIN_TRAIN_WEEKS, DCtx, load_calendars
 
 SHAPES = ("geometric", "binomial")
 
@@ -77,24 +76,43 @@ def carryover_shape(ctx: DCtx, answers: Answers) -> StepResult:
 
 
 def baseline_flexibility(ctx: DCtx, answers: Answers) -> StepResult:
+    from .baseline import knot_info, limits, meridian_installed, spacing
+
     weeks = len(ctx.weeks)
-    default = max(1, math.ceil(weeks / WEEKS_PER_KNOT))
+    lim = limits(weeks)
+    default = lim["default"]
     d = Decision(id="knots", step=24,
-                 question=("How flexible should the baseline trend be? About one knot per quarter is the default; "
-                           "fewer is more stable, more follows structural breaks."),
-                 options=[], default=default, context={"weeks": weeks})
-    knots, problem = _int_answer(answers, d, 1, weeks)
+                 question=("How flexible should the baseline be? It can bend at each knot; about one knot per quarter "
+                           "is the default. Fewer is steadier; more follows sales closely and can take media's credit."),
+                 options=[], default=default,
+                 context={"weeks": weeks, "max": lim["max"], "quick": lim["quick"], "amber": lim["amber"], "red": lim["red"]})
+    knots, problem = _int_answer(answers, d, 1, weeks - 1)
     if problem:
         return _blocked(24, "Baseline flexibility", d, problem)
     ctx.config["knots"] = knots
-    warnings = []
-    if knots > 1.5 * default:
-        warnings.append(f"{knots} knots is a flexible baseline (default {default}); a trend that bends this much "
-                        "can absorb media effects and push ROI down.")
-    every = weeks / knots
+    # Spacing from Meridian's own knot locations, not weeks / knots.
+    geos = ctx.df[ctx.geo].nunique() if ctx.geo else 1
+    locations = [int(i) for i in knot_info(weeks, knots, geos).knot_locations] if meridian_installed() else None
+    every = spacing(locations) if locations else None
+    warnings, level = [], None
+    if knots > lim["red"]:
+        level = "red"
+        warnings.append(f"{knots} knots bend the baseline about every {every or round(weeks / knots)} weeks: "
+                        "likely to absorb campaign effects.")
+    elif knots > lim["amber"]:
+        level = "amber"
+        warnings.append(f"{knots} knots bend the baseline about every {every or round(weeks / knots)} weeks, "
+                        "more than every 2 months.")
+    if knots == 1:
+        head = "1 knot: a flat baseline"
+    elif every:
+        head = f"{knots} knots, one about every {every} weeks"
+    else:
+        head = f"{knots} knots over {weeks} weeks"
     return StepResult(24, "Baseline flexibility", Verdict.WARN if warnings else Verdict.PASS,
-                      f"{knots} knots, one every {every:.0f} weeks" + (" (the default)." if knots == default else f" (default {default})."),
-                      {"knots": knots, "default": default, "weeks": weeks}, warnings, [d])
+                      head + (" (the default)." if knots == default else f" (default {default})."),
+                      {"knots": knots, "default": default, "weeks": weeks, "locations": locations, "spacing": every,
+                       "level": level, **{k: lim[k] for k in ("max", "amber", "red", "quick")}}, warnings, [d])
 
 
 def holdout(ctx: DCtx, answers: Answers) -> StepResult:

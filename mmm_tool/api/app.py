@@ -8,6 +8,7 @@ file with the current answers and returns the full result.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -258,6 +259,47 @@ def download_model_data(run_id: str) -> Response:
 def download_model_config(run_id: str) -> Response:
     """Phase D's model configuration: carryover, knots, priors, calibration, holdout."""
     return _phase_d_file(run_id, "model_config.json", "application/json", "model_config.json")
+
+
+_previews: dict[str, dict] = {}
+
+
+def _phase_d(d: Path):
+    """The run's pipeline result, which must have reached a complete Phase D."""
+    meta = _meta(d)
+    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    if run.d is None or run.d.status != "complete":
+        raise HTTPException(409, "Phase D is not complete yet.")
+    return run
+
+
+@app.get("/api/runs/{run_id}/baseline-preview")
+def baseline_preview(run_id: str) -> dict:
+    """Step 24's preview: the baseline for every number of knots, computed once.
+    The slider then redraws in the browser without calling the server."""
+    from ..configure import baseline
+
+    if not baseline.meridian_installed():
+        raise HTTPException(503, "The knots preview uses Meridian's knot weights: pip install -r requirements-model.txt.")
+    run = _phase_d(_run_dir(run_id))
+    cvs = {c["channel"]: c["cv"] for s in run.c.steps if s.step == 16 for c in s.details.get("channels", [])}
+    outliers = [o["date"] for s in run.b.steps if s.step == 11 for o in s.details.get("outliers", [])]
+    t = run.d.table
+    key = hashlib.sha256(t.to_csv(index=False).encode() + json.dumps(
+        [run.d.config.get("max_lag"), sorted(run.d.roles.items()), cvs, outliers], default=str).encode()).hexdigest()[:16]
+    if key not in _previews:
+        _previews[key] = _clean({**baseline.preview(run.d, cvs, outliers), "key": key})
+    return _previews[key]
+
+
+@app.get("/api/runs/{run_id}/knots-suggestion")
+def knots_suggestion(run_id: str) -> dict:
+    """Meridian's automatic knot selection, shown on the slider and never applied."""
+    from ..configure import baseline
+
+    if not baseline.meridian_installed():
+        raise HTTPException(503, "Suggestions use Meridian: pip install -r requirements-model.txt.")
+    return _clean(baseline.suggest(_phase_d(_run_dir(run_id)).d))
 
 
 @app.get("/api/fit-settings")
