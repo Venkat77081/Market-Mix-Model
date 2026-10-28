@@ -42,3 +42,6 @@ stability:                 # step 34 (badge, optional)
 
 placebo:                   # step 35 (warning, optional)
   name: placebo
+  shape_cv: 0.5            # shaped like the biggest-spend channel with spend CV at or above this
+  max_share_of_real: 0.5   # passes when its mean ROI is under this share of that channel's...
+  max_low: 0.3             # ...and the low end of its 90% range is under this (ROI in money per money)

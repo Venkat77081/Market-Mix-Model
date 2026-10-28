@@ -7,7 +7,7 @@ recommended fallback.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import pandas as pd
 
@@ -33,6 +33,19 @@ class Channel:
     frequency: str | None = None
     exposure_is_spend: bool = False
     impressions: str | None = None  # rf channels: an impressions column, kept to weight frequency when rows merge
+    spend_sources: list[str] = field(default_factory=list)  # raw spend columns behind a merged channel (step 15, 17)
+
+    def sources(self) -> list[str]:
+        """The raw spend columns this channel is made of: its own, or those it was merged from."""
+        return list(self.spend_sources) or [self.spend]
+
+    def all_sources(self) -> list[str]:
+        """Every raw column behind the channel: spend plus its own exposure, reach and frequency
+        (a merged channel's exposure is its summed spend, so only the spend columns)."""
+        if self.spend_sources:
+            return list(self.spend_sources)
+        extra = [c for c in (self.exposure, self.reach, self.frequency) if c and c != self.spend]
+        return [self.spend] + extra
 
 
 def _rank(col: str) -> int:

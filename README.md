@@ -259,9 +259,9 @@ the other checks, so every reason shows; the final fit (36) runs only for an acc
 | 30 Convergence | largest R-hat, ignoring NaN (parameters the model doesn't use) | all below 1.1; otherwise one automatic retry with twice the adapt and burn-in, then fail and wait | gate |
 | 31 Holdout accuracy | test and train MAPE and R² (national) | test MAPE below 10% and below a same-week-last-year forecast | gate |
 | 32 Plausibility | ROI per channel, baseline share, contributions | ROI 0.05–20 (when ROI is ₹ per ₹); baseline 20–95% of the KPI; baseline + contributions = the fit | gate |
-| 33 Did the data teach anything? | each channel's ROI, posterior vs prior | 90% range at least 30% narrower than the prior's, else badge **prior-driven** | badge |
-| 34 Stability (optional) | refits without the first 26, last 26, and both | ROI CV below 0.3, else badge **unstable** | badge |
-| 35 Placebo (optional) | an extra channel: a real channel's weekly amounts in random weeks | not credited (see below) | warning |
+| 33 Did the data teach anything? | each channel's ROI, posterior vs prior; the prior's 90% range is exact from its distribution (LogNormal by default: 0.28–5.37), from prior draws only without a closed form | 1 − posterior width ÷ prior width at least 30%, else badge **prior-driven** | badge |
+| 34 Stability (optional) | refits without the first 26, last 26, and both | ROI CV below 0.3, else badge **unstable**; a stable channel that is also hard to measure or prior-driven is noted as stable only because it stays near the starting assumption | badge; Skipped when not run |
+| 35 Placebo (optional) | an extra channel with the weekly amounts of the biggest-spend channel whose spend CV is 0.5 or more (else the most variable one), in random weeks; its ROI is shown beside that channel's | placebo mean ROI under half the real channel's, and the low end of its 90% range under 0.3 | warning; Skipped when not run |
 | 36 Final fit and save | refit on every week (same sampler, seed and retry rule as step 30), `save_mmm` | saved as `model.pkl` with `model_meta.json`: data version, settings, seed, attempts, gate results, decision log | — |
 
 Thresholds and the two sampler presets are in `mmm_tool/fit/fit.yaml`.
@@ -287,8 +287,20 @@ there is never more than one automatic retry.
 
 
 Step 35 differs from the roadmap's wording ("its ROI range includes zero") on purpose: Meridian's
-ROI priors are LogNormal, so an ROI range can never include zero. The placebo counts as credited
-when the data pulls its ROI *up* from the prior and the low end of its range stays above 0.05.
+ROI priors are LogNormal, so an ROI range can never include zero. Instead the placebo is compared
+with the real channel it copies. The 0.3 floor applies when ROI is money per money; with ROI in KPI
+units only the comparison with the real channel is used. Steps 24 and 35 measure channels as they
+are after step 15 drops and step 17 combinations (spend CV and share of paid spend from the model
+table), never from step 16's stored numbers; a combined channel gets its own step 16 check.
+
+**Compare with known truth (test files only).** Synthetic test sets come with an answer key
+(`truth_for_tool.json`). Load it in the Phase E side panel and step 32 adds True ROI, Truth in range?
+and True share for each channel (matched by the exact set of raw columns the channel is made of,
+never by name; a channel with no exact match shows "no truth for this channel"), a Non-media row,
+and "N of M channels have the truth inside their 90% range". With ROI in KPI units it compares
+KPI per 1,00,000 of spend. The Model Summary adds "True next-₹ ROI". The key is refused if it is for
+another KPI column, stays with the run (`answer_key.json`), never reaches the model and never
+changes a verdict. Real data has no truth, so none of this shows without a key.
 
 In the UI the job writes to `runs/<id>/fit/` (`status.json`, `result.json`, `model.pkl`,
 `log.txt`). If you change any answer after a fit, the fit is marked out of date until you refit.

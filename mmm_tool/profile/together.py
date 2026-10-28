@@ -8,6 +8,7 @@ Channels with a variance inflation factor above 10 that aren't in such a pair
 """
 from __future__ import annotations
 
+from .variation import recheck_merged
 from ..ingest.types import Answers, Decision, StepResult, Verdict
 from .context import COLLINEAR_CORR, COLLINEAR_VIF, CCtx, vif
 
@@ -53,6 +54,9 @@ def check_together(ctx: CCtx, answers: Answers) -> StepResult:
             new = ctx.merge_channels([by_name[a], by_name[b]], f"{a}_{b}")
             merged |= {a, b}
             done.append(f"{a} + {b} → {new.name}")
+            flat = recheck_merged(ctx, new.name)
+            if flat:
+                warnings.append(flat)
         else:
             for x, y in ((a, b), (b, a)):
                 ctx.badge(x, "moves_with")

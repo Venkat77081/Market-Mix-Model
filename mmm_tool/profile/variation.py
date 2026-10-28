@@ -42,3 +42,14 @@ def check_variation(ctx: CCtx) -> StepResult:
     else:
         summary = f"Every channel's spend varies enough (CV {min(r['cv'] for r in rows):.2f} or more)"
     return StepResult(STEP, NAME, Verdict.WARN if flat else Verdict.PASS, summary + ".", details, warnings)
+
+
+def recheck_merged(ctx: CCtx, channel: str) -> str | None:
+    """Step 17 combines channels after step 16 measured them: the combined channel's own spend
+    is checked by the same rule, so its badge describes it, not its parts. A warning if flat."""
+    v = channel_cv(ctx).get(channel)
+    if v is not None and v < LOW_SPEND_CV:
+        ctx.badge(channel, "hard_to_measure")
+        return (f"'{channel}' (combined) spend varies little (CV {v:.2f}, under {LOW_SPEND_CV}): hard to measure. "
+                "It needs a lift test or an informed prior (steps 25-26).")
+    return None

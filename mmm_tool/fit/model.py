@@ -32,6 +32,18 @@ def variant(result, table: pd.DataFrame | None = None, channels: list[Channel] |
                                roles=result.roles if roles is None else roles)
 
 
+def window_variant(result, table: pd.DataFrame) -> tuple[Any, list[str]]:
+    """A window of weeks (step 34). A control that doesn't vary inside the window (an event
+    flag whose weeks fall outside it) carries no signal there and Meridian refuses it, so it
+    is left out of that refit. Returns (result, the controls left out)."""
+    flat = [c for c, r in result.roles.items()
+            if r in ("control", "non_media_treatment") and c in table.columns and table[c].nunique(dropna=False) <= 1]
+    if not flat:
+        return variant(result, table=table), []
+    roles = {**result.roles, **{c: "excluded" for c in flat}}
+    return variant(result, table=table.drop(columns=flat), roles=roles), flat
+
+
 def window_config(config: dict[str, Any], weeks: pd.DatetimeIndex) -> dict[str, Any]:
     """The model config for a window of weeks: no holdout, and lift-test periods
     kept only where they fall inside the window (Meridian refuses others)."""

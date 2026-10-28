@@ -101,7 +101,8 @@ class CCtx:
             self.drop_channel(c)
         self.df[col] = total
         self.roles[col] = "media_spend"
-        merged = Channel(name, "media", col, exposure=col, exposure_is_spend=True)
+        merged = Channel(name, "media", col, exposure=col, exposure_is_spend=True,
+                         spend_sources=[src for c in chans for src in c.sources()])
         self.channels.append(merged)
         return merged
 

@@ -34,7 +34,7 @@ from .context import KNOTS_AMBER_WEEKS, KNOTS_MAX_WEEKS, KNOTS_RED_WEEKS, WEEKS_
 
 RIDGE_ALPHA = 1.0          # on standardised controls and media; knot levels are not penalised
 PREVIEW_DECAY = 0.5        # geometric adstock decay used by the preview only
-BURST_CV = 0.5             # step 16 spend CV at or above this...
+BURST_CV = 0.5             # spend CV (current channels) at or above this...
 BURST_MIN_SPEND = 0.05     # ...and at least this share of total paid spend: a burst channel
 CREDIT_GOOD, CREDIT_OK = 0.90, 0.75   # card 2: green at 90%+, amber 75-90%, red below
 TREND_T = 2.0
@@ -104,12 +104,14 @@ def national(result) -> tuple[pd.DataFrame, list[str], int]:
     return t[[date] + sums + controls].sort_values(date).reset_index(drop=True), controls, 1
 
 
-def burst_group(result, cvs: dict[str, float], spend: dict[str, float] | None = None) -> list[str]:
-    """Burst channels: spend CV >= 0.5 in step 16 and at least 5% of total paid spend."""
-    if spend is None:
-        spend = {c.name: float(result.table[c.spend].sum()) for c in result.channels}
-    total = sum(spend.values()) or 1.0
-    return [c for c in spend if cvs.get(c, 0) >= BURST_CV and spend[c] / total >= BURST_MIN_SPEND]
+def burst_group(result, stats: dict[str, dict] | None = None) -> list[str]:
+    """Burst channels: spend CV >= 0.5 and at least 5% of total paid spend, measured on the
+    current channels (after step 15 drops and step 17 combinations), never step 16's
+    stored values looked up by name."""
+    from ..channel_stats import channel_stats
+
+    stats = stats if stats is not None else channel_stats(result)
+    return [c for c, v in stats.items() if v["cv"] >= BURST_CV and v["share"] >= BURST_MIN_SPEND]
 
 
 def tone(kept: float | None) -> str | None:
@@ -134,7 +136,7 @@ class Design:
     adstocked: dict[str, np.ndarray]
 
     @classmethod
-    def build(cls, result, cvs: dict[str, float]) -> "Design":
+    def build(cls, result) -> "Design":
         m = result.coord_to_columns()["coord_to_columns"]
         t, controls, n_geos = national(result)
         n = len(t)
@@ -156,7 +158,7 @@ class Design:
             M = M / _std(M)
         sd = float(y.std()) or 1.0
         return cls(n, n_geos, float(y.mean()), sd, (y - y.mean()) / sd, C, M, M - M.mean(axis=0) if feats else M,
-                   names, burst_group(result, cvs, spend), ad)
+                   names, burst_group(result), ad)
 
     def fit(self, K: int) -> dict[str, Any]:
         from scipy.optimize import lsq_linear
@@ -225,11 +227,14 @@ def _entry(fit: dict[str, Any], ref: dict[str, Any] | None, group: list[str]) ->
     return {**out, **credit(fit, ref, group)}
 
 
-def preview(result, cvs: dict[str, float], outlier_dates: list[str] | None = None) -> dict[str, Any]:
+def preview(result, outlier_dates: list[str] | None = None) -> dict[str, Any]:
     """Everything step 24's chart and cards need, for every K from 1 to weeks/4 (needs google-meridian and scipy)."""
+    from ..channel_stats import channel_stats
+
     m = result.coord_to_columns()["coord_to_columns"]
     t, _, _ = national(result)
-    design = Design.build(result, cvs)
+    stats = channel_stats(result)
+    design = Design.build(result)
     lim = limits(design.n)
     tr = trend(design)
     fits = {K: design.fit(K) for K in range(1, lim["max"] + 1)}
@@ -248,10 +253,12 @@ def preview(result, cvs: dict[str, float], outlier_dates: list[str] | None = Non
         "group_adstock": np.round(sum((design.adstocked[c] for c in design.group), np.zeros(design.n)), 1).tolist(),
         "trend": tr, "strips": strips, "outliers": [weeks.index(d) for d in (outlier_dates or []) if d in weeks],
         "max_lag": int(result.config.get("max_lag", 8)),
+        "channel_stats": {c: {"cv": round(v["cv"], 3), "share": round(v["share"], 4), "sources": v["sources"]}
+                          for c, v in stats.items()},
     }
 
 
-def suggest(result, cvs: dict[str, float]) -> dict[str, Any]:
+def suggest(result) -> dict[str, Any]:
     """Meridian's automatic knot selection (AKS), with the preview for that K so it can be
     previewed and applied like any other. Shown, never applied on its own."""
     from meridian.model import knots as mk
@@ -260,7 +267,7 @@ def suggest(result, cvs: dict[str, float]) -> dict[str, Any]:
 
     aks = mk.AKS(build_input_data(result)).automatic_knot_selection()
     locs = [int(k) for k in aks.knots]
-    design = Design.build(result, cvs)
+    design = Design.build(result)
     k = len(locs)
     ref_k = _reference_k(limits(design.n)["max"], trend(design)["warn"])
     ref = design.fit(ref_k) if ref_k else None

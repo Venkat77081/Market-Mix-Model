@@ -282,13 +282,21 @@ def direction_check(ctx: ECtx) -> list[dict[str, Any]]:
 
 
 def prior_driven(ctx: ECtx) -> StepResult:
+    """Step 33. Each channel's posterior 90% ROI range against its prior's. The prior's range is
+    exact when step 25 set a known distribution on ROI (LogNormal by default); Meridian's prior
+    draws are used only when there is no closed form (an mroi or share-of-sales prior)."""
     need = float(ctx.cfg["prior_driven"]["min_narrowing"])
     paid = ctx.metrics[ctx.metrics["paid"]]
+    kind = ctx.config.get("prior_type", "roi")
+    priors = ctx.config.get("roi_priors") or {}
     rows, driven = [], []
     for ch, r in paid.iterrows():
-        k = gates.narrowing((r["roi_prior_ci_lo"], r["roi_prior_ci_hi"]), (r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"]))
-        rows.append({"channel": ch, "narrowing": k, "prior": [r["roi_prior_ci_lo"], r["roi_prior_ci_hi"]],
-                     "posterior": [r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"]]})
+        exact = gates.exact_prior_range(priors.get(ch), ctx.confidence) if kind == "roi" else None
+        prior = exact or (r["roi_prior_ci_lo"], r["roi_prior_ci_hi"])
+        post = (r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"])
+        k = gates.narrowing(prior, post)
+        rows.append({"channel": ch, "narrowing": k, "prior": list(prior), "posterior": list(post),
+                     "prior_source": "exact" if exact else "prior draws"})
         if k < need:
             driven.append(ch)
             ctx.badge(ch, "prior_driven")
@@ -301,13 +309,16 @@ def prior_driven(ctx: ECtx) -> StepResult:
                   "A lift test (step 26) would anchor it." for c in driven])
 
 
+NEAR_ASSUMPTION = "stable because it stays near the starting assumption, not because the data confirms it"
+
+
 def _date_col(ctx: ECtx) -> str:
     return ctx.d.coord_to_columns()["coord_to_columns"]["time"]
 
 
 def stability(ctx: ECtx) -> StepResult:
     if not ctx.options.stability:
-        return _step(34, Verdict.PASS, "Not run. Turn on the stability check for three extra fits.", {"skipped": True})
+        return _step(34, Verdict.SKIPPED, "Not run. Turn on the stability check for three extra fits.", {"skipped": True})
     cfg = ctx.cfg["stability"]
     drop, min_weeks = int(cfg["drop_weeks"]), int(cfg["min_weeks"])
     date = _date_col(ctx)
@@ -316,13 +327,15 @@ def stability(ctx: ECtx) -> StepResult:
                f"without the first and last {drop} weeks": all_weeks[drop:-drop]}
     paid = list(ctx.metrics[ctx.metrics["paid"]].index)
     rois = {"all weeks (step 29)": ctx.metrics.loc[paid, "roi_posterior_mean"].to_dict()}
-    skipped = []
+    skipped, left_out = [], {}
     for i, (label, wk) in enumerate(windows.items()):
         if len(wk) < min_weeks:
             skipped.append(f"{label} ({len(wk)} weeks, under {min_weeks})")
             continue
         ctx.progress(34, f"Refit {i + 1} of {len(windows)}: {label}", i / len(windows))
-        part = m.variant(ctx.d, table=ctx.d.table[ctx.d.table[date].isin(wk)].reset_index(drop=True))
+        part, flat = m.window_variant(ctx.d, ctx.d.table[ctx.d.table[date].isin(wk)].reset_index(drop=True))
+        if flat:
+            left_out[label] = flat
         mmm = m.build(part, m.window_config(ctx.config, wk))
         mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
         _fit(ctx, mmm, ctx.fit_sampler, f"stability_{i + 1}")
@@ -333,29 +346,55 @@ def stability(ctx: ECtx) -> StepResult:
     unstable = [r["channel"] for r in table if not (r["cv"] < limit)]
     for ch in unstable:
         ctx.badge(ch, "unstable")
-    details = {"windows": list(rois), "channels": table, "cv_max": limit, "unstable": unstable, "skipped": skipped}
+    near = []
+    for r in table:          # stable is not the same as confirmed
+        why = [b for b in ("hard_to_measure", "prior_driven") if b in ctx.badges.get(r["channel"], [])]
+        if r["channel"] not in unstable and why:
+            r["note"], r["note_badges"] = NEAR_ASSUMPTION, why
+            near.append(r["channel"])
+    details = {"windows": list(rois), "channels": table, "cv_max": limit, "unstable": unstable, "skipped": skipped,
+               "near_assumption": near, "controls_left_out": left_out}
+    tail = (f"; {', '.join(near)} {'is' if len(near) == 1 else 'are'} {NEAR_ASSUMPTION}" if near else "")
     warnings = [f"Window skipped: {s}." for s in skipped]
+    warnings += [f"Refit {label}: {', '.join(cols)} left out (no change inside those weeks)." for label, cols in left_out.items()]
     if len(rois) < 2:
         return _step(34, Verdict.WARN, "No window long enough to refit.", details, warnings)
     if not unstable:
         return _step(34, Verdict.WARN if warnings else Verdict.PASS,
-                     f"ROI holds across {len(rois)} fits: every channel's CV is below {limit}.", details, warnings)
+                     f"ROI holds across {len(rois)} fits: every channel's CV is below {limit}{tail}.", details, warnings)
     warnings += [f"'{r['channel']}' ROI moves with the weeks used (CV {r['cv']:.2f}): "
                  + ", ".join(f"{v:.2f}" for v in r["roi"].values()) for r in table if r["channel"] in unstable]
-    return _step(34, Verdict.WARN, f"{len(unstable)} channel(s) badged unstable: {', '.join(unstable)}.", details, warnings)
+    return _step(34, Verdict.WARN, f"{len(unstable)} channel(s) badged unstable: {', '.join(unstable)}{tail}.", details, warnings)
+
+
+def placebo_source(result, shape_cv: float) -> dict:
+    """The channel step 35 shapes its placebo on: the biggest spender among channels whose spend
+    CV is at least shape_cv (bursty spend is what a placebo must not be credited for), else the
+    most variable channel. Measured on the current channels (channel_stats), never step 16's."""
+    from ..channel_stats import channel_stats
+
+    stats = channel_stats(result)
+    bursty = {c: v for c, v in stats.items() if v["cv"] >= shape_cv}
+    if bursty:
+        ch = max(bursty, key=lambda c: bursty[c]["spend"])
+        why = f"the biggest spender among channels with spend CV {shape_cv:g} or more"
+    else:
+        ch = max(stats, key=lambda c: stats[c]["cv"])
+        why = f"no channel has spend CV {shape_cv:g} or more, so the most variable one"
+    return {"channel": ch, "why": why, "cv": stats[ch]["cv"], "share": stats[ch]["share"]}
 
 
 def placebo(ctx: ECtx) -> StepResult:
     if not ctx.options.placebo:
-        return _step(35, Verdict.PASS, "Not run. Turn on the placebo check for one extra fit.", {"skipped": True})
-    name = ctx.cfg["placebo"]["name"]
-    media = [c for c in ctx.d.channels if c.kind == "media"]
-    if not media:
-        return _step(35, Verdict.PASS, "Not run: there is no media channel to shape a placebo on.", {"skipped": True})
+        return _step(35, Verdict.SKIPPED, "Not run. Turn on the placebo check for one extra fit.", {"skipped": True})
+    pcfg = ctx.cfg["placebo"]
+    name = pcfg["name"]
+    if not ctx.d.channels:
+        return _step(35, Verdict.SKIPPED, "Not run: there is no paid channel to shape a placebo on.", {"skipped": True})
+    pick = placebo_source(ctx.d, float(pcfg["shape_cv"]))
+    model_on = pick["channel"]
+    src = next(c for c in ctx.d.channels if c.name == model_on)
     table = ctx.d.table.copy()
-    totals = {c.name: float(table[c.spend].sum()) for c in media}
-    model_on = sorted(totals, key=totals.get)[len(totals) // 2]  # the median channel by spend
-    src = next(c for c in media if c.name == model_on)
     col = f"{name}_spend"
     rng = np.random.default_rng(ctx.seed)
     geo = ctx.d.coord_to_columns()["coord_to_columns"].get("geo")
@@ -373,18 +412,27 @@ def placebo(ctx: ECtx) -> StepResult:
     mmm = m.build(variant, cfg)
     mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
     _fit(ctx, mmm, ctx.fit_sampler, "placebo")
-    r = m.channel_metrics(mmm, ctx.confidence).loc[name]
-    lo, hi = r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"]
-    credited = gates.placebo_credited(r["roi_prior_median"], r["roi_posterior_median"], lo, float(ctx.cfg["plausibility"]["roi_min"]))
-    details = {"shaped_like": model_on, "roi_posterior": [lo, r["roi_posterior_median"], hi],
-               "roi_prior": [r["roi_prior_ci_lo"], r["roi_prior_median"], r["roi_prior_ci_hi"]], "credited": credited}
-    head = (f"A placebo with {model_on}'s weekly amounts in random weeks gets ROI {r['roi_posterior_median']:.2f} "
-            f"(90% {lo:.2f}-{hi:.2f}; prior median {r['roi_prior_median']:.2f})")
-    if not credited:
-        return _step(35, Verdict.PASS, head + ": not credited.", details)
-    return _step(35, Verdict.WARN, head + ": credited.", details,
-                 ["The model credits a random series with sales above what its prior expects, so real channels' "
-                  "ROI may be inflated the same way. Tighter priors or lift tests (steps 25-26) help."])
+    metrics = m.channel_metrics(mmm, ctx.confidence)
+    r = metrics.loc[name]
+    real = ctx.metrics.loc[model_on]
+    money = m.uses_revenue(mmm)
+    res = gates.placebo_passes(float(r["roi_posterior_mean"]), float(r["roi_posterior_ci_lo"]), float(real["roi_posterior_mean"]),
+                               float(pcfg["max_share_of_real"]), float(pcfg["max_low"]), money)
+    details = {"shaped_like": model_on, "why": pick["why"], "shape_cv": pick["cv"], "shape_share": pick["share"],
+               "placebo": {"mean": float(r["roi_posterior_mean"]), "lo": float(r["roi_posterior_ci_lo"]), "hi": float(r["roi_posterior_ci_hi"])},
+               "real": {"mean": float(real["roi_posterior_mean"]), "lo": float(real["roi_posterior_ci_lo"]), "hi": float(real["roi_posterior_ci_hi"])},
+               "roi_posterior": [float(r["roi_posterior_ci_lo"]), float(r["roi_posterior_median"]), float(r["roi_posterior_ci_hi"])],
+               "rule": {"max_share_of_real": float(pcfg["max_share_of_real"]), "max_low": float(pcfg["max_low"]), "low_checked": money},
+               **res, "credited": not res["ok"]}
+    head = (f"A placebo with {model_on}'s weekly amounts in random weeks ({pick['why']}) gets ROI "
+            f"{r['roi_posterior_mean']:.2f} (90% {r['roi_posterior_ci_lo']:.2f}-{r['roi_posterior_ci_hi']:.2f}); "
+            f"{model_on} itself {real['roi_posterior_mean']:.2f} ({real['roi_posterior_ci_lo']:.2f}-{real['roi_posterior_ci_hi']:.2f})")
+    if res["ok"]:
+        return _step(35, Verdict.PASS, head + ".", details)
+    return _step(35, Verdict.WARN, f"Pass with warning: the model gives a random series similar credit to {model_on}. {head}.",
+                 details, ["A random series shaped like a real channel earns "
+                           + ("more than half its ROI" if not res["below_real"] else f"a range whose low end is {r['roi_posterior_ci_lo']:.2f}")
+                           + ", so real channels' ROI may be inflated the same way. Tighter priors or lift tests (steps 25-26) help."])
 
 
 def _default_prior(kind: str) -> dict:

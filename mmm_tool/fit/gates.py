@@ -83,3 +83,28 @@ def placebo_credited(prior_median: float, post_median: float, post_lo: float, ro
     'not credited' when the low end of its range is under roi_min (as good as
     zero) or the data pulled its ROI down from the prior, not up."""
     return not (post_lo < roi_min or post_median <= prior_median)
+
+
+def exact_prior_range(entry: dict | None, confidence: float) -> tuple[float, float] | None:
+    """Step 33. The prior's 90% range from its distribution, exactly (no sampling noise):
+    LogNormal(mu, sigma) or Beta(a, b) as configured in step 25. None without a closed form."""
+    from scipy import stats
+
+    if not entry or entry.get("family") not in ("lognormal", "beta"):
+        return None
+    q = [(1 - confidence) / 2, (1 + confidence) / 2]
+    if entry["family"] == "lognormal":
+        lo, hi = stats.lognorm(s=float(entry["p2"]), scale=math.exp(float(entry["p1"]))).ppf(q)
+    else:
+        lo, hi = stats.beta(float(entry["p1"]), float(entry["p2"])).ppf(q)
+    return float(lo), float(hi)
+
+
+def placebo_passes(placebo_mean: float, placebo_low: float, real_mean: float,
+                   max_share: float, max_low: float, roi_in_money: bool = True) -> dict:
+    """Step 35. A random series shaped like a real channel should earn much less: its mean ROI
+    under max_share of the real channel's, and the low end of its range under max_low (as good
+    as nothing; checked when ROI is money per money)."""
+    below_real = placebo_mean < max_share * real_mean
+    low_ok = placebo_low < max_low if roi_in_money else True
+    return {"ok": bool(below_real and low_ok), "below_real": bool(below_real), "low_ok": bool(low_ok)}

@@ -133,9 +133,24 @@ def _evaluate(d: Path) -> dict:
     final = run.last
     meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
     (d / "meta.json").write_text(json.dumps(meta))
+    key = _answer_key(d)
+    if key and fit and fit.get("result") and run.d is not None and run.d.status == "complete":
+        from ..fit import truth
+
+        fit["truth"] = truth.compare(fit["result"], run.d.channels, key, run.d.kpi)   # display only
     return {"run_id": d.name, "file": meta["file"], "answers": meta["answers"], "phase": run.phase,
             "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d),
-            "fit": _clean(fit), "meridian_installed": meridian_installed()}
+            "fit": _clean(fit), "meridian_installed": meridian_installed(),
+            "answer_key": {"loaded": bool(key), "file": (key or {}).get("_file")}}
+
+
+ANSWER_KEY = "answer_key.json"
+
+
+def _answer_key(d: Path) -> dict | None:
+    """A test file's known truth, if one was loaded (step 32). Never passed to the model."""
+    p = d / ANSWER_KEY
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def _new_seed() -> int:
@@ -300,14 +315,19 @@ def baseline_preview(run_id: str) -> dict:
 
     if not baseline.meridian_installed():
         raise HTTPException(503, "The knots preview uses Meridian's knot weights: pip install -r requirements-model.txt.")
+    from ..channel_stats import ChannelStatsError
+
     run = _phase_d(_run_dir(run_id))
-    cvs = {c["channel"]: c["cv"] for s in run.c.steps if s.step == 16 for c in s.details.get("channels", [])}
     outliers = [o["date"] for s in run.b.steps if s.step == 11 for o in s.details.get("outliers", [])]
     t = run.d.table
+    chans = sorted((c.name, c.spend, tuple(c.sources())) for c in run.d.channels)
     key = hashlib.sha256(t.to_csv(index=False).encode() + json.dumps(
-        [run.d.config.get("max_lag"), sorted(run.d.roles.items()), cvs, outliers], default=str).encode()).hexdigest()[:16]
+        [run.d.config.get("max_lag"), sorted(run.d.roles.items()), chans, outliers], default=str).encode()).hexdigest()[:16]
     if key not in _previews:
-        _previews[key] = _clean({**baseline.preview(run.d, cvs, outliers), "key": key})
+        try:
+            _previews[key] = _clean({**baseline.preview(run.d, outliers), "key": key})
+        except ChannelStatsError as e:
+            raise HTTPException(500, f"Step 24 can't check burst channels: {e}") from e
     return _previews[key]
 
 
@@ -319,8 +339,7 @@ def knots_suggestion(run_id: str) -> dict:
     if not baseline.meridian_installed():
         raise HTTPException(503, "Suggestions use Meridian: pip install -r requirements-model.txt.")
     run = _phase_d(_run_dir(run_id))
-    cvs = {c["channel"]: c["cv"] for s in run.c.steps if s.step == 16 for c in s.details.get("channels", [])}
-    return _clean(baseline.suggest(run.d, cvs))
+    return _clean(baseline.suggest(run.d))
 
 
 @app.get("/api/fit-settings")
@@ -406,6 +425,36 @@ def fit_estimate(run_id: str) -> dict:
                    "seed": _run_seed(d), "presets": fit_settings()["samplers"]})
 
 
+@app.post("/api/runs/{run_id}/answer-key")
+async def load_answer_key(run_id: str, file: UploadFile = File(...)) -> dict:
+    """Step 32's optional comparison with known truth (test files only). Refused if it is for
+    another KPI column. Stored with the run for display; never used by the model or a verdict."""
+    from ..fit import truth
+
+    d = _run_dir(run_id)
+    try:
+        key = json.loads((await file.read()).decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise HTTPException(400, f"The answer key isn't valid JSON: {e}") from e
+    run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+    if run.a is None or run.a.status != "complete":
+        raise HTTPException(409, "Finish Phase A first: the answer key is checked against the KPI column.")
+    try:
+        truth.validate(key, run.a.kpi["kpi"])
+    except truth.TruthError as e:
+        raise HTTPException(400, str(e)) from e
+    key["_file"] = file.filename
+    (d / ANSWER_KEY).write_text(json.dumps(key), encoding="utf-8")
+    return _evaluate(d)
+
+
+@app.delete("/api/runs/{run_id}/answer-key")
+def remove_answer_key(run_id: str) -> dict:
+    d = _run_dir(run_id)
+    (d / ANSWER_KEY).unlink(missing_ok=True)
+    return _evaluate(d)
+
+
 @app.get("/api/runs/{run_id}/fit")
 def fit_status(run_id: str) -> dict:
     """The fit's state and progress; the result once it has finished."""
@@ -452,6 +501,13 @@ def get_summary(run_id: str) -> dict:
         out["stale"] = bool(run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
     out["downloads"] = {"meridian_html": (job.fit_dir(d) / "model_results_summary.html").exists(),
                         "model": (job.fit_dir(d) / "model.pkl").exists()}
+    key = _answer_key(d)
+    if key and st.get("result"):
+        from ..fit import truth
+
+        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        if run.d is not None and run.d.status == "complete":
+            out["truth_marginal_roi"] = truth.compare(st["result"], run.d.channels, key, run.d.kpi)["true_marginal_roi"]
     return _clean(out)
 
 

@@ -17,6 +17,7 @@ class Verdict(str, Enum):
     WARN = "warn"
     NEEDS_INPUT = "needs_input"
     FAIL = "fail"
+    SKIPPED = "skipped"   # an optional check that wasn't run (grey, never "Pass")
 
 
 # Column roles. Each maps one-to-one to a Meridian CoordToColumns field

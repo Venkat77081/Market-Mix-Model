@@ -35,9 +35,8 @@ def run():
 
 @pytest.fixture(scope="module")
 def preview(run):
-    cvs = {c["channel"]: c["cv"] for s in run.c.steps if s.step == 16 for c in s.details["channels"]}
     outliers = [o["date"] for s in run.b.steps if s.step == 11 for o in s.details.get("outliers", [])]
-    return baseline.preview(run.d, cvs, outliers)
+    return baseline.preview(run.d, outliers)
 
 
 @needs_meridian
@@ -118,8 +117,7 @@ SEEDS = (1, 2, 3, 4, 5)
 def _case(tmp_path, kind, seed):
     r = run_pipeline(gen.write_knots_case(tmp_path, kind, seed), {}, accept_defaults=True)
     assert r.d is not None and r.d.status == "complete", r.last.steps[-1].summary
-    cvs = {c["channel"]: c["cv"] for s in r.c.steps if s.step == 16 for c in s.details["channels"]}
-    return baseline.preview(r.d, cvs)
+    return baseline.preview(r.d)
 
 
 @pytest.fixture(scope="module")
@@ -179,8 +177,9 @@ def test_burst_group_rule():
     chans = [SimpleNamespace(name=c, spend=f"{c}_spend") for c in ("tv", "outdoor", "print", "search")]
     t = pd.DataFrame({"tv_spend": [60.0], "outdoor_spend": [10.0], "print_spend": [4.0], "search_spend": [26.0]})
     r = SimpleNamespace(channels=chans, table=t)
-    cvs = {"tv": 1.1, "outdoor": 0.5, "print": 1.8, "search": 0.2}
-    assert baseline.burst_group(r, cvs) == ["tv", "outdoor"]   # print is 4% of spend; search is always on
+    stats = {"tv": {"cv": 1.1, "share": 0.60}, "outdoor": {"cv": 0.5, "share": 0.10},
+             "print": {"cv": 1.8, "share": 0.04}, "search": {"cv": 0.2, "share": 0.26}}
+    assert baseline.burst_group(r, stats) == ["tv", "outdoor"]   # print is 4% of spend; search is always on
 
 
 def test_colours():
@@ -292,9 +291,8 @@ def test_outlier_weeks_are_passed_to_the_chart(tmp_path):
     from mmm_tool.samples import MESSY_TRUTH, make_insurance, write_messy
 
     r = run_pipeline(write_messy(tmp_path), {"duplicate_dates": "merge"}, accept_defaults=True)
-    cvs = {c["channel"]: c["cv"] for s in r.c.steps if s.step == 16 for c in s.details["channels"]}
     flagged = [o["date"] for s in r.b.steps if s.step == 11 for o in s.details["outliers"]]
-    p = baseline.preview(r.d, cvs, flagged)
+    p = baseline.preview(r.d, flagged)
     week = str(make_insurance()["week_start"].iloc[MESSY_TRUTH["outlier_week"]].date())
     assert [p["weeks"][i] for i in p["outliers"]] == [week]
     # The outlier is three times a normal week; the chart's y range is set without it.
