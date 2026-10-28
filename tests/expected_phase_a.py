@@ -99,8 +99,9 @@ def check(name):
         add("reason gives ₹ range", "9,310" in sug.get("new_premium_inr", {}).get("reason", "") and "11,096" in sug.get("new_premium_inr", {}).get("reason", ""),
             sug.get("new_premium_inr", {}).get("reason", "")[:60])
         add("step 5 offers count vs revenue", "kpi_choice" in dec and dec["kpi_choice"].options == ["count", "revenue"], list(dec))
-        add("revenue per KPI is per unit", r.status == "complete" and r.kpi.get("revenue_per_kpi_column") == "revenue_per_kpi"
-            and 9000 < r.table["revenue_per_kpi"].median() < 11500, r.kpi.get("revenue_per_kpi_column"))
+        add("revenue per KPI left to Phase B (from the cleaned revenue column)", r.status == "complete"
+            and r.kpi.get("revenue_source") == "column" and r.kpi.get("revenue_column") == "new_premium_inr"
+            and "revenue_per_kpi" not in r.table.columns, (r.kpi.get("revenue_source"), r.kpi.get("revenue_column")))
     if "media_spend" in e:
         got = sorted(c for c, v in roles.items() if v == "media_spend")
         add("media_spend columns", got == sorted(e["media_spend"]), got)

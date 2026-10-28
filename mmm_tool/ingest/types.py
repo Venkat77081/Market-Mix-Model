@@ -124,6 +124,12 @@ class Answers:
         )
         return True, value
 
+    def note(self, step: int, what: str, lines: list[str], source: str = "tool") -> None:
+        """Log something decided without a question (found in the data, or a default left
+        as it is), in plain words."""
+        self.log.append({"decision": what, "step": step, "question": None, "answer": None, "source": source,
+                         "default": None, "lines": lines})
+
     def describe(self, decision: Decision, lines: list[str]) -> None:
         """Plain-words lines for a table-like answer, shown in the decision log in
         place of the raw value ("#23 search fades fast (you)")."""

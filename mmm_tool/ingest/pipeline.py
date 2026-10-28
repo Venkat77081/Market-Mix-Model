@@ -154,7 +154,8 @@ def run_phase_a(path: str | Path, answers: dict[str, Any] | Answers | None = Non
         return stop(step)
     steps.append(step)
 
-    # The revenue total behind a derived revenue per KPI stays (set aside) so
-    # Phase B can clean it and rebuild the ratio from cleaned totals.
-    table = table.drop(columns=[c for c, r in roles.items() if r == "excluded" and c != kpi.get("revenue_column")])
+    # An rf channel's impressions stay (set aside) until Phase B has used them to
+    # weight frequency when rows are combined.
+    weights = {c.impressions for c in channels if c.impressions}
+    table = table.drop(columns=[c for c, r in roles.items() if r == "excluded" and c not in weights])
     return PhaseAResult("complete", steps, table, roles, channels, kpi, gran, ans.log)

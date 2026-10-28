@@ -32,6 +32,7 @@ class Channel:
     reach: str | None = None  # rf channels
     frequency: str | None = None
     exposure_is_spend: bool = False
+    impressions: str | None = None  # rf channels: an impressions column, kept to weight frequency when rows merge
 
 
 def _rank(col: str) -> int:
@@ -128,6 +129,8 @@ def pair_channels(roles: dict[str, str], answers: Answers, df: pd.DataFrame | No
         twin = by_name.get(channel_of(col))
         if twin is not None:
             roles[col] = "excluded"
+            if twin.kind == "rf" and role == "media" and twin.impressions is None:
+                twin.impressions = col
             notes.append(f"'{col}' is a second exposure metric for {twin.name}; '{twin.exposure or twin.reach}' is used instead.")
             continue
         match = value_match(df, col, [c for c in channels if c.kind == "media" and c.exposure_is_spend]) if role == "media" else None

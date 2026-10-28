@@ -233,8 +233,9 @@ def test_second_exposure_metric_is_dropped(tmp_path):
 def test_non_revenue_kpi_with_revenue_column(data):
     r = run_phase_a(data["clean"], accept_defaults=True)
     assert r.kpi["kpi_type"] == "non_revenue"
-    assert r.kpi["revenue_per_kpi_column"] == "avg_premium"
-    assert r.coord_to_columns()["coord_to_columns"]["revenue_per_kpi"] == "avg_premium"
+    # Step 5 records where the value per unit comes from; Phase B calculates revenue per KPI after cleaning.
+    assert r.kpi["revenue_source"] == "per_unit_column" and r.kpi["revenue_column"] == "avg_premium"
+    assert r.kpi["revenue_per_kpi_column"] is None and "revenue_per_kpi" not in r.coord_to_columns()["coord_to_columns"]
 
 
 def test_non_revenue_kpi_fixed_value_or_kpi_units(data):

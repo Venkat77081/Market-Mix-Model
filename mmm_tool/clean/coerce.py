@@ -30,7 +30,7 @@ def currency_of(text: str) -> str | None:
 
 def dash_is_zero(ctx: Ctx, role: str | None) -> bool:
     """Accounting formats write zero as "-"; that only applies to money and media amounts."""
-    if role in SPEND_ROLES | MEDIA_ROLES | {"revenue_for_kpi", "revenue_per_kpi"}:
+    if role in SPEND_ROLES | MEDIA_ROLES | {"revenue_for_kpi"}:
         return True
     return role == "kpi" and ctx.kpi.get("kpi_type") == "revenue"
 

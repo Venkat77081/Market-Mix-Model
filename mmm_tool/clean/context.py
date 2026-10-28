@@ -15,7 +15,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..ingest.keywords import load_keywords, words_of
 from ..ingest.pairing import Channel
 
 SETTINGS_FILE = Path(__file__).with_name("cleaning.yaml")
@@ -30,7 +29,6 @@ def settings() -> dict[str, Any]:
 
 
 RULES = ("sum", "mean", "max")
-SUMMED_ROLES = {"kpi", "revenue_for_kpi", "media", "media_spend", "rf_spend", "reach", "organic_media"}
 MEDIA_ROLES = {"media", "media_spend", "rf_spend", "reach", "organic_media"}
 SPEND_ROLES = {"media_spend", "rf_spend"}
 
@@ -47,6 +45,7 @@ class Ctx:
     kpi_col: str = ""
     freq: str = "weekly"
     rules: dict[str, str] = field(default_factory=dict)
+    weights: dict[str, str] = field(default_factory=dict)  # frequency column → impressions (or reach) column
     currency_symbols: dict[str, list[str]] = field(default_factory=dict)
     imputed_kpi: pd.Series | None = None  # True where step 10 filled the KPI
 
@@ -55,9 +54,6 @@ class Ctx:
         self.date = role("date")
         self.kpi_col = role("kpi")
         self.geo = role("geo") if self.granularity.get("geo_mode") == "regional" else None
-        rev = self.kpi.get("revenue_column")
-        if rev in self.df.columns and self.roles.get(rev) == "excluded":
-            self.roles[rev] = "revenue_for_kpi"  # cleaned like the KPI; step 13 rebuilds revenue per KPI from it
 
     @property
     def keys(self) -> list[str]:
@@ -69,6 +65,11 @@ class Ctx:
     @property
     def value_cols(self) -> list[str]:
         return [c for c in self.df.columns if c not in self.keys and self.roles.get(c) not in ("date", "geo", "excluded")]
+
+    def drop_weight_columns(self) -> None:
+        """Impressions kept only to weight frequency while rows are combined (steps 8-9)."""
+        for c in [c for c in self.df.columns if self.roles.get(c) == "excluded"]:
+            self.df = self.df.drop(columns=c)
 
     def add_control(self, name: str, values: pd.Series | np.ndarray) -> None:
         self.df[name] = values
@@ -89,33 +90,13 @@ def is_binary(s: pd.Series) -> bool:
     return len(v) > 0 and set(np.asarray(v, dtype=float)) <= {0.0, 1.0}
 
 
-def default_rule(col: str, role: str, s: pd.Series) -> tuple[str | None, str]:
-    """(rule, reason); rule is None when the column can't be classified."""
-    if role in SUMMED_ROLES:
-        return "sum", "spend, exposure and KPI add up"
-    if role == "frequency":
-        return "mean", "frequency is an average per person"
-    if role == "revenue_per_kpi":
-        return "mean", "value per unit is averaged"
-    if role == "population":
-        return "max", "one value per region"
-    if is_binary(s):
-        return "max", "0/1 flag: takes the maximum, never the sum"
-    kw, w = load_keywords(), words_of(col)
-    if kw.agg_mean is not None and kw.agg_mean.search(w):
-        return "mean", "index, price or rate by name"
-    if kw.agg_sum is not None and kw.agg_sum.search(w):
-        return "sum", "an amount or count by name"
-    return None, "can't tell whether to add or average this column"
-
-
 def aggregate(df: pd.DataFrame, keys: list[str], rules: dict[str, str],
               weights: dict[str, str] | None = None) -> pd.DataFrame:
     """Group by keys and combine each column by its rule. An all-missing group
     stays missing (a sum of nothing is not zero). "first" keeps a value that
     every merged row repeats. weights maps a per-unit column to the column it
-    is per (revenue per KPI → KPI): it is averaged weighted by that column, so
-    the merged value is total ÷ total, not an average of ratios."""
+    is weighted by (frequency → impressions): it is averaged weighted by that
+    column, so the merged value is total ÷ total, not an average of ratios."""
     funcs = {
         "sum": lambda x: x.sum(min_count=1),
         "mean": "mean",
@@ -139,11 +120,6 @@ def aggregate(df: pd.DataFrame, keys: list[str], rules: dict[str, str],
         num = out.pop(f"_num_{c}")
         out[c] = (num / den.where(den > 0)).fillna(out[c])
     return out[[c for c in df.columns if c in out.columns]]
-
-
-def per_unit_weights(ctx: "Ctx") -> dict[str, str]:
-    """Revenue per KPI is merged weighted by the KPI."""
-    return {c: ctx.kpi_col for c, r in ctx.roles.items() if r == "revenue_per_kpi" and ctx.kpi_col}
 
 
 def cell_key(date: pd.Timestamp, geo: Any = None) -> str:

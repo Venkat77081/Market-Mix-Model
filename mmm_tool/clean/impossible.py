@@ -23,7 +23,7 @@ from .context import MEDIA_ROLES, SPEND_ROLES, Ctx, cell_key, is_binary, setting
 
 STEP = 12
 NAME = "Check impossible values"
-NON_NEGATIVE = SPEND_ROLES | {"media", "reach", "frequency", "organic_media", "kpi", "population", "revenue_per_kpi", "revenue_for_kpi"}
+NON_NEGATIVE = SPEND_ROLES | {"media", "reach", "frequency", "organic_media", "kpi", "population", "revenue_for_kpi"}
 
 
 def _issue(ctx: Ctx, col: str, i: int, g, extra: dict) -> dict:
@@ -52,6 +52,14 @@ def _apply(ctx: Ctx, issues: list[dict], chosen: dict, default: str) -> list[str
                 it["corrected_to"] = float(a)
             except (TypeError, ValueError):
                 problems.append(f"{it['key']}: '{a}' isn't zero, keep, interpolate or a number")
+    # A KPI week that is filled or corrected takes its revenue along when that is 0 too, so
+    # revenue per KPI (calculated after step 13) isn't ₹0 for a week that now has sales.
+    rev = next((c for c in df.columns if ctx.roles.get(c) == "revenue_for_kpi"), None)
+    if rev:
+        for it in issues:
+            if it["column"] == ctx.kpi_col and it["action"] in ("interpolate", "corrected") and df.at[it["row"], rev] == 0:
+                df.at[it["row"], rev] = np.nan
+                interp.setdefault(rev, []).append(it["row"])
     for col in interp:
         for _, idx in ctx.by_geo():
             df.loc[idx, col] = df.loc[idx, col].interpolate(limit_area="inside").ffill().bfill()

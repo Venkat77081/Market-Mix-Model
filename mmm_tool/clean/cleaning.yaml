@@ -25,3 +25,15 @@ level_shift:
 short_weeks:
   # Daily data: a week with fewer days than this (inside the period) is incomplete.
   full_days: 7
+
+multi_row_weeks:
+  # Step 8: rows that share a date (and region) are judged against a normal
+  # week: the median of each spend and KPI column over this many single-row
+  # weeks on each side, same region.
+  neighbours: 4
+  # Rows adding up to a normal week (within this share) are a split; each
+  # row being a normal week is a likely revision.
+  tolerance: 0.30
+  # Values equal after rounding to this many significant digits are the same
+  # (exact copies, and columns repeated on split rows).
+  significant_digits: 6

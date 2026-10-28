@@ -20,7 +20,7 @@ from ..ingest.granularity import WEEKDAYS, frequency_of
 from ..ingest.types import Answers, Decision, StepResult, Verdict
 import numpy as np
 
-from .context import Ctx, aggregate, per_unit_weights, settings
+from .context import Ctx, aggregate, settings
 
 STEP = 9
 NAME = "Resample to weeks"
@@ -64,7 +64,7 @@ def resample_weeks(ctx: Ctx, answers: Answers) -> StepResult:
     work = df.assign(**{ctx.date: week})
     rows_before = len(work)
     if work.duplicated(ctx.keys).any():
-        work = aggregate(work, ctx.keys, ctx.rules, per_unit_weights(ctx))
+        work = aggregate(work, ctx.keys, ctx.rules, ctx.weights)
 
     decisions = [d]
     dropped: list[str] = []

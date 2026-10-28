@@ -8,8 +8,8 @@
   Currency   warns when cells carry different currency symbols.
   Inflation  optional: restate spend and revenue in one base year's prices,
              using an annual inflation rate the user gives.
-  Fixed value per KPI unit (Phase A step 5) becomes a revenue_per_kpi column,
-             because Meridian reads it from a column.
+Revenue per KPI is not touched here: it is calculated once, after this step,
+from the cleaned revenue and KPI columns (revenue.py).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ NAME = "Normalise money"
 
 
 def money_columns(ctx: Ctx) -> list[str]:
-    cols = ctx.cols(*SPEND_ROLES, "revenue_per_kpi", "revenue_for_kpi")
+    cols = ctx.cols(*SPEND_ROLES, "revenue_for_kpi")
     if ctx.kpi.get("kpi_type") == "revenue":
         cols.append(ctx.kpi_col)
     return cols
@@ -157,15 +157,6 @@ def normalise_money(ctx: Ctx, answers: Answers) -> StepResult:
         mix = ", ".join(c + ": " + "/".join(s) for c, s in seen.items())
         warnings.append(f"Money columns mix currencies ({mix}). Convert them to one currency in the export.")
 
-    # Fixed value per KPI unit
-    fixed = ctx.kpi.get("revenue_per_kpi_value")
-    if fixed and not ctx.kpi.get("revenue_per_kpi_column"):
-        df["revenue_per_kpi"] = float(fixed)
-        ctx.roles["revenue_per_kpi"] = "revenue_per_kpi"
-        ctx.kpi["revenue_per_kpi_column"] = "revenue_per_kpi"
-        money = money_columns(ctx)
-        notes.append(f"revenue_per_kpi column added at ₹{fixed:,.0f} per unit")
-
     # Inflation
     years = sorted(df[ctx.date].dt.year.unique().tolist())
     d = Decision(
@@ -193,18 +184,6 @@ def normalise_money(ctx: Ctx, answers: Answers) -> StepResult:
             df[c] = df[c] * factor
         applied = {"base_year": base, "annual_rate_pct": rate, "factor_range": [round(float(factor.min()), 3), round(float(factor.max()), 3)]}
         notes.append(f"money restated in {base} prices at {rate:g}% a year")
-
-    # Revenue per KPI derived in step 5 is rebuilt from the cleaned totals, so
-    # merged, corrected and interpolated weeks give total revenue ÷ total KPI.
-    rev, rpk = ctx.kpi.get("revenue_column"), ctx.kpi.get("revenue_per_kpi_column")
-    if rev in df.columns and rpk in df.columns and ctx.roles.get(rev) == "revenue_for_kpi":
-        k = df[ctx.kpi_col]
-        df[rpk] = df[rev] / k.where(k > 0)
-        for _, idx in ctx.by_geo():
-            df.loc[idx, rpk] = df.loc[idx, rpk].interpolate(limit_area="inside").ffill().bfill()
-        df = df.drop(columns=[rev])  # never passed to Meridian, only the ratio
-        ctx.roles[rev] = "excluded"
-        money = [c for c in money if c != rev]
 
     ctx.df = df
     details = {"money_columns": money, "level_shifts": shifted, "units_converted": converted, "currency_symbols": seen, "inflation": applied, "years": years}

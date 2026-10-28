@@ -1,9 +1,18 @@
 """Step 5: set KPI type.
 
 Revenue if the KPI is money, otherwise non-revenue. For a non-revenue KPI
-(new policies) ROI needs the money value of one unit: a revenue-per-KPI
-column or a fixed value such as the average premium per policy. Without
-either, the run continues and ROI is reported in KPI units.
+(new policies) ROI needs the money value of one unit. This step only records
+where it comes from; Phase B calculates revenue per KPI once, after cleaning
+(clean/revenue.py), so it is never merged, interpolated or outlier-checked
+as a ratio:
+
+  kpi            the KPI is revenue: no revenue per KPI
+  column         a revenue column for the KPI (premium beside policies):
+                 revenue total ÷ KPI total per week
+  per_unit_column a value-per-unit column: turned into a revenue total
+                 (value × KPI) before rows are combined, then as above
+  value          a fixed ₹ value per unit the user types: the same every week
+  None           no ₹ value: ROI is reported in KPI units
 """
 from __future__ import annotations
 
@@ -11,7 +20,6 @@ import pandas as pd
 
 from .keywords import load_keywords, words_of
 from .types import Answers, Decision, StepResult, Verdict
-from .values import numeric_view
 
 STEP = 5
 NAME = "Set KPI type"
@@ -26,23 +34,16 @@ def kpi_type_guess(kpi_col: str) -> str:
     return "revenue" if kw.kpi_money and kw.kpi_money.search(w) else "non_revenue"
 
 
-def _derived_name(df: pd.DataFrame) -> str:
-    name, i = "revenue_per_kpi", 2
-    while name in df.columns:
-        name, i = f"revenue_per_kpi_{i}", i + 1
-    return name
-
-
-def choose_revenue_kpi(df: pd.DataFrame, roles: dict[str, str], answers: Answers,
-                       decisions: list[Decision], notes: list[str]) -> tuple[pd.DataFrame, str | None]:
+def choose_revenue_kpi(roles: dict[str, str], answers: Answers, decisions: list[Decision],
+                       notes: list[str]) -> str | None:
     """With a "Revenue for KPI" column (premium beside policies), offer:
-    count    KPI stays the count; revenue per KPI = revenue / count, passed to
-             Meridian as the per-unit value, never the total (default)
+    count    KPI stays the count, valued at revenue ÷ count per week, calculated after
+             cleaning; the total is never passed to Meridian (default)
     revenue  the revenue column becomes the KPI, type revenue
-    Returns the table and the forced KPI type (None if unchanged)."""
+    Returns the forced KPI type (None without a revenue column)."""
     rev = next((c for c, r in roles.items() if r == "revenue_for_kpi"), None)
     if rev is None:
-        return df, None
+        return None
     kpi_col = next(c for c, r in roles.items() if r == "kpi")
     d = Decision(
         id="kpi_choice",
@@ -58,26 +59,20 @@ def choose_revenue_kpi(df: pd.DataFrame, roles: dict[str, str], answers: Answers
     if choice == "revenue":
         roles[rev], roles[kpi_col] = "kpi", "excluded"
         notes.append(f"'{rev}' is the KPI; '{kpi_col}' is set aside")
-        return df, "revenue"
-    k = numeric_view(df[kpi_col])
-    per_unit = numeric_view(df[rev]) / k.where(k > 0)
-    name = _derived_name(df)
-    df = df.copy()
-    df[name] = per_unit
+        return "revenue"
     old = [c for c, r in roles.items() if r == "revenue_per_kpi"]
     for c in old:
         roles[c] = "excluded"
-    roles[name], roles[rev] = "revenue_per_kpi", "excluded"
-    notes.append(f"'{name}' = {rev} ÷ {kpi_col} (median ₹{per_unit.median():,.0f}); the total '{rev}' isn't passed to Meridian"
-                 + (f"; '{old[0]}' set aside" if old else ""))
-    return df, "non_revenue"
+    notes.append(f"revenue per {kpi_col} is calculated after cleaning, week by week, as {rev} ÷ {kpi_col}; "
+                 f"the total '{rev}' isn't passed to Meridian" + (f"; '{old[0]}' set aside" if old else ""))
+    return "non_revenue"
 
 
 def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> tuple[dict, StepResult, pd.DataFrame]:
     decisions: list[Decision] = []
     notes: list[str] = []
     rev_col = next((c for c, r in roles.items() if r == "revenue_for_kpi"), None)
-    df, forced = choose_revenue_kpi(df, roles, answers, decisions, notes)
+    forced = choose_revenue_kpi(roles, answers, decisions, notes)
     kpi_col = next(c for c, r in roles.items() if r == "kpi")
     rpk_col = next((c for c, r in roles.items() if r == "revenue_per_kpi"), None)
     guess = forced or kpi_type_guess(kpi_col)
@@ -94,22 +89,23 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
         decisions.append(d_type)
         kpi_type = answers.ask(d_type) or guess
     warnings: list[str] = []
-    out = {"kpi": kpi_col, "kpi_type": kpi_type, "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": "₹ per ₹"}
-    if forced == "non_revenue" and rev_col:
-        out["revenue_column"] = rev_col  # Phase B cleans the total and rebuilds the ratio from it
+    out = {"kpi": kpi_col, "kpi_type": kpi_type, "revenue_source": None, "revenue_column": None,
+           "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": "₹ per ₹"}
 
     if kpi_type == "revenue":
-        if rpk_col:
-            warnings.append(f"KPI is already money, so '{rpk_col}' is not used as revenue per KPI.")
-            roles[rpk_col] = "excluded"
+        out["revenue_source"] = "kpi"
+        for c in (rpk_col, rev_col if forced is None else None):
+            if c and roles.get(c) in ("revenue_per_kpi", "revenue_for_kpi"):
+                warnings.append(f"KPI is already money, so '{c}' is not used as revenue per KPI.")
+                roles[c] = "excluded"
         summary = f"'{kpi_col}' is revenue; ROI is ₹ returned per ₹ spent."
+    elif rev_col and roles.get(rev_col) == "revenue_for_kpi":
+        out.update(revenue_source="column", revenue_column=rev_col)
+        summary = f"'{kpi_col}' is a count; revenue per {kpi_col} = {rev_col} ÷ {kpi_col}, calculated after cleaning."
     elif rpk_col:
-        values = numeric_view(df[rpk_col])
-        out["revenue_per_kpi_column"] = rpk_col
-        out["revenue_per_kpi_median"] = float(values.median())
-        if (values <= 0).any() or values.isna().mean() > 0.2:
-            warnings.append(f"'{rpk_col}' has zero, negative or missing values; check it before fitting.")
-        summary = f"'{kpi_col}' is a count; '{rpk_col}' (median {values.median():,.0f}) turns it into ₹ for ROI."
+        out.update(revenue_source="per_unit_column", revenue_column=rpk_col)
+        summary = (f"'{kpi_col}' is a count; '{rpk_col}' is a value per unit. Phase B turns it into a revenue total "
+                   f"before rows are combined and calculates revenue per {kpi_col} after cleaning.")
     else:
         d_value = Decision(
             id="revenue_per_kpi_value",
@@ -124,7 +120,7 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
             value = float(value)
             if value <= 0:
                 return out, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, "Revenue per KPI must be above zero.", out, warnings, decisions), df
-            out["revenue_per_kpi_value"] = value
+            out.update(revenue_source="value", revenue_per_kpi_value=value)
             summary = f"'{kpi_col}' is a count, valued at a fixed ₹{value:,.0f} per unit for ROI."
         else:
             out["roi_units"] = f"{kpi_col} per ₹"

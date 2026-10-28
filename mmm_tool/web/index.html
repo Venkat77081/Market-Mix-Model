@@ -536,8 +536,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return `<dl class="kv">
         <div><dt>KPI</dt><dd class="mono">${esc(d.kpi)}</dd></div>
         <div><dt>ROI unit</dt><dd>${esc(d.roi_units)}</dd></div>
-        ${d.revenue_per_kpi_column ? `<div><dt>Revenue per KPI</dt><dd class="mono">${esc(d.revenue_per_kpi_column)}</dd></div><div><dt>Median value</dt><dd>₹${num(Math.round(d.revenue_per_kpi_median))}</dd></div>` : ""}
-        ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>₹${num(d.revenue_per_kpi_value)}</dd></div>` : ""}
+        ${d.revenue_source === "column" ? `<div><dt>₹ per unit</dt><dd><span class="mono">${esc(d.revenue_column)}</span> ÷ <span class="mono">${esc(d.kpi)}</span>, week by week, after cleaning (step 13)</dd></div>` : ""}
+        ${d.revenue_source === "per_unit_column" ? `<div><dt>₹ per unit</dt><dd>from <span class="mono">${esc(d.revenue_column)}</span>, recalculated after cleaning (step 13)</dd></div>` : ""}
+        ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>₹${num(d.revenue_per_kpi_value)}, every week</dd></div>` : ""}
       </dl>
       ${choice ? `<div class="decide soft"><p>${esc(choice.question)}</p>${seg(choice, null, { count: `${choice.context.kpi} is the KPI (₹ per unit)`, revenue: `${choice.context.revenue} is the KPI` })}</div>` : ""}
       ${type ? `<div class="decide soft"><p>${esc(type.question)}</p>${seg(type)}</div>` : ""}
@@ -573,30 +574,56 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <p class="muted small">${cols.length - changed.length} other column(s) were already clean numbers.${sym.length ? ` Currency symbols seen: ${sym.map(([c, v]) => `${esc(c)} ${esc(v.join(" "))}`).join(", ")}.` : ""}</p>`;
   }
 
+  // Step 8: exact copies, multi-row weeks judged against a normal week, and how split rows combine.
+  // A dropdown only where there is a real choice; the rule shown is the rule applied.
+  const MRW_LABEL = { later: "Keep the later row", sum: "Add up", mean: "Average" };
+  const KIND_LABEL = { split: ["pass", "Split"], revision: ["warn", "Likely revision"], unclear: ["block", "Unclear"] };
   function step8(s) {
-    const d = s.details;
-    const dec = decision(s, "aggregation_rules");
-    const chosen = { ...(dec ? dec.default : {}), ...(answers.aggregation_rules || {}) };
-    const rows = (d.rules || []).map(r => {
-      const cur = chosen[r.column] || r.applied || r.rule;
-      const cell = r.editable
-        ? `<select data-agg="${esc(r.column)}" aria-label="Rule for ${esc(r.column)}" class="${r.rule ? "" : "changed"}">${Object.keys(RULE_LABEL).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${RULE_LABEL[k]}</option>`).join("")}</select>`
-        : esc(RULE_LABEL[cur] || cur);
-      return `<tr><td class="mono">${esc(r.column)}</td><td>${esc(ROLE_LABEL[r.role] || r.role)}</td><td>${cell}</td><td class="why">${r.rule ? esc(r.reason) : `<b style="color:var(--block)">${esc(r.reason)}</b>`}</td></tr>`;
+    const d = s.details, groups = d.groups || [];
+    const dm = decision(s, "multi_row_weeks"), dr = decision(s, "aggregation_rules");
+    const picked = { ...(dr ? dr.default : {}), ...(answers.aggregation_rules || {}) };
+    const chosen = dm ? { ...dm.default, ...keyMap(dm, dm.answered ? dm.answer : null), ...keyMap(dm, answers.multi_row_weeks) } : {};
+    const kpi = (run.result && run.result.kpi && run.result.kpi.kpi) || (groups[0] ? Object.keys(groups[0].normal)[0] : null);
+    const pctOf = v => v == null ? "–" : `${Math.round(v * 100)}%`;
+    const where = g => `${esc(g.date)}${g.geo != null ? ` <span class="muted">(${esc(g.geo)})</span>` : ""}`;
+    const rowsTxt = g => g.rows.map(r => num(Math.round(r.values[kpi] ?? 0))).join(" + ");
+    const buttons = g => `<div class="seg" role="group" style="justify-self:start" aria-label="What to do with ${esc(g.date)}">${Object.keys(MRW_LABEL).map(o => `<button data-keychoice="multi_row_weeks" data-key="${esc(g.key)}" data-value="${o}" aria-pressed="${(chosen[g.key] || g.action) === o}">${MRW_LABEL[o]}</button>`).join("")}</div>`;
+    const detail = g => { const cols = Object.keys(g.normal);
+      return `<div class="scroll"><table style="min-width:420px"><thead><tr><th></th>${cols.map(c => `<th class="mono small">${esc(c)}</th>`).join("")}</tr></thead><tbody>
+        ${g.rows.map((r, i) => `<tr><td class="small">Row ${i + 1}${i === g.rows.length - 1 ? " (later)" : ""}</td>${cols.map(c => `<td class="num">${r.values[c] == null ? "–" : num(Math.round(r.values[c]))}</td>`).join("")}</tr>`).join("")}
+        <tr><td class="small muted">Normal week</td>${cols.map(c => `<td class="num muted">${g.normal[c] == null ? "–" : num(Math.round(g.normal[c]))}</td>`).join("")}</tr></tbody></table></div>`; };
+    const asked = groups.filter(g => g.kind !== "split");
+    const weeks = groups.length ? `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Date</th><th>${esc(kpi || "KPI")} by row</th><th>Normal week</th><th>Rows together</th><th>Reading</th></tr></thead><tbody>
+      ${groups.map(g => { const [cls, lab] = KIND_LABEL[g.kind];
+        return `<tr><td>${where(g)}</td><td class="num">${rowsTxt(g)}</td><td class="num">${g.normal[kpi] == null ? "–" : num(Math.round(g.normal[kpi]))}</td>
+          <td class="num">${pctOf(g.sum_ratio)}</td><td><span class="pill ${cls}">${lab}</span>${g.kind === "split" ? ' <span class="muted small">added up</span>' : ""}</td></tr>`; }).join("")}</tbody></table></div>
+      <p class="muted small">Judged against a normal week: the median of the 4 single-row weeks on each side${groups.some(g => g.geo != null) ? ", same region" : ""}. Rows that together make about one normal week (within ${Math.round((d.tolerance || 0.3) * 100)}%) are a split and are added up; rows that are each about a full week look like a revision and are never added up unless you choose to.${groups.some(g => g.basis === "spend") ? " Where the KPI has no normal level, total paid spend is used." : ""}</p>` : "";
+    const ask = asked.map(g => `<div class="decide ${dm && dm.pending ? "" : "soft"}" style="display:grid;gap:8px">
+        <p><b>${where(g)}</b>: ${g.kind === "revision" ? `each row is about a full week (${g.row_ratios.map(pctOf).join(" and ")} of normal), together ${pctOf(g.sum_ratio)}. This looks like a revision.`
+          : `together the rows are ${pctOf(g.sum_ratio)} of a normal week, each ${g.row_ratios.map(pctOf).join(" and ")}: neither a clear split nor a clear revision.`}</p>
+        ${detail(g)}${buttons(g)}</div>`).join("");
+    const rules = (d.rules || []).map(r => {
+      const cur = picked[r.column] || r.applied;
+      const cell = r.choice || r.doubles
+        ? `<select data-agg="${esc(r.column)}" aria-label="Rule for ${esc(r.column)}">${(r.options.length ? r.options : ["sum", "mean", "max"]).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${RULE_LABEL[k]}</option>`).join("")}</select>`
+        : esc(r.label);
+      const why = r.doubles ? `<b style="color:var(--block)">Same on every row of each split week: adding it up doubles it.</b>`
+        : r.choice ? `${esc(r.hint)}${r.differs.length ? `<div class="small">Rows differ in ${r.differs.map(esc).join(", ")}</div>` : ""}` : esc(r.reason);
+      return `<tr><td class="mono">${esc(r.column)}</td><td>${esc(ROLE_LABEL[r.role] || r.role)}</td><td>${cell}</td><td class="why">${why}</td></tr>`;
     }).join("");
-    const why = d.why || [];
-    let out = `<dl class="kv">
-        ${d.exact_copies ? `<div><dt>Exact copies dropped</dt><dd>${num(d.exact_copies)}</dd></div>` : ""}
-        ${(d.repeated_columns || []).length ? `<div><dt>Repeated on split rows, kept once</dt><dd class="mono small">${d.repeated_columns.map(esc).join(", ")}</dd></div>` : ""}
-        <div><dt>Duplicate rows</dt><dd>${num(d.duplicate_rows ?? 0)}${d.duplicate_dates ? ` on ${num(d.duplicate_dates)} dates` : ""}</dd></div>
+    const merging = groups.some(g => (chosen[g.key] || g.action) === "sum") || (d.why || []).length;
+    return `<dl class="kv">
+        <div><dt>Rows</dt><dd>${num(d.rows_before ?? 0)}${d.rows_after != null ? ` → ${num(d.rows_after)}` : " (waiting for your choice)"}</dd></div>
+        <div><dt>Exact copies dropped</dt><dd>${num(d.exact_copies || 0)}${(d.exact_copy_dates || []).length ? ` <span class="muted small">${d.exact_copy_dates.slice(0, 6).map(esc).join(", ")}${d.exact_copy_dates.length > 6 ? ", …" : ""}</span>` : ""}</dd></div>
+        <div><dt>Dates with several rows</dt><dd>${num(groups.length)}${groups.length ? ` (${num(groups.filter(g => g.kind === "split").length)} split)` : ""}</dd></div>
         ${d.regions_rolled_up ? `<div><dt>Regions added up</dt><dd>${num(d.regions_rolled_up)} → national</dd></div>` : ""}
-        ${d.rows_before ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
-        <div><dt>Rules used for</dt><dd>${why.length ? esc(why.join(", ")) : "nothing (no rows merge)"}</dd></div>
       </dl>
-      <div class="scroll"><table class="roles" style="min-width:640px"><thead><tr><th>Column</th><th>Role</th><th>Combine by</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    if (dec && dec.pending) out += `<div class="decide"><p>Pick how to combine ${dec.context.unclassified.map(c => `<span class="mono">${esc(c)}</span>`).join(", ")}, then apply.</p><button class="btn primary" id="apply-agg">Apply rules</button></div>`;
-    return out;
+      ${weeks}${ask}
+      ${dm && dm.pending ? `<div><button class="btn primary" data-keyall="multi_row_weeks">Use these choices</button></div>` : ""}
+      ${merging ? `<h4 style="margin:14px 0 6px">How rows are combined</h4><div class="scroll"><table class="roles" style="min-width:640px"><thead><tr><th>Column</th><th>Role</th><th>Combine by</th><th>Why</th></tr></thead><tbody>${rules}</tbody></table></div>`
+        : '<p class="muted small">No rows are combined, so no rules are needed.</p>'}`;
   }
+
 
   function step9(s) {
     const d = s.details;
@@ -690,11 +717,14 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const cur = infl ? current(infl) : "none";
     const on = cur && typeof cur === "object";
     const years = infl ? infl.context.years : [];
+    const rpk = d.revenue_per_kpi || {};
     return `<dl class="kv">
         <div><dt>Money columns</dt><dd>${(d.money_columns || []).length}</dd></div>
         ${(d.level_shifts || []).length ? `<div><dt>Level shifts converted</dt><dd class="mono small">${d.level_shifts.map(u => `${esc(u.column)} ×${num(u.multiplied_by)} (${num(u.weeks)} weeks)`).join(", ")}</dd></div>` : ""}
         ${(d.units_converted || []).length ? `<div><dt>Converted to ₹</dt><dd class="mono small">${d.units_converted.map(u => `${esc(u.column)} ×${num(u.multiplied_by)}`).join(", ")}</dd></div>` : ""}
         <div><dt>Inflation</dt><dd>${d.inflation ? `${esc(d.inflation.base_year)} prices, ${esc(d.inflation.annual_rate_pct)}% a year` : "as recorded"}</dd></div>
+        ${rpk.source === "column" ? `<div><dt>Revenue per KPI</dt><dd><span class="mono">${esc(rpk.revenue_column)}</span> ÷ KPI per week, from the cleaned columns: median ₹${num(Math.round(rpk.median))}${(rpk.zero_kpi_weeks || []).length ? `; ${num(rpk.zero_kpi_weeks.length)} zero-KPI week(s) use the whole file's ₹${num(Math.round(rpk.overall))}` : ""}</dd></div>` : ""}
+        ${rpk.source === "value" ? `<div><dt>Revenue per KPI</dt><dd>₹${num(rpk.value)} every week</dd></div>` : ""}
       </dl>
       ${shifts ? `<div class="decide soft"><p>${esc(shifts.question)}</p>${keyChoices(shifts)}</div>` : ""}
       ${units ? `<div class="decide soft"><p>${esc(units.question)}</p>${seg(units)}</div>` : ""}
@@ -1242,7 +1272,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div><p class="muted small">Shown beside these channels' ROI on every later screen.</p></div>` : ""}
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
-          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.flatMap(l => l.lines ? l.lines.map(t => `<div>#${l.step} ${esc(t)} (${l.source === "user" ? "you" : "default"})</div>`)
+          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.flatMap(l => l.lines ? l.lines.map(t => `<div>#${l.step} ${esc(t)} (${l.source === "user" ? "you" : l.source === "tool" ? "found" : "default"})</div>`)
           : [`<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"}${l.source === "user" && l.default != null && typeof l.default !== "object" && l.default !== l.answer ? `; default ${esc(l.default)}` : ""})</div>`]).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
           ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
         </aside>

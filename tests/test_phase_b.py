@@ -110,27 +110,29 @@ def test_flags_take_the_maximum_not_the_sum(messy):
     assert step(messy, 8).details["flags_max"]
 
 
-def test_unclassified_column_blocks_only_when_rows_merge(files, tmp_path):
+def test_other_column_gets_a_choice_only_when_split_rows_differ(files, tmp_path):
     df = gen.make_insurance()
     df["mystery_metric"] = np.arange(156, dtype=float)
     p = tmp_path / "mystery.csv"
     df.to_csv(p, index=False)
     known = {"roles": {"mystery_metric": "control"}}  # an unrecognised number needs a role (step 3)
-    r = run_pipeline(p, known, accept_defaults=True)
-    assert r.status == "complete"  # nothing merges, so no rule is needed
+    r = run_pipeline(p, known, accept_defaults=False)
+    assert r.status == "complete" and not step(r, 8).decisions  # nothing merges, so nothing to choose
 
     pd.concat([df, df.iloc[[5]]]).to_csv(p, index=False)  # an exact copy is dropped: still nothing to merge
     assert run_pipeline(p, {**DUP, **known}, accept_defaults=False).b.steps[1].details["exact_copies"] == 1
 
-    split = df.iloc[[5]].copy()
-    split["mystery_metric"] += 0.5  # a split row differs from its partner
-    pd.concat([df, split]).to_csv(p, index=False)
-    known = {**DUP, "roles": {"mystery_metric": "control"}}
-    r = run_pipeline(p, known, accept_defaults=False)
+    money = [c for c in df.columns if c.endswith("_spend")] + ["new_policies"]
+    a, b = df.iloc[[5]].copy(), df.iloc[[5]].copy()
+    a[money], b[money] = a[money] * 0.5, b[money] * 0.5      # a true split: each row half the week
+    b["mystery_metric"] += 0.5                               # ...and the rows differ here
+    pd.concat([df.drop(index=5), a, b]).to_csv(p, index=False)
+    r = run_pipeline(p, {**DUP, **known}, accept_defaults=False)
     s8 = step(r, 8)
-    assert r.status == "needs_input" and s8.decisions[0].context["unclassified"] == ["mystery_metric"]
-    r = run_pipeline(p, {**known, "aggregation_rules": {"mystery_metric": "sum"}}, accept_defaults=False)
-    assert r.b.steps[-1].step > 8
+    row = next(x for x in s8.details["rules"] if x["column"] == "mystery_metric")
+    assert r.status == "complete" and row["choice"] and row["applied"] == "mean" and len(row["differs"]) == 1
+    r = run_pipeline(p, {**DUP, **known, "aggregation_rules": {"mystery_metric": "sum"}}, accept_defaults=False)
+    assert next(x for x in step(r, 8).details["rules"] if x["column"] == "mystery_metric")["applied"] == "sum"
 
 
 def test_regions_add_up_to_national(files):
@@ -288,7 +290,7 @@ def test_inflation_and_fixed_value(files):
     first_2023 = raw.index[raw["week_start"].dt.year == 2023][0]
     assert np.isclose(t.loc[first_2023, "tv_spend"], raw.loc[first_2023, "tv_spend"] * 1.05 ** 2)
     assert np.isclose(t["revenue_per_kpi"].iloc[-1], 14500)
-    assert np.isclose(t["revenue_per_kpi"].iloc[0], 14500 * 1.05 ** 2)
+    assert np.allclose(t["revenue_per_kpi"], 14500)            # the typed value per unit, every week
     assert r.b.coord_to_columns()["coord_to_columns"]["revenue_per_kpi"] == "revenue_per_kpi"
 
 

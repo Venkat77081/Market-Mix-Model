@@ -147,11 +147,16 @@ def test_a01_premium_is_revenue_for_kpi():
     assert (s["role"], s["confidence"]) == ("revenue_for_kpi", "high")
     assert "₹9,310" in s["reason"] and "₹11,096" in s["reason"]
     assert decisions(r)["kpi_choice"].options == ["count", "revenue"]
-    assert r.kpi["kpi_type"] == "non_revenue" and r.kpi["revenue_per_kpi_column"] == "revenue_per_kpi"
-    assert 9300 < r.table["revenue_per_kpi"].median() < 11100  # per policy, never the total
-    # The total is set aside: Phase B cleans it and rebuilds revenue per KPI from cleaned totals, then drops it.
-    assert r.roles["new_premium_inr"] == "excluded" and r.kpi["revenue_column"] == "new_premium_inr"
+    # Step 5 records the choice; Phase B cleans the total and calculates revenue per KPI once, then drops it.
+    assert r.kpi["kpi_type"] == "non_revenue" and r.kpi["revenue_source"] == "column"
+    assert r.roles["new_premium_inr"] == "revenue_for_kpi" and r.kpi["revenue_column"] == "new_premium_inr"
+    assert "revenue_per_kpi" not in r.table.columns
     assert "new_premium_inr" not in r.coord_to_columns()["coord_to_columns"].get("controls", [])
+    from mmm_tool.pipeline import run_pipeline
+
+    b = run_pipeline(DATA / "A01_clean_weekly.csv", {}, accept_defaults=True).b
+    assert 9300 < b.table["revenue_per_kpi"].median() < 11100  # per policy, never the total
+    assert "new_premium_inr" not in b.table.columns and b.coord_to_columns()["coord_to_columns"]["revenue_per_kpi"] == "revenue_per_kpi"
 
 
 def test_a01_avg_premium_index_is_a_control_not_revenue_per_policy():

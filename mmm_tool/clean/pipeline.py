@@ -19,6 +19,7 @@ from .impossible import check_impossible
 from .money import normalise_money
 from .outliers import flag_outliers
 from .resample import resample_weeks
+from .revenue import add_revenue_per_kpi, per_unit_to_total
 
 STEPS = [
     lambda ctx, ans: coerce_types(ctx),
@@ -59,6 +60,22 @@ def run_phase_b(a: PhaseAResult, answers: Answers) -> PhaseBResult:
         if step.blocks:
             status = "failed" if step.verdict == Verdict.FAIL else "needs_input"
             return PhaseBResult(status, steps, decision_log=answers.log)
+        if fn is STEPS[0]:                      # numbers now: a value per unit becomes a revenue total
+            note = per_unit_to_total(ctx)
+            if note:
+                step.summary = step.summary.rstrip(".") + f"; {note}."
+        if fn is resample_weeks:
+            ctx.drop_weight_columns()
+
+    # Revenue per KPI, once, from the cleaned columns (shown on step 13).
+    notes, warns, info = add_revenue_per_kpi(ctx)
+    last = steps[-1]
+    if notes:
+        last.summary = last.summary.rstrip(".") + "; " + "; ".join(notes) + "."
+    last.warnings += warns
+    last.details["revenue_per_kpi"] = info
+    if warns and last.verdict == Verdict.PASS:
+        last.verdict = Verdict.WARN
 
     df = ctx.df
     left = df[ctx.value_cols].isna().sum()

@@ -71,15 +71,52 @@ regional model) with no empty cells, which is what Meridian reads. Download it f
 | Step | What it does | You decide | Blocks |
 |---|---|---|---|
 | 7 Coerce types | `N/A`, `NULL`, blanks → missing; `-` → 0 in money and media columns, missing elsewhere; `1,20,000`, `₹4,500`, `(250)`, `12.6 L` → numbers; yes/no → 1/0 | nothing | no |
-| 8 Collapse duplicate weeks | drops exact copy rows; merges split rows on the same date (and adds regions up for a national model): spend, exposure, KPI summed; indexes, prices averaged; flags take the maximum; a value repeated on every split row is kept once | the rule for a column it can't classify (`aggregation_rules`) | only if rows merge |
+| 8 Collapse duplicate weeks | groups rows by date, or date + region when there is a region column (one row per region is normal); drops exact copies (equal after rounding to 6 significant digits), never adding them up; judges every other multi-row date against a normal week (below); combines split rows by each column's rule (below); adds regions up for a national model | what to do with a likely revision or an unclear week (`multi_row_weeks`: `later`, `sum` or `mean`); reach and any column that differs between split rows (`aggregation_rules`) | a likely revision or unclear week |
 | 9 Resample to weeks | days → weeks; weekly dates moved to the nearest week start; partial edge weeks kept or dropped; weeks with days missing inside the period scaled, interpolated or kept, and flagged in `partial_week_flag` | `week_start`, `partial_weeks`, `short_weeks` | no |
 | 10 Label every gap | adds absent weeks; labels empty cells not started, ended or missing; a zero stays zero. KPI gaps at the edges are trimmed; inside, interpolated + `kpi_imputed` flag. Media blanks are judged per column: a column that never records 0 and is often blank gets 0 suggested, other blanks are interpolated; spend in absent weeks is interpolated unless you say the channels were off | `kpi_edge_gaps`, `kpi_gaps`, `media_gaps` (one answer, or one per column plus `missing_weeks`) | KPI gaps inside; absent weeks |
 | 11 Flag outliers | robust z-score on the KPI, weeks above 3.5 | event flag or keep, per week (`outliers`) | no |
 | 12 Check impossible values | negative spend, KPI zero in a trading week, an index or price jumping 10x, a spend or exposure cell 10x the weeks around it | zero, keep, interpolate or a corrected number, per cell (`negative_values`, `kpi_zero_weeks`, `control_jumps`) | negative values |
-| 13 Normalise money | a level change close to a power of 10 (lakhs, then rupees) converted; crore/lakh columns → ₹; mixed currency warning; optional inflation restatement; revenue per KPI rebuilt from the cleaned revenue total; a fixed value per KPI unit becomes a column | `level_shifts`, `money_units`, `inflation` (`{"base_year": 2025, "annual_rate_pct": 5}`) | no |
+| 13 Normalise money | a level change close to a power of 10 (lakhs, then rupees) converted; crore/lakh columns → ₹; mixed currency warning; optional inflation restatement; then revenue per KPI is calculated once (below) | `level_shifts`, `money_units`, `inflation` (`{"base_year": 2025, "annual_rate_pct": 5}`) | no |
 
-The words used to classify columns in step 8 and the unit words in step 13 are in
-`role_keywords.yaml`; add your own in `roles.yaml`. The thresholds Phase B uses (when blanks count as
+**Step 8: split or revision.** Each date (+ region) with more than one row is compared with a
+normal week: the median of each spend and KPI column over the 4 single-row weeks on each side, same
+region, leaving other multi-row weeks out. The KPI decides, because it moves least from week to
+week while spend runs in flights; total paid spend is used when the KPI has no normal level.
+
+- The rows add up to about one normal week (within ±30%): a **split**, added up by the rules below.
+  Identical rows that together make one normal week are an even split, not copies.
+- Each row is about a full normal week: a **likely revision**. Asked: Keep the later row (default),
+  Add up or Average, showing both rows and the normal week. It is never added up without your choice.
+- Anything else, or a KPI split whose rows all carry the same full week of spend: asked the same way.
+
+**Step 8: how split rows combine.** From the step 3 role and the values only; a dropdown only where
+there is a real choice, and the rule shown is the rule applied.
+
+| Column | Shown as | Rule |
+|---|---|---|
+| Paid spend, KPI, revenue column | fixed | Add up |
+| Exposure: impressions, GRPs, clicks | fixed | Add up |
+| Reach | dropdown, default Maximum | true combined reach is between the larger row and the sum (audiences overlap) |
+| Frequency | fixed | average weighted by the channel's impressions (by reach without them) |
+| 0/1 columns | fixed | Maximum |
+| Any other column the same on every row of every split week | fixed, "Keep (same on every row)" | first row |
+| Any other column that differs in at least one split week | dropdown, default Average, listing those weeks | Add up / Average / Maximum |
+
+The only red is Add up on a column that is the same on every row of every split week (it would double).
+
+**Revenue per KPI** is calculated once, after step 13, from the cleaned columns, and never merged,
+interpolated or outlier-checked as a ratio. Step 5 records only where it comes from:
+
+- the KPI is revenue: no revenue per KPI;
+- a revenue column (premium beside policies): revenue ÷ KPI per date (+ region); weeks where the KPI
+  is 0 use the whole file's total revenue ÷ total KPI and are listed in a warning;
+- a value-per-unit column: turned into a revenue total (value × KPI) before rows are combined, then as above;
+- a fixed ₹ value per unit you type: the same in every week (it is not restated for inflation).
+
+The revenue total is then dropped: Meridian gets the KPI and revenue per KPI. When step 12 fills or
+corrects a zero-KPI week, a zero revenue in that week is filled with it.
+
+The unit words in step 13 are in `role_keywords.yaml`; add your own in `roles.yaml`. The thresholds Phase B uses (when blanks count as
 zero spend, the 10x jump ratio, how close to a power of 10 a level shift must be) are in
 `mmm_tool/clean/cleaning.yaml`.
 
