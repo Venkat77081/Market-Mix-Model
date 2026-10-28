@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 import platform
+import re
 import subprocess
 import time
 import zipfile
@@ -37,7 +38,6 @@ def tool_version() -> dict[str, Any]:
     root = Path(__file__).resolve().parents[2]
     out: dict[str, Any] = {"package": "mmm_tool"}
     try:                                           # tomllib is 3.11+; the version line is simple enough to read
-        import re
         text = (root / "pyproject.toml").read_text(encoding="utf-8")
         out["version"] = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M).group(1)
     except Exception:  # noqa: BLE001 - versions are information
@@ -186,6 +186,9 @@ def verify(bundle: Path | bytes, work: Path) -> dict[str, Any]:
         else:
             env[var] = str(work / f"none_{Path(arc).name}")           # none in the bundle: none now either
     packs = json.loads(z.read("config/packs.json")) if "config/packs.json" in names else []
+    bad = [n for n in packs if not (isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n))]
+    if bad:                                    # a pack name becomes a file name: never a path
+        raise ValueError(f"Bundle lists keyword pack name(s) that aren't plain names: {bad}")
     for n in packs:
         (work / "packs").mkdir(exist_ok=True)
         (work / "packs" / f"{n}.yaml").write_bytes(z.read(f"config/packs/{n}.yaml"))

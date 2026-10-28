@@ -1400,10 +1400,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${range(...c.prior)}</td><td class="num">${range(...c.posterior)}</td><td class="num" ${c.narrowing < s.details.min_narrowing ? 'style="color:var(--warn)"' : ""}>${pct(Math.max(0, c.narrowing))}</td></tr>`).join("")}</tbody></table></div>`,
     34: s => { const d = s.details; if (d.skipped === true) return "";
       const SHORT = w => w.startsWith("all weeks") ? "All weeks" : w.replace("without the first and last ", "No first+last ").replace("without the first ", "No first ").replace("without the last ", "No last ").replace(/ weeks$/, "");
-      const ST = { supported: ["pass", "supported"], near_assumption: ["wait", "near assumption"], unstable: ["warn", "unstable"] };
+      const ST = { supported: ["pass", "supported"], near_assumption: ["wait", "near assumption"], unstable: ["warn", "unstable"], not_measured: ["wait", "not checked"] };
       // A result saved before notes existed: derive the status the same way
-      const status = c => c.status || (d.unstable.includes(c.channel) ? "unstable" : c.note ? "near_assumption" : "supported");
-      const note = c => c.status ? c.note : status(c) === "unstable" ? "Unstable" : status(c) === "near_assumption" ? "Stable because it stays near the starting assumption" : "Stable, and the data supports it";
+      const status = c => c.status || (d.windows.length < 2 ? "not_measured" : d.unstable.includes(c.channel) ? "unstable" : c.note ? "near_assumption" : "supported");
+      const note = c => c.status ? c.note : status(c) === "not_measured" ? "Not checked: no window was long enough to refit" : status(c) === "unstable" ? "Unstable" : status(c) === "near_assumption" ? "Stable because it stays near the starting assumption" : "Stable, and the data supports it";
       const why = c => { const w = [...(c.note_badges || []).map(b => b.replace(/_/g, " ")), ...(c.evidence || [])]; return w.length ? ` <span class="muted">(${w.map(esc).join("; ")})</span>` : ""; };
       return `<div class="scroll"><table class="s34" style="min-width:480px"><thead><tr><th>Channel</th>${d.windows.map(w => `<th class="small r" title="${esc(w)}">${esc(SHORT(w))}</th>`).join("")}<th class="r">CV</th></tr></thead><tbody>${d.channels.map(c => { const [cls, lbl] = ST[status(c)];
         return `<tr><td><b>${esc(c.channel)}</b></td>${d.windows.map(w => `<td class="num">${r2(c.roi[w])}</td>`).join("")}<td class="num" ${status(c) === "unstable" ? 'style="color:var(--warn)"' : ""}>${r2(c.cv)}</td>

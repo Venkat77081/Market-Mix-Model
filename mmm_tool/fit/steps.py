@@ -323,7 +323,7 @@ def stability_note(cv: float, limit: float, rois: list[float], badges: list[str]
                     "note_badges": why}
         return {"status": "supported", "note": "Stable, and the data supports it", "note_badges": []}
     vals = [v for v in rois if v is not None and v == v]
-    note = (f"Unstable: ROI ranges {min(vals):.2f}–{max(vals):.2f} across windows" if vals
+    note = (f"Unstable: ROI ranges {min(vals):.2f}–{max(vals):.2f} across windows" if len(vals) >= 2
             else "Unstable: ROI could not be compared across windows")
     reasons, evidence = [], []
     if active is not None and active < few_active:
@@ -368,17 +368,25 @@ def stability(ctx: ECtx) -> StepResult:
     limit = float(cfg["cv_max"])
     table = [{"channel": ch, "roi": {k: v[ch] for k, v in rois.items()}, "cv": gates.cv([v[ch] for v in rois.values()])}
              for ch in paid]
-    unstable = [r["channel"] for r in table if not (r["cv"] < limit)]
+    measured = len(rois) >= 2                  # with no window refit there is nothing to compare
+    unstable = [r["channel"] for r in table if measured and not (r["cv"] < limit)]
     for ch in unstable:
         ctx.badge(ch, "unstable")
     from ..channel_stats import channel_stats
 
+    from ..channel_stats import ChannelStatsError
+
+    stats_problem = None
     try:
         active = {ch: s["active"] for ch, s in channel_stats(ctx.d).items()}
-    except Exception:  # noqa: BLE001 - the note just leaves out the activity reason
-        active = {}
+    except ChannelStatsError as e:             # the notes leave out the activity reason; the warning says why
+        active, stats_problem = {}, str(e)
     few = float(cfg.get("few_active_share", 0.3))
     for r in table:          # stable is not the same as confirmed
+        if not measured:
+            r.update({"status": "not_measured", "note": "Not checked: no window was long enough to refit",
+                      "note_badges": []})
+            continue
         r.update(stability_note(r["cv"], limit, list(r["roi"].values()), ctx.badges.get(r["channel"], []),
                                 active.get(r["channel"]), few, drop))
         if r["channel"] in active:
@@ -387,9 +395,11 @@ def stability(ctx: ECtx) -> StepResult:
     details = {"windows": list(rois), "channels": table, "cv_max": limit, "few_active_share": few, "unstable": unstable, "skipped": skipped,
                "near_assumption": near, "controls_left_out": left_out}
     tail = (f"; {', '.join(near)} {'is' if len(near) == 1 else 'are'} "
-            + (NEAR_ASSUMPTION if len(near) == 1 else NEAR_ASSUMPTION.replace("it stays", "they stay")) if near else "")
+            + (NEAR_ASSUMPTION if len(near) == 1 else NEAR_ASSUMPTION.replace("it stays", "they stay").replace("confirms it", "confirms them")) if near else "")
     warnings = [f"Window skipped: {s}." for s in skipped]
     warnings += [f"Refit {label}: {', '.join(cols)} left out (no change inside those weeks)." for label, cols in left_out.items()]
+    if stats_problem:
+        warnings.append(f"Active weeks not checked for the notes: {stats_problem}")
     if len(rois) < 2:
         return _step(34, Verdict.WARN, "No window long enough to refit.", details, warnings)
     if not unstable:

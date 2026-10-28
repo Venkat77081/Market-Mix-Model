@@ -82,3 +82,33 @@ def test_step34_rows_unstable_with_few_active_weeks(tmp_path, monkeypatch):
     assert rows[steady]["note"] == NEAR
     assert all(c["note"] for c in rows.values()) and s.details["few_active_share"] == 0.3
     assert {n for n, c in rows.items() if c["status"] == "supported"} == set(names) - {promo, steady}
+
+
+def test_no_window_long_enough_is_not_checked_and_not_badged(tmp_path, monkeypatch):
+    r = run(write(tmp_path, mix(weeks=120, rare=False)))                 # under drop + min weeks: every window skipped
+    names = [c.name for c in r.d.channels]
+    badges = {}
+    ctx = _stability_ctx(r, badges)
+    s = fsteps.stability(ctx)
+    print(f"\n{s.summary}; {[(c['channel'], c['status']) for c in s.details['channels']]}")
+    assert s.summary == "No window long enough to refit." and s.details["unstable"] == []
+    assert all(c["status"] == "not_measured" and c["note"] for c in s.details["channels"])
+    assert not any("unstable" in badges.get(n, []) for n in names)
+
+
+def test_one_comparable_roi_is_not_a_range():
+    assert stability_note(0.5, 0.3, [1.1, float("nan"), None], [], 0.9, 0.3)["note"] == \
+        "Unstable: ROI could not be compared across windows"
+
+
+def test_plural_summary_reads_right(tmp_path, monkeypatch):
+    df = mix(rare=False)
+    r = run(write(tmp_path, df))
+    names = [c.name for c in r.d.channels]
+    monkeypatch.setattr(fsteps.m, "window_variant", lambda d, table: (d, []))
+    monkeypatch.setattr(fsteps.m, "window_config", lambda cfg, wk: cfg)
+    monkeypatch.setattr(fsteps.m, "build", lambda d, cfg: type("M", (), {"sample_prior": lambda *a, **k: None})())
+    monkeypatch.setattr(fsteps, "_fit", lambda *a, **k: 1.0)
+    monkeypatch.setattr(fsteps.m, "channel_metrics", lambda mmm, conf: pd.DataFrame({"roi_posterior_mean": 1.5}, index=names))
+    s = fsteps.stability(_stability_ctx(r, {n: ["prior_driven"] for n in names}))
+    assert s.summary.endswith("are stable because they stay near the starting assumption, not because the data confirms them.")

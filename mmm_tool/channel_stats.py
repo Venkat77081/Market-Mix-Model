@@ -29,7 +29,7 @@ def _cv(x: pd.Series) -> float:
 
 
 def channel_stats(result) -> dict[str, dict[str, Any]]:
-    """{channel: {cv, share, spend, sources}} for every current paid channel of a Phase C/D result."""
+    """{channel: {cv, share, spend, sources, active}} for every current paid channel of a Phase C/D result."""
     cols = result.coord_to_columns()["coord_to_columns"]
     date, geo, t = cols["time"], cols.get("geo"), result.table
     missing = [c.name for c in result.channels if c.spend not in t.columns]
@@ -40,11 +40,11 @@ def channel_stats(result) -> dict[str, dict[str, Any]]:
     paid = sum(totals.values()) or 1.0
     out = {}
     for c in result.channels:
+        weekly = t.groupby(date)[c.spend].sum()
         if geo:
             cv = float(np.median([_cv(part) for _, part in t.groupby(geo)[c.spend]]))
         else:
-            cv = _cv(t.groupby(date)[c.spend].sum())
-        weekly = t.groupby(date)[c.spend].sum()
+            cv = _cv(weekly)
         out[c.name] = {"cv": cv, "share": totals[c.name] / paid, "spend": totals[c.name], "sources": c.sources(),
                        "active": float((weekly > 0).mean()) if len(weekly) else 0.0}
     return out

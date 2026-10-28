@@ -196,3 +196,26 @@ def test_a_rejected_model_registers_as_a_draft_only(client):
     assert client.post(f"/api/runs/{run_id}/register", json={"line": "B"}).json()["entry"]["status"] == "draft"
     bad = client.post("/api/registry/approve", json={"line": "B", "version": 1})
     assert bad.status_code == 400 and "accepted" in bad.json()["detail"]
+
+
+def test_verify_refuses_a_pack_name_that_is_a_path(client, tmp_path):
+    run_id = _run(client)
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/runs/{run_id}/bundle.zip").content))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as out:
+        for n in z.namelist():
+            if n != "config/packs.json":
+                out.writestr(n, z.read(n))
+        out.writestr("config/packs.json", json.dumps(["../../escaped"]))
+    with pytest.raises(ValueError, match="plain names"):
+        verify(buf.getvalue(), tmp_path / "w" / "inner")
+    assert not list(tmp_path.rglob("escaped*"))
+
+
+def test_a_retired_version_cannot_be_approved(tmp_path):
+    runs = tmp_path / "runs"
+    fake_fit(runs / "r1")
+    reg.register(runs, runs / "r1", "L")
+    reg.set_status(runs, "L", 1, "retire")
+    with pytest.raises(reg.RegistryError, match="retired"):
+        reg.set_status(runs, "L", 1, "approve")

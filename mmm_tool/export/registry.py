@@ -118,6 +118,8 @@ def set_status(runs_dir: Path, line: str, version: int, action: str, stale: bool
     if v is None:
         raise RegistryError(f"No version {version} of '{line}'.")
     if action == "approve":
+        if v["status"] == "retired":
+            raise RegistryError("A retired version can't be approved again; register the run's model as a new version.")
         if v["status_fit"] != "accepted":
             raise RegistryError("Only an accepted model can be approved; this one failed a gate in Phase E.")
         if v.get("not_converged"):
