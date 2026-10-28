@@ -29,11 +29,17 @@ def user_file() -> Path:
     return Path(os.environ.get("MMM_ROLES_FILE", "roles.yaml"))
 
 
+# Currency signs as their codes, the longer signs first (R$ before $).
+CURRENCY_SIGNS = ((r"(?<![a-z])us\$", "usd"), (r"(?<![a-z])r\$", "brl"), (r"(?<![a-z])a\$", "aud"),
+                  (r"(?<![a-z])c\$", "cad"), (r"(?<![a-z])s\$", "sgd"), ("₹", "inr"), ("€", "eur"), ("£", "gbp"),
+                  ("¥", "jpy"), (r"\$", "usd"))
+
+
 def words_of(name: str) -> str:
     """'TV_Spend (₹)' -> 'tv spend inr'; 'youtubeReach' -> 'youtube reach'. A currency sign reads as its code."""
     s = str(name)
-    for sign, word in (("₹", "inr"), ("€", "eur"), ("£", "gbp"), ("$", "usd")):
-        s = s.replace(sign, f" {word} ")
+    for sign, word in CURRENCY_SIGNS:
+        s = re.sub(sign, f" {word} ", s, flags=re.IGNORECASE)
     s = re.sub(r"([a-z])([A-Z])", r"\1_\2", s).lower()
     return " ".join(re.findall(r"[a-z0-9]+", s))
 

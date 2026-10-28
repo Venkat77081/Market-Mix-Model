@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -83,6 +84,24 @@ def _meta(d: Path) -> dict:
     return json.loads((d / "meta.json").read_text())
 
 
+_META_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _update_meta(d: Path, change) -> dict:
+    """Read, change and write a run's meta.json under the run's lock, atomically, so a slow request
+    never writes back answers a newer one replaced, and a reader never sees half a file."""
+    with _LOCKS_GUARD:
+        lock = _META_LOCKS.setdefault(str(d), threading.Lock())
+    with lock:
+        meta = _meta(d)
+        change(meta)
+        tmp = d / "meta.json.tmp"
+        tmp.write_text(json.dumps(meta))
+        tmp.replace(d / "meta.json")
+        return meta
+
+
 def _memory() -> RoleMemory:
     """Remembered column roles, shared by every run (MMM_ROLE_MEMORY, or next to the runs)."""
     return RoleMemory(os.environ.get("MMM_ROLE_MEMORY") or RUNS_DIR / "role_memory.json")
@@ -132,8 +151,12 @@ def _evaluate(d: Path) -> dict:
         fit["stale"] = bool(built_from and run.d is not None and run.d.status == "complete"
                             and built_from != job.inputs_hash(run.d))
     final = run.last
-    meta.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
-    (d / "meta.json").write_text(json.dumps(meta))
+    used = meta["answers"]
+
+    def status(m: dict) -> None:               # only if the answers are still the ones this run used
+        if m.get("answers") == used:
+            m.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
+    _update_meta(d, status)
     key = _answer_key(d)
     if key and fit and fit.get("result") and run.d is not None and run.d.status == "complete":
         from ..fit import truth
@@ -147,6 +170,13 @@ def _evaluate(d: Path) -> dict:
 
 
 ANSWER_KEY = "answer_key.json"
+# What the tool writes into a run's folder: an upload must never take one of these names.
+RUN_FILES = {"meta.json", "ingested.csv", "cleaned.csv", "profiled.csv", "model_data.csv", "model_config.json", ANSWER_KEY, "fit"}
+
+
+def _upload_name(filename: str | None) -> str:
+    name = Path(filename or "upload.csv").name or "upload.csv"
+    return f"upload_{name}" if name.lower() in RUN_FILES else name
 
 
 def _answer_key(d: Path) -> dict | None:
@@ -163,11 +193,10 @@ def _new_seed() -> int:
 
 
 def _run_seed(d: Path) -> int:
-    meta = _meta(d)
-    if not meta.get("seed"):
-        meta["seed"] = _new_seed()
-        (d / "meta.json").write_text(json.dumps(meta))
-    return int(meta["seed"])
+    def seed(m: dict) -> None:
+        if not m.get("seed"):
+            m["seed"] = _new_seed()
+    return int(_update_meta(d, seed)["seed"])
 
 
 def _new_run(filename: str) -> Path:
@@ -208,7 +237,7 @@ def list_samples() -> list[dict]:
 
 @app.post("/api/runs")
 async def create_run(file: UploadFile = File(...)) -> dict:
-    name = Path(file.filename or "upload.csv").name
+    name = _upload_name(file.filename)
     if Path(name).suffix.lower() not in EXCEL_EXT | TEXT_EXT:
         raise HTTPException(400, "Upload a CSV, TSV, TXT or Excel file.")
     data = await file.read()
@@ -238,9 +267,7 @@ def get_run(run_id: str) -> dict:
 def set_answers(run_id: str, body: AnswersIn) -> dict:
     """Replace the run's answers and re-run Phase A."""
     d = _run_dir(run_id)
-    meta = _meta(d)
-    meta["answers"] = body.answers
-    (d / "meta.json").write_text(json.dumps(meta))
+    _update_meta(d, lambda m: m.update(answers=body.answers))
     return _evaluate(d)
 
 
@@ -980,7 +1007,7 @@ async def start_refit(line: str = Form(...), version: int = Form(...), file: Upl
         raise HTTPException(404, f"No version {version} of '{line}' with its run on this machine.")
     if v["status"] != "approved":
         raise HTTPException(400, "Refit from the approved version of a product line.")
-    name = Path(file.filename or "upload.csv").name
+    name = _upload_name(file.filename)
     if Path(name).suffix.lower() not in EXCEL_EXT | TEXT_EXT:
         raise HTTPException(400, "Upload a CSV, TSV, TXT or Excel file.")
     data = await file.read()

@@ -13,15 +13,17 @@ import re
 import numpy as np
 import pandas as pd
 
+from ..currency import CURRENCIES as _CURRENCY_LIST
 from ..ingest.types import StepResult, Verdict
-from ..ingest.values import ZERO_TOKENS, is_null_token, to_number, value_units
+from ..ingest.values import ZERO_TOKENS, decimal_mark, is_null_token, to_number, value_units
 from .context import MEDIA_ROLES, SPEND_ROLES, Ctx
 
 STEP = 7
 NAME = "Coerce types"
 YES_NO = {"yes": 1.0, "y": 1.0, "true": 1.0, "no": 0.0, "n": 0.0, "false": 0.0}
-CURRENCIES = [("₹", re.compile(r"₹|\brs\b\.?|\binr\b", re.I)), ("$", re.compile(r"\$|\busd\b", re.I)),
-              ("€", re.compile(r"€|\beur\b", re.I)), ("£", re.compile(r"£|\bgbp\b", re.I))]
+# (symbol, pattern) for every known currency; A$, R$… before $ so the specific one is found first.
+CURRENCIES = sorted(((c["symbol"].strip(), re.compile("|".join(c["signs"]), re.I)) for c in _CURRENCY_LIST.values()),
+                    key=lambda x: -len(x[0]))
 
 
 def currency_of(text: str) -> str | None:
@@ -62,10 +64,13 @@ def coerce_types(ctx: Ctx) -> StepResult:
             text_null |= dash
         low = text.str.lower()
         yes_no = ~blank & ~text_null & low.isin(YES_NO)
-        numbers = s.map(lambda v: to_number(v, units))
+        mark = decimal_mark(s.dropna().head(500))
+        if mark == ",":
+            warnings.append(f"'{col}': read with a decimal comma (1.234,56 is 1234.56).")
+        numbers = s.map(lambda v: to_number(v, units, mark))
         numbers[yes_no] = low[yes_no].map(YES_NO)
         numbers[text_null] = np.nan
-        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,₹$€£()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
+        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,.₹$€£¥()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
         unreadable = ~blank & ~text_null & numbers.isna()
         symbols = sorted({sym for v in text.dropna() if (sym := currency_of(v))})
         if symbols:
@@ -77,7 +82,7 @@ def coerce_types(ctx: Ctx) -> StepResult:
         report.append({
             "column": col, "role": role,
             "text_nulls": int(text_null.sum()), "formatted": int(formatted.sum()), "yes_no": int(yes_no.sum()),
-            "blank": int(blank.sum()), "unreadable": int(unreadable.sum()), "examples": examples,
+            "blank": int(blank.sum()), "unreadable": int(unreadable.sum()), "examples": examples, "decimal_mark": mark,
         })
 
     totals = {k: sum(r[k] for r in report) for k in ("text_nulls", "formatted", "yes_no", "unreadable")}

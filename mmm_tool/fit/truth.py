@@ -4,9 +4,14 @@ Real data has no truth, so nothing here runs unless the user loads an answer
 key: a JSON file shaped like a synthetic test set's truth_for_tool.json
 
     {"kpi_column": "...", "assumes_decisions": "...",
+     "kpi_per_spend_unit": 1000,          # optional: the spend the KPI figures are quoted per (default 1)
      "channels": [{"source_columns": [...], "true_roi": x, "true_share_of_kpi_pct": x,
-                   "true_policies_per_lakh": x, "true_marginal_roi": x}, ...],
+                   "true_kpi_per_spend": x, "true_marginal_roi": x}, ...],
      "true_non_media_share_pct": x}
+
+For a KPI that isn't money, ROI is KPI per unit of spend, compared with true_kpi_per_spend
+(per kpi_per_spend_unit of spend). Older keys with a 'true_<kpi>_per_lakh' field are read as
+per 1,00,000 of spend.
 
 It is kept with the run and only read when results are shown: it never goes
 to the model and never changes a step's verdict.
@@ -22,7 +27,15 @@ from typing import Any
 
 from .. import currency as money_fmt
 
-PER_LAKH = 100_000          # the answer key's KPI-per-spend figures are per 1,00,000 of spend
+PER_LAKH = 100_000          # older answer keys: 'true_<kpi>_per_lakh', per 1,00,000 of spend
+
+
+def kpi_per_spend(key: dict, entry: dict) -> tuple[float | None, float]:
+    """(the true KPI per spend figure, the spend it is quoted per) for one channel entry."""
+    if "true_kpi_per_spend" in entry:
+        return entry["true_kpi_per_spend"], float(key.get("kpi_per_spend_unit") or 1)
+    legacy = next((k for k in entry if k.startswith("true_") and k.endswith("_per_lakh")), None)
+    return (entry[legacy], float(PER_LAKH)) if legacy else (None, float(key.get("kpi_per_spend_unit") or 1))
 
 
 class TruthError(ValueError):
@@ -67,9 +80,8 @@ def compare(result: dict, channels, key: dict, kpi: dict) -> dict:
         if e is None:
             rows.append(row)
             continue
-        scale = 1.0 if money else PER_LAKH
-        model, lo, hi = (c[f"roi_posterior_{k}"] * scale for k in ("mean", "ci_lo", "ci_hi"))
-        true = e.get("true_roi") if money else e.get("true_policies_per_lakh")
+        true, per = (e.get("true_roi"), 1.0) if money else kpi_per_spend(key, e)
+        model, lo, hi = (c[f"roi_posterior_{k}"] * per for k in ("mean", "ci_lo", "ci_hi"))
         if true is None:
             row.update(model=model, lo=lo, hi=hi, true=None, inside=None)
         else:
@@ -83,10 +95,13 @@ def compare(result: dict, channels, key: dict, kpi: dict) -> dict:
         rows.append(row)
     compared = [r for r in rows if r.get("inside") is not None]
     nm = key.get("true_non_media_share_pct")
-    label = "ROI" if money else f"{kpi.get('kpi') or 'KPI'} per {money_fmt.money_short(PER_LAKH, cur)}"
+    if not money:                    # the spend unit the key quotes its figures per (one key, one unit)
+        unit = next((kpi_per_spend(key, e)[1] for e in key["channels"] if kpi_per_spend(key, e)[0] is not None),
+                    float(key.get("kpi_per_spend_unit") or 1))
+    label = "ROI" if money else f"{kpi.get('kpi') or 'KPI'} per {money_fmt.money_short(unit, cur)}"
     return {
         "assumes_decisions": key.get("assumes_decisions"), "kpi_column": key.get("kpi_column"),
-        "measure": "roi" if money else "per_lakh", "label": label, "rows": rows,
+        "measure": "roi" if money else "kpi_per_spend", "per": None if money else unit, "label": label, "rows": rows,
         "non_media": {"model_share": 1 - share_sum, "true_share": nm / 100 if nm is not None else None},
         "inside": inside, "compared": len(compared), "channels": len(rows),
         "mean_abs_error": sum(errors) / len(errors) if errors else None,

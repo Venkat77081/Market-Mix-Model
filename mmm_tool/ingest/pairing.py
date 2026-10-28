@@ -73,7 +73,8 @@ def propose_pairs(roles: dict[str, str]) -> tuple[dict[str, dict], list[str]]:
         for i, col in enumerate(cols):
             name = ch if len(cols) == 1 else f"{ch}_{i + 1}"
             options = sorted(exposure.get(ch, []), key=_rank)
-            pairs[name] = {"kind": "media", "spend": col, "exposure": options[0] if options else None}
+            # two spend columns of one channel (TV Spend, TV Cost) never share an exposure column
+            pairs[name] = {"kind": "media", "spend": col, "exposure": options[i] if i < len(options) else None}
 
     # Reach and frequency come in as rf_spend, or as a spend column whose
     # channel also has reach and frequency columns.
@@ -127,6 +128,9 @@ def pair_channels(roles: dict[str, str], answers: Answers, df: pd.DataFrame | No
             roles[p["spend"]], roles[p["reach"]], roles[p["frequency"]] = "rf_spend", "reach", "frequency"
         else:
             exp = p.get("exposure")
+            if exp and exp in used:
+                warnings.append(f"'{exp}' is already the exposure for another channel, so {name} uses its spend instead.")
+                exp = None
             channels.append(Channel(name, "media", p["spend"], exposure=exp or p["spend"], exposure_is_spend=exp is None))
             used.update(c for c in (p["spend"], exp) if c)
             if exp:

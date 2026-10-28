@@ -203,10 +203,15 @@ def control_directions(ctx: DCtx, answers: Answers) -> tuple[Decision, str | Non
         question="Which way can each control move sales? Leave 'either' unless you're sure.",
         options=list(DIRECTIONS), default={c: "either" for c in controls}, context={"suggest": suggest},
     )
-    chosen = {**d.default, **(answers.ask(d) or {})}
+    given = answers.ask(d) or {}
+    if not isinstance(given, dict):
+        d.answered = False
+        return d, "Give the direction as a table of control: either, raises or lowers."
+    chosen = {**d.default, **given}
     bad = {k: v for k, v in chosen.items() if k not in d.default or v not in DIRECTIONS}
+    if bad:                                    # checked before any label is looked up
+        d.answered = False
+        return d, f"Unknown control or direction in {bad}; use either, raises or lowers."
     ctx.config["control_direction"] = {c: chosen[c] for c in controls}
     answers.describe(d, [f"{c} {DIRECTION_LABEL[v]}" for c, v in chosen.items() if v != "either" and c in d.default])
-    if bad:
-        return d, f"Unknown control or direction in {bad}; use either, raises or lowers."
     return d, None

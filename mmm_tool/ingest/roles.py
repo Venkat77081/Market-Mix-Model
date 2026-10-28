@@ -40,9 +40,18 @@ def tokens(name: str) -> str:
     return words_of(name).replace(" ", "_")
 
 
+def _codes() -> frozenset[str]:
+    from ..currency import CURRENCIES
+
+    return frozenset(c.lower() for c in CURRENCIES)
+
+
+_CURRENCY_CODES = _codes()                     # "tv_spend_jpy" and "TV Spend (R$)" are channel "tv"
+
+
 def channel_of(name: str, kw: Keywords | None = None) -> str:
     kw = kw or load_keywords()
-    parts = [p for p in words_of(name).split() if p not in kw.strip]
+    parts = [p for p in words_of(name).split() if p not in kw.strip and p not in _CURRENCY_CODES]
     stem = "_".join(parts) or tokens(name)
     return kw.aliases.get(stem, stem)
 

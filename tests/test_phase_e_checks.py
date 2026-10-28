@@ -280,7 +280,7 @@ def test_kpi_units_compare_per_lakh():
     res["channels"][0].update(roi_posterior_mean=2.8e-5, roi_posterior_ci_lo=2.0e-5, roi_posterior_ci_hi=3.5e-5)
     t = truth.compare(res, channels, _key(), {"kpi": "orders", "currency": {"code": "INR", "symbol": "₹", "grouping": "indian", "unit": "rupee"}})
     r = t["rows"][0]
-    assert t["measure"] == "per_lakh" and t["label"] == "orders per ₹1.0 L"
+    assert t["measure"] == "kpi_per_spend" and t["per"] == 100_000 and t["label"] == "orders per ₹1.0 L"
     assert r["model"] == pytest.approx(2.8) and r["true"] == 3.0 and r["inside"]
 
 
