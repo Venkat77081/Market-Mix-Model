@@ -533,7 +533,9 @@ def test_direction_truncates_the_prior(money_file):
     assert g[:, order.index(free)].min() < 0 < g[:, order.index(free)].max()
     from mmm_tool.configure.spec import build_model_spec
 
-    scale = np.asarray(build_model_spec(r.d.config, data).prior.gamma_c.scale)
+    gc = build_model_spec(r.d.config, data).prior.gamma_c
+    assert np.all(np.isfinite(gc.low)) and np.all(np.isfinite(gc.high))           # infinite bounds give NaN in NUTS
+    scale = np.asarray(gc.scale)
     assert scale.dtype == np.float64
     assert np.allclose(scale, float(np.asarray(prior_distribution.PriorDistribution().gamma_c.parameters["scale"])))
 
@@ -556,24 +558,24 @@ def test_direction_check_flags_draws_piled_at_the_limit():
 
 @fit_tests
 def test_step32_flags_a_forced_wrong_direction(tmp_path):
-    """Synthetic data where a control truly raises sales, forced to 'Lowers': step 32 flags it."""
+    """Synthetic data where a control truly lowers sales, forced to 'Raises': step 32 flags it."""
     from mmm_tool.fit import model as m
 
     df = gen.make_knots_case("flat_tv", 3)
-    rng = np.random.default_rng(3)
-    z = rng.normal(0, 1, len(df))
-    df["demand_index"] = np.round(100 + 10 * z, 2)
-    df["new_policies"] = df["new_policies"] + np.round(400 * z)                    # strong positive effect
-    path = tmp_path / "demand.csv"
+    z = np.random.default_rng(3).normal(0, 1, len(df))
+    df["new_policies"] = df["new_policies"] + 15 * (df["price_index"] - 100)      # remove the built-in effect
+    df["price_index"] = np.round(100 + 10 * z, 2)
+    df["new_policies"] = np.round(df["new_policies"] - 400 * z)                    # strong negative effect
+    path = tmp_path / "price.csv"
     df.assign(week_start=df["week_start"].dt.strftime("%Y-%m-%d")).to_csv(path, index=False)
-    r = run(path, {"control_direction": {"demand_index": "lowers"}})
+    r = run(path, {"control_direction": {"price_index": "raises"}})
     mmm = m.build(r.d, {**r.d.config, "holdout": None})
     mmm.sample_prior(100, seed=5)
     m.sample_posterior(mmm, {"n_chains": 2, "n_adapt": 200, "n_burnin": 200, "n_keep": 200}, 5)
     out = {x["control"]: x for x in fsteps.direction_check(SimpleNamespace(mmm=mmm, config=r.d.config, cfg=settings()))}
-    print(f"\ndemand_index forced 'lowers': median {out['demand_index']['median']:.4f}, "
-          f"{out['demand_index']['share_at_limit']:.0%} of draws at the limit")
-    assert out["demand_index"]["flagged"]
+    print(f"\nprice_index forced 'raises': median {out['price_index']['median']:.4f}, "
+          f"{out['price_index']['share_at_limit']:.0%} of draws at the limit")
+    assert np.isfinite(out["price_index"]["median"]) and out["price_index"]["flagged"]
 
 
 # Everywhere: config, decision log, rerun ----------------------------------------------------------------

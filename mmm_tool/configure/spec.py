@@ -13,6 +13,8 @@ from typing import Any
 
 import numpy as np
 
+OPEN_BOUND_SDS = 10.0       # where a one-sided control prior (step 21) is cut on its open side
+
 
 def build_input_data(result):
     """InputData from a complete Phase C or D result (its clean weekly table)."""
@@ -103,12 +105,16 @@ def build_model_spec(config: dict[str, Any], input_data):
     dirs = config.get("control_direction") or {}
     controls = _channels(input_data, "control_variable")
     if controls and any(dirs.get(c, "either") != "either" for c in controls):
+        # The open side is cut at 10 prior sds (mass beyond it ~1e-23): TFP samples a TruncatedNormal
+        # through a sigmoid between low and high, which turns an infinite bound into NaN draws.
+        scale = float(defaults["gamma_c_scale"])
+        far = OPEN_BOUND_SDS * scale
         bounds = [direction_bounds(dirs.get(c, "either")) for c in controls]
         prior_args[constants.GAMMA_C] = tfd.TruncatedNormal(
             loc=np.zeros(len(controls), dtype=np.float64),
-            scale=np.full(len(controls), defaults["gamma_c_scale"], dtype=np.float64),
-            low=np.array([lo for lo, _ in bounds], dtype=np.float64),
-            high=np.array([hi for _, hi in bounds], dtype=np.float64), name=constants.GAMMA_C)
+            scale=np.full(len(controls), scale, dtype=np.float64),
+            low=np.array([max(lo, -far) for lo, _ in bounds], dtype=np.float64),
+            high=np.array([min(hi, far) for _, hi in bounds], dtype=np.float64), name=constants.GAMMA_C)
 
     saturation = {ch: v for ch, v in (config.get("saturation") or {}).items() if ch in media + rf and v == "none"}
     holdout = config.get("holdout")
