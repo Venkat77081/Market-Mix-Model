@@ -8,6 +8,7 @@ model, which spec.py turns into Meridian objects.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,8 +33,29 @@ DEFAULT_ROI_MU, DEFAULT_ROI_SIGMA = 0.2, 0.9
 Z90 = 1.6449  # a 90% range spans +/- 1.645 standard deviations
 
 
+def user_calendars_file() -> Path:
+    return Path(os.environ.get("MMM_CALENDARS", "calendars.yaml"))
+
+
 def load_calendars() -> dict:
-    return yaml.safe_load(CALENDARS.read_text(encoding="utf-8"))
+    """Built-in presets (none applied by default) with the project's own file on top
+    (MMM_CALENDARS, default ./calendars.yaml): its presets are added, its
+    default_preset is the one step 21 suggests, its direction words are added."""
+    cal = yaml.safe_load(CALENDARS.read_text(encoding="utf-8")) or {}
+    cal.setdefault("presets", {})
+    cal.setdefault("default_preset", "none")
+    user = user_calendars_file()
+    if user.is_file() and user.resolve() != CALENDARS.resolve():
+        mine = yaml.safe_load(user.read_text(encoding="utf-8")) or {}
+        cal["presets"].update(mine.get("presets") or {})
+        cal["default_preset"] = mine.get("default_preset", cal["default_preset"])
+        for k in ("binomial_words",):
+            cal[k] = list(cal.get(k) or []) + list(mine.get(k) or [])
+        for way, words in (mine.get("control_direction_words") or {}).items():
+            cal.setdefault("control_direction_words", {}).setdefault(way, []).extend(words or [])
+    if cal["default_preset"] not in cal["presets"]:
+        cal["default_preset"] = "none"
+    return cal
 
 
 def lognormal_from_range(low: float, high: float) -> tuple[float, float]:

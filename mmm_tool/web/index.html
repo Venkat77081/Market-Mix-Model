@@ -287,7 +287,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   };
   const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
     interpolate: "Interpolate", trim: "Trim the period", merge: "Merge them in Phase B",
-    reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, ₹ per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to ₹",
+    reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, valued per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to whole currency units",
     scale: "Scale up to a full week", fill: "Carry the nearest value" };
   const PILL = { pass: ["pass", "Pass"], warn: ["warn", "Pass with warning"], needs_input: ["block", "Decision needed"], fail: ["fail", "Failed"] };
 
@@ -297,7 +297,15 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   let view = null;          // "a" to "d": which phase is on screen
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const num = x => typeof x === "number" ? x.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(x);
+  // The file's currency (step 5): its symbol and digit grouping (lakh/crore for INR, thousands otherwise).
+  const NO_CUR = { code: null, symbol: "", unit: "unit of spend", grouping: "international" };
+  const cur = () => (fsum && fsum.data && fsum.data.version && fsum.data.version.currency)
+    || (run && run.result && run.result.kpi && run.result.kpi.currency) || NO_CUR;
+  const locale = () => cur().grouping === "indian" ? "en-IN" : "en-US";
+  const sym = () => (cur().symbol || "").trim();
+  const symOr = word => sym() || word;          // "₹", or a word when there is no currency
+  const money = (v, d = 0) => (v < 0 ? "-" : "") + (cur().symbol || "") + Math.abs(v).toLocaleString(locale(), { maximumFractionDigits: d, minimumFractionDigits: d });
+  const num = x => typeof x === "number" ? x.toLocaleString(locale(), { maximumFractionDigits: 2 }) : esc(x);
 
   // ---------- API ----------
   async function api(method, url, body) {
@@ -532,18 +540,21 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const d = s.details;
     const type = decision(s, "kpi_type");
     const val = decision(s, "revenue_per_kpi_value");
-    const choice = decision(s, "kpi_choice");
-    return `<dl class="kv">
+    const choice = decision(s, "kpi_choice"), dc = decision(s, "currency");
+    const curNow = dc ? current(dc) : "none";
+    const curPick = dc ? `<div class="decide soft"><p>${esc(dc.question)}${dc.context.detected ? ` <span class="muted">Found in the file: ${esc(dc.context.detected)}.</span>` : ' <span class="muted">No currency sign or code found in the money columns.</span>'}</p>
+        <select data-currency aria-label="Currency">${dc.options.map(o => `<option value="${esc(o)}" ${curNow === o ? "selected" : ""}>${o === "none" ? "No currency (plain numbers)" : `${esc(o)} ${esc(dc.context.symbols[o] || "")}`}</option>`).join("")}</select></div>` : "";
+    return `${curPick}<dl class="kv">
         <div><dt>KPI</dt><dd class="mono">${esc(d.kpi)}</dd></div>
         <div><dt>ROI unit</dt><dd>${esc(d.roi_units)}</dd></div>
-        ${d.revenue_source === "column" ? `<div><dt>₹ per unit</dt><dd><span class="mono">${esc(d.revenue_column)}</span> ÷ <span class="mono">${esc(d.kpi)}</span>, week by week, after cleaning (step 13)</dd></div>` : ""}
-        ${d.revenue_source === "per_unit_column" ? `<div><dt>₹ per unit</dt><dd>from <span class="mono">${esc(d.revenue_column)}</span>, recalculated after cleaning (step 13)</dd></div>` : ""}
-        ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>₹${num(d.revenue_per_kpi_value)}, every week</dd></div>` : ""}
+        ${d.revenue_source === "column" ? `<div><dt>Value per unit</dt><dd><span class="mono">${esc(d.revenue_column)}</span> ÷ <span class="mono">${esc(d.kpi)}</span>, week by week, after cleaning (step 13)</dd></div>` : ""}
+        ${d.revenue_source === "per_unit_column" ? `<div><dt>Value per unit</dt><dd>from <span class="mono">${esc(d.revenue_column)}</span>, recalculated after cleaning (step 13)</dd></div>` : ""}
+        ${d.revenue_per_kpi_value ? `<div><dt>Fixed value per unit</dt><dd>${money(d.revenue_per_kpi_value)}, every week</dd></div>` : ""}
       </dl>
-      ${choice ? `<div class="decide soft"><p>${esc(choice.question)}</p>${seg(choice, null, { count: `${choice.context.kpi} is the KPI (₹ per unit)`, revenue: `${choice.context.revenue} is the KPI` })}</div>` : ""}
+      ${choice ? `<div class="decide soft"><p>${esc(choice.question)}</p>${seg(choice, null, { count: `${choice.context.kpi} is the KPI (value per unit)`, revenue: `${choice.context.revenue} is the KPI` })}</div>` : ""}
       ${type ? `<div class="decide soft"><p>${esc(type.question)}</p>${seg(type)}</div>` : ""}
       ${val ? `<div class="decide soft"><p>${esc(val.question)}</p>
-        <form id="rpk" style="display:flex;gap:8px;align-items:center"><span>₹</span><input type="number" id="rpk-value" min="1" step="any" value="${esc(val.answer ?? "")}" placeholder="e.g. 14500" style="width:130px" aria-label="Value per KPI unit">
+        <form id="rpk" style="display:flex;gap:8px;align-items:center"><span>${esc(sym())}</span><input type="number" id="rpk-value" min="1" step="any" value="${esc(val.answer ?? "")}" placeholder="e.g. 14500" style="width:130px" aria-label="Value per KPI unit">
         <button class="btn" type="submit">Apply</button>${val.answered ? `<button class="btn" type="button" id="rpk-clear">Clear</button>` : ""}</form></div>` : ""}`;
   }
 
@@ -721,10 +732,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return `<dl class="kv">
         <div><dt>Money columns</dt><dd>${(d.money_columns || []).length}</dd></div>
         ${(d.level_shifts || []).length ? `<div><dt>Level shifts converted</dt><dd class="mono small">${d.level_shifts.map(u => `${esc(u.column)} ×${num(u.multiplied_by)} (${num(u.weeks)} weeks)`).join(", ")}</dd></div>` : ""}
-        ${(d.units_converted || []).length ? `<div><dt>Converted to ₹</dt><dd class="mono small">${d.units_converted.map(u => `${esc(u.column)} ×${num(u.multiplied_by)}`).join(", ")}</dd></div>` : ""}
+        ${(d.units_converted || []).length ? `<div><dt>Converted to whole units</dt><dd class="mono small">${d.units_converted.map(u => `${esc(u.column)} ×${num(u.multiplied_by)}`).join(", ")}</dd></div>` : ""}
         <div><dt>Inflation</dt><dd>${d.inflation ? `${esc(d.inflation.base_year)} prices, ${esc(d.inflation.annual_rate_pct)}% a year` : "as recorded"}</dd></div>
-        ${rpk.source === "column" ? `<div><dt>Revenue per KPI</dt><dd><span class="mono">${esc(rpk.revenue_column)}</span> ÷ KPI per week, from the cleaned columns: median ₹${num(Math.round(rpk.median))}${(rpk.zero_kpi_weeks || []).length ? `; ${num(rpk.zero_kpi_weeks.length)} zero-KPI week(s) use the whole file's ₹${num(Math.round(rpk.overall))}` : ""}</dd></div>` : ""}
-        ${rpk.source === "value" ? `<div><dt>Revenue per KPI</dt><dd>₹${num(rpk.value)} every week</dd></div>` : ""}
+        ${rpk.source === "column" ? `<div><dt>Revenue per KPI</dt><dd><span class="mono">${esc(rpk.revenue_column)}</span> ÷ KPI per week, from the cleaned columns: median ${money(rpk.median)}${(rpk.zero_kpi_weeks || []).length ? `; ${num(rpk.zero_kpi_weeks.length)} zero-KPI week(s) use the whole file's ${money(rpk.overall)}` : ""}</dd></div>` : ""}
+        ${rpk.source === "value" ? `<div><dt>Revenue per KPI</dt><dd>${money(rpk.value)} every week</dd></div>` : ""}
       </dl>
       ${shifts ? `<div class="decide soft"><p>${esc(shifts.question)}</p>${keyChoices(shifts)}</div>` : ""}
       ${units ? `<div class="decide soft"><p>${esc(units.question)}</p>${seg(units)}</div>` : ""}
@@ -752,13 +763,16 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <td>${esc(e.label)}</td><td class="mono small">${esc(e.column)}</td><td class="num">${e.weeks_on}</td>
         <td>${e.status === "added" ? '<span class="pill pass">added</span>' : `<span class="muted small">${esc(e.status)}</span>`}</td></tr>`).join("");
     const offPreset = on ? on.options.filter(n => !chosen.includes(n)).map(n => `<tr><td><input type="checkbox" data-event="${esc(n)}" aria-label="Model ${esc(on.context.events[n])}"></td><td>${esc(on.context.events[n])}</td><td colspan="3" class="muted small">not modelled</td></tr>`).join("") : "";
-    return `<div class="scroll"><table style="min-width:560px"><thead><tr><th></th><th>Event</th><th>Column</th><th>Weeks on</th><th></th></tr></thead><tbody>${rows}${offPreset}</tbody></table></div>
+    const dp = decision(s, "calendar_preset"), presetNow = dp ? current(dp) : "none";
+    const presetPick = dp ? `<div class="decide soft"><p>${esc(dp.question)}</p>
+        <select data-preset aria-label="Calendar preset">${dp.options.map(o => `<option value="${esc(o)}" ${presetNow === o ? "selected" : ""}>${o === "none" ? "None" : esc(dp.context.presets[o] || o)}</option>`).join("")}</select></div>` : "";
+    return `${presetPick}${rows || offPreset ? `<div class="scroll"><table style="min-width:560px"><thead><tr><th></th><th>Event</th><th>Column</th><th>Weeks on</th><th></th></tr></thead><tbody>${rows}${offPreset}</tbody></table></div>` : '<p class="muted small">No calendar events yet: pick a preset above or add your own below.</p>'}
       <form id="add-event" class="decide soft" style="flex-wrap:wrap"><p>Add an event (a launch, a price change, a regulator's ruling):</p>
         <span style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input id="ev-name" placeholder="name, e.g. price_change" ${inputStyle} aria-label="Event name">
           <input id="ev-start" type="date" ${inputStyle} aria-label="Start date"> to <input id="ev-end" type="date" ${inputStyle} aria-label="End date">
           <button class="btn" type="submit">Add</button></span></form>
-      <p class="muted small">Preset: ${esc(d.preset)}. ${custom.length} event(s) of your own.</p>
+      <p class="muted small">${custom.length} event(s) of your own.</p>
       ${stepDirections(s)}`;
   }
   const DIR_TEXT = { either: "Either", raises: "Raises sales", lowers: "Lowers sales" };
@@ -909,7 +923,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return g;
   }
   function kpStatic() {
-    const g = kpGeom(), n = g.n, fmt = v => Math.round(v).toLocaleString("en-IN");
+    const g = kpGeom(), n = g.n, fmt = v => Math.round(v).toLocaleString(locale());
     const ticks = []; for (let v = g.y0; v <= g.y1 + 1e-9; v += g.nice) ticks.push(v);
     const strips = Object.entries(kp.strips), bw = (g.W - g.l - g.r) / Math.max(1, n - 1);
     $("kp-chart").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Weekly KPI with the preview baseline, and when each burst channel spends">
@@ -937,7 +951,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function kpUpdate() {
     const K = kpK(), saved = kpSaved(), g = kp.g, f = kp.fits[K], DEF = kp.default, n = g.n;
     if (!f) return;
-    const fmt = v => Math.round(v).toLocaleString("en-IN"), pc = v => (v * 100).toFixed(1) + "%";
+    const fmt = v => Math.round(v).toLocaleString(locale()), pc = v => (v * 100).toFixed(1) + "%";
     $("kp-k").textContent = K; $("kp-unit").textContent = K === 1 ? "knot" : "knots"; $("kp-range").value = Math.min(K, kp.max);
     $("kp-beyond").hidden = K <= kp.max;
     document.querySelectorAll("#kp-quick button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.kp === K)));
@@ -1325,7 +1339,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ${d.naive_mape != null ? `<tr><td>Same week last year</td><td class="num">${pct(d.naive_mape)}</td><td></td></tr>` : ""}</tbody></table></div>`; },
     32: s => { const d = s.details, rows = fitResult().channels.filter(c => c.paid);
       return `<dl class="kv"><div><dt>Baseline share of KPI</dt><dd>${pct(d.contributions.baseline_share)} <span class="muted small">(${pct(d.limits.baseline_share[0])}–${pct(d.limits.baseline_share[1])})</span></dd></div>
-        <div><dt>Contributions vs fit</dt><dd>${(Math.abs(d.contributions.reconcile_error) * 100).toFixed(3)}% apart</dd></div><div><dt>ROI unit</dt><dd>${d.roi_in_money ? "₹ per ₹" : "KPI per ₹"}</dd></div></dl>
+        <div><dt>Contributions vs fit</dt><dd>${(Math.abs(d.contributions.reconcile_error) * 100).toFixed(3)}% apart</dd></div><div><dt>ROI unit</dt><dd>${d.roi_in_money ? (sym() ? `${sym()} per ${sym()}` : "return per unit of spend") : `KPI per ${symOr("unit of spend")}`}</dd></div></dl>
         <div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>ROI</th><th>90% range</th><th>Share of KPI</th><th>Badges</th></tr></thead><tbody>${rows.map(c =>
           `<tr><td><b>${esc(c.channel)}</b></td><td class="num" ${d.roi_out_of_range[c.channel] != null ? 'style="color:var(--block)"' : ""}>${r2(c.roi_posterior_mean)}</td><td class="num">${range(c.roi_posterior_ci_lo, c.roi_posterior_ci_hi)}</td><td class="num">${pct(c.share_of_kpi)}</td><td class="small">${c.badges.map(esc).join(", ")}</td></tr>`).join("")}</tbody></table></div>`; },
     33: s => `<div class="scroll"><table style="min-width:480px"><thead><tr><th>Channel</th><th>Prior 90%</th><th>Posterior 90%</th><th>Narrower by</th></tr></thead><tbody>${s.details.channels.map(c =>
@@ -1508,8 +1522,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   let fPeriod = "all";        // ROI table and sales totals: "all" weeks or "last_52"
   const F_ORDER = [37, 40, 39, 38, 41, 42];
   const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)"];
-  const fnum = (v, d = 0) => v == null ? "–" : Number(v).toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d });
-  const fmoney = v => v == null ? "–" : Math.abs(v) >= 1e7 ? `₹${(v / 1e7).toFixed(2)} Cr` : Math.abs(v) >= 1e5 ? `₹${(v / 1e5).toFixed(1)} L` : `₹${fnum(v)}`;
+  const fnum = (v, d = 0) => v == null ? "–" : Number(v).toLocaleString(locale(), { maximumFractionDigits: d, minimumFractionDigits: d });
+  const fmoney = v => { if (v == null) return "–"; const s = cur().symbol || "", a = Math.abs(v);
+    const steps = cur().grouping === "indian" ? [[1e7, 2, " Cr"], [1e5, 1, " L"]] : [[1e9, 2, "B"], [1e6, 2, "M"], [1e3, 1, "K"]];
+    const hit = steps.find(([size]) => a >= size);
+    return hit ? `${s}${(v / hit[0]).toFixed(hit[1])}${hit[2]}` : `${s}${fnum(v)}`; };
   const fpct = v => v == null ? "–" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
   const fpanel = (n, title, sub, body) => `<article class="card" id="step-${n}"><header><span class="n">${n}</span><h3>${esc(title)}</h3><span></span>
       ${sub ? `<p class="sum">${sub}</p>` : ""}</header><div class="body">${body}</div></article>`;
@@ -1552,9 +1569,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       40: fpanel(40, "Trust badges", "How much to trust each channel's numbers. Hover a badge for the reason.",
         `<div class="scroll"><table style="min-width:520px"><tbody>${S.paid.map(c => `<tr><td style="width:120px;font-weight:500">${esc(c)}</td>
           <td style="width:260px">${fbadges(S.badges[c])}</td><td class="muted small">${(S.badges[c] || []).filter(b => b.badge !== "model_only").map(b => esc(b.why)).join(" ") || "No experiment behind it; the estimate comes from the data and the default prior."}</td></tr>`).join("")}</tbody></table></div>`),
-      39: fpanel(39, "ROI table", `${esc(v.roi_unit)}, mean and 90% range${fPeriod === "last_52" ? " · last 52 weeks" : ""}. Next-₹ ROI is the return on one more rupee at current spend.`,
+      39: fpanel(39, "ROI table", `${esc(v.roi_unit)}, mean and 90% range${fPeriod === "last_52" ? " · last 52 weeks" : ""}. Next-${esc(symOr("unit"))} ROI is the return on one more ${esc(cur().unit)} at current spend.`,
         `<div class="fchart" id="f-roi"></div>
-        <div class="scroll"><table class="froi" style="min-width:860px"><thead><tr><th>Channel</th><th class="r">Spend</th><th class="r">ROI</th><th class="r">90% range</th><th class="r">Next-₹ ROI</th>
+        <div class="scroll"><table class="froi" style="min-width:860px"><thead><tr><th>Channel</th><th class="r">Spend</th><th class="r">ROI</th><th class="r">90% range</th><th class="r">Next-${esc(symOr("unit"))} ROI</th>
           <th class="r">${esc(kpi)} driven</th><th class="r">90% range</th><th class="r">Cost per ${esc(kpi)}</th><th>Trust</th></tr></thead><tbody>
           ${roi.rows.map(r => `<tr${r.channel === "all paid" ? ' style="font-weight:600"' : ""}><td>${esc(r.channel === "all paid" ? "All paid media" : r.channel)}</td><td class="r">${fmoney(r.spend)}</td>
             <td class="r">${r.roi.mean.toFixed(2)}</td><td class="r muted">${r.roi.lo.toFixed(2)}–${r.roi.hi.toFixed(2)}</td><td class="r">${r.channel === "all paid" ? "" : r.mroi.mean.toFixed(2)}</td>
@@ -1567,7 +1584,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
             `<tr><td>${esc(c)}${S.paid.includes(c) || c === "baseline" ? "" : ' <span class="muted small">(not paid media)</span>'}</td><td class="r">${fnum(x.mean)}</td><td class="r muted">${fnum(x.lo)}–${fnum(x.hi)}</td><td class="r">${fpct(x.mean / br.total)}</td></tr>`).join("")}
           </tbody></table></div>`),
       41: fpanel(41, "Response curves", `${esc(kpi)} driven against total spend over the period, if each week's spend were scaled up or down. The dot is current spend.`,
-        `<div class="fsmalls">${S.paid.filter(c => S.curves[c]).map(c => `<figure><figcaption><span>${esc(c)}</span><span class="mono muted">next ₹: ${(roi.rows.find(r => r.channel === c) || { mroi: { mean: NaN } }).mroi.mean.toFixed(2)}</span></figcaption>
+        `<div class="fsmalls">${S.paid.filter(c => S.curves[c]).map(c => `<figure><figcaption><span>${esc(c)}</span><span class="mono muted">next ${esc(symOr("unit"))}: ${(roi.rows.find(r => r.channel === c) || { mroi: { mean: NaN } }).mroi.mean.toFixed(2)}</span></figcaption>
           <div class="fchart" data-curve="${esc(c)}"></div></figure>`).join("")}</div>`),
       42: fpanel(42, "Carryover", "Share of a week's effect still working in each following week (week 0 = 100%), with the half-life.",
         `<div style="display:grid;gap:8px">${S.paid.filter(c => S.carryover[c]).map(c => `<div class="fdecay"><span style="font-weight:500">${esc(c)}</span><span class="fchart" data-decay="${esc(c)}"></span>
@@ -1711,7 +1728,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ${ty.map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="10">${fnum(v)}</text>`).join("")}
       <path d="${band}" fill="var(--accent)" fill-opacity="0.14"/><path d="${p(ys)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
       ${i1 >= 0 ? `<circle cx="${x(xs[i1])}" cy="${y(ys[i1])}" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"><title>Current spend ${fmoney(xs[i1])}: ${fnum(ys[i1])} ${esc(S.version.kpi)} (90% ${fnum(C.kpi_lo[i1])}–${fnum(C.kpi_hi[i1])})</title></circle>` : ""}
-      <text x="${l}" y="${H - 5}" fill="var(--muted)" font-size="10">₹0</text><text x="${W - r}" y="${H - 5}" text-anchor="end" fill="var(--muted)" font-size="10">${fmoney(xmax)}</text></svg>`;
+      <text x="${l}" y="${H - 5}" fill="var(--muted)" font-size="10">${esc(money(0))}</text><text x="${W - r}" y="${H - 5}" text-anchor="end" fill="var(--muted)" font-size="10">${fmoney(xmax)}</text></svg>`;
   }
   function fDecay(host, D) {
     if (!D) return;
@@ -1807,6 +1824,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (applyRare) applyRare.onclick = () => answer({ rare_channels: Object.fromEntries([...main.querySelectorAll("[data-rare]")].map(x => [x.dataset.rare, x.value])) });
     // Phase D
     main.querySelectorAll("[data-select-int]").forEach(x => x.onchange = () => answer({ [x.dataset.selectInt]: +x.value }));
+    main.querySelectorAll("[data-preset]").forEach(x => x.onchange = () => answer({ calendar_preset: x.value, calendar_events: undefined }));
+    main.querySelectorAll("[data-currency]").forEach(x => x.onchange = () => answer({ currency: x.value }));
     main.querySelectorAll("[data-event]").forEach(x => x.onchange = () => answer({ calendar_events: [...main.querySelectorAll("[data-event]")].filter(c => c.checked).map(c => c.dataset.event) }));
     const customNow = () => [...(answers.custom_events || [])];
     const addEv = $("add-event");

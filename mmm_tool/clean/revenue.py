@@ -8,7 +8,7 @@ Phase B cleans the revenue total like the KPI, and the ratio is made here:
   column           per date (+ region): revenue total ÷ KPI total. Where the KPI is
                    0 the week uses the whole file's total revenue ÷ total KPI, and
                    those weeks are listed in a warning.
-  value            the fixed ₹ value per unit, every week.
+  value            the fixed value per unit, every week.
   kpi or none      no revenue per KPI column.
 
 The revenue total itself is dropped: Meridian gets the KPI and revenue per KPI.
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .. import currency as money_fmt
 from .context import Ctx, cell_key
 
 NAME = "revenue_per_kpi"
@@ -48,6 +49,7 @@ def per_unit_to_total(ctx: Ctx) -> str | None:
 def add_revenue_per_kpi(ctx: Ctx) -> tuple[list[str], list[str], dict]:
     """(notes, warnings, details) after the revenue per KPI column is added to ctx.df."""
     src, df = ctx.kpi.get("revenue_source"), ctx.df
+    cur = money_fmt.of(ctx.kpi)
     if ctx.kpi.get("kpi_type") == "revenue" or src not in ("column", "value"):
         return [], [], {"source": src}
     name = _name(df)
@@ -56,7 +58,7 @@ def add_revenue_per_kpi(ctx: Ctx) -> tuple[list[str], list[str], dict]:
         df[name] = value
         ctx.roles[name] = "revenue_per_kpi"
         ctx.kpi.update(revenue_per_kpi_column=name, revenue_per_kpi_median=value)
-        return [f"{name} = ₹{value:,.0f} every week (the fixed value per unit)"], [], {"source": src, "value": value}
+        return [f"{name} = {money_fmt.money(value, cur)} every week (the fixed value per unit)"], [], {"source": src, "value": value}
 
     rev, kpi = ctx.kpi["revenue_column"], ctx.kpi_col
     overall = float(df[rev].sum() / df[kpi].sum()) if df[kpi].sum() > 0 else float("nan")
@@ -67,11 +69,11 @@ def add_revenue_per_kpi(ctx: Ctx) -> tuple[list[str], list[str], dict]:
     ctx.roles[rev], ctx.roles[name] = "excluded", "revenue_per_kpi"
     median = float(df[name].median())
     ctx.kpi.update(revenue_per_kpi_column=name, revenue_per_kpi_median=median, revenue_per_kpi_overall=overall)
-    notes = [f"{name} = {rev} ÷ {kpi} per week, from the cleaned columns (median ₹{median:,.0f})"]
+    notes = [f"{name} = {rev} ÷ {kpi} per week, from the cleaned columns (median {money_fmt.money(median, cur)})"]
     warnings = []
     if zero_weeks:
         warnings.append(f"'{kpi}' is 0 in {len(zero_weeks)} week(s), so revenue per unit can't be worked out there; "
-                        f"they use the whole file's ₹{overall:,.0f} (total {rev} ÷ total {kpi}): "
+                        f"they use the whole file's {money_fmt.money(overall, cur)} (total {rev} ÷ total {kpi}): "
                         + ", ".join(zero_weeks[:10]) + ("…" if len(zero_weeks) > 10 else "") + ".")
     return notes, warnings, {"source": src, "revenue_column": rev, "median": median, "overall": overall,
                              "zero_kpi_weeks": zero_weeks, "column": name}

@@ -1,0 +1,38 @@
+# Keyword pack: India. Turn it on with `packs: [india]` in roles.yaml (or
+# MMM_KEYWORD_PACKS=india). Rupee words, lakh and crore, and Indian festivals.
+
+rules:
+  - role: control
+    words: [festive, diwali, navratri, durga puja, onam, pongal, eid]
+    reason: festival by name (india pack)
+
+# With no currency sign or code in the file, step 5 suggests this one.
+default_currency: INR
+
+channel_words_to_strip: [inr, rs, cr, crore, crores, lakh, lakhs, lac, lacs]
+kpi_money_words: [inr, rs]
+
+# Money columns named in these units are converted to whole rupees (step 13).
+money_units:
+  crore: 10000000
+  crores: 10000000
+  cr: 10000000
+  lakh: 100000
+  lakhs: 100000
+  lac: 100000
+  lacs: 100000
+
+# Unit words after a number in a cell: "₹1.17 Cr", "12.6 L".
+value_units:
+  cr: 10000000
+  crore: 10000000
+  crores: 10000000
+  l: 100000
+  lakh: 100000
+  lakhs: 100000
+  lac: 100000
+  lacs: 100000
+
+# Step 21: festival flags usually raise sales.
+control_direction_words:
+  raises: [festive, diwali]

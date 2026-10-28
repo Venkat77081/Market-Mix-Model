@@ -5,6 +5,7 @@ heatmap (each channel's weekly spend as a share of its own peak). Report only.
 """
 from __future__ import annotations
 
+from .. import currency as money_fmt
 from ..ingest.types import StepResult, Verdict
 from .context import BADGE_TEXT, CCtx
 
@@ -32,6 +33,6 @@ def profile_report(ctx: CCtx) -> StepResult:
         "badges": {c: [BADGE_TEXT[b] for b in bs] for c, bs in ctx.badges.items()},
     }
     top = share[0] if share else None
-    summary = (f"{len(share)} channels, ₹{total / 1e7:,.1f} Cr total spend over {len(weeks)} weeks"
+    summary = (f"{len(share)} channels, {money_fmt.money_short(total, money_fmt.of(ctx.kpi))} total spend over {len(weeks)} weeks"
                + (f"; largest: {top['channel']} ({top['share']:.0%})" if top else ""))
     return StepResult(STEP, NAME, Verdict.PASS, summary + ".", details)

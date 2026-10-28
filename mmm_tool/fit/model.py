@@ -174,7 +174,7 @@ def load(path):
 _STEMS = {
     "alpha": "{name} carryover", "ec": "{name} diminishing returns (half-saturation)",
     "slope": "{name} diminishing returns (slope)", "beta": "{name} effect", "eta": "{name} variation across regions",
-    "roi": "{name} return", "mroi": "{name} return on the next rupee", "contribution": "{name} share of sales",
+    "roi": "{name} return", "mroi": "{name} marginal return", "contribution": "{name} share of sales",
     "xi": "{name} variation across regions",
 }
 _WHOLE = {"knot_values": "baseline over time (knots)", "mu_t": "baseline over time (knots)",

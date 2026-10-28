@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 
+
+from .. import currency as money_fmt
 from ..ingest.keywords import words_of
 from ..ingest.types import Answers, Decision, StepResult, Verdict
 from .context import DEFAULT_HOLDOUT, DEFAULT_MAX_LAG, HOLDOUT_RANGE, MAX_LAG_RANGE, MIN_TRAIN_WEEKS, DCtx, load_calendars
@@ -98,7 +100,7 @@ def carryover_shape(ctx: DCtx, answers: Answers) -> StepResult:
     hints = [c for c in names if saturation_hint(spend[c], total)]
     d_sat = Decision(
         id="diminishing_returns", step=23,
-        question="Does each extra rupee on a channel bring a little less than the one before (diminishing returns)?",
+        question=f"Does each extra {money_fmt.of(ctx.kpi)['unit']} on a channel bring a little less than the one before (diminishing returns)?",
         options=["yes", "no"], default={c: "yes" for c in names}, context={"suggest_no": hints},
     )
     sat = {**d_sat.default, **(answers.ask(d_sat) or {})}

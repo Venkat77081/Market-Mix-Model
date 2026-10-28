@@ -7,7 +7,15 @@
 #   dates       [2024-11-01, ...]          specific days, widened by
 #   weeks_before / weeks_after             whole weeks around each date
 #
-# Add your own events in the app (step 21) or in a preset of your own here.
+# No preset is applied unless one is chosen in step 21 (calendar_preset). Add
+# presets of your own, and set the one suggested by default, in a calendars.yaml
+# at the project root (or the file named by MMM_CALENDARS):
+#
+#   default_preset: my_business
+#   presets:
+#     my_business: {label: ..., events: [...]}
+#
+# Events can also be added in the app (step 21).
 
 presets:
   india_insurance:
@@ -31,6 +39,19 @@ presets:
         weeks_before: 2
         weeks_after: 0
 
+  us_retail:
+    label: US retail
+    events:
+      - name: black_friday
+        label: Black Friday and Cyber week
+        dates: [2018-11-23, 2019-11-29, 2020-11-27, 2021-11-26, 2022-11-25, 2023-11-24, 2024-11-29, 2025-11-28, 2026-11-27, 2027-11-26, 2028-11-24, 2029-11-23, 2030-11-29]
+        weeks_before: 0
+        weeks_after: 1
+
+      - name: christmas
+        label: Christmas shopping (1 to 24 December)
+        recurring: {from: "12-01", to: "12-24"}
+
 # Channel words for which step 23 suggests binomial carryover: an effect that
 # lingers, fading slowly at first and then dropping off by the end of the
 # carryover length. (Meridian's binomial decay has no delayed peak.)
@@ -39,5 +60,5 @@ binomial_words: [tv, television, outdoor, ooh, hoarding, hoardings, cinema]
 # Step 21 suggests a direction for a control's effect on sales from its name.
 # Suggestions only: the user confirms. "raises" applies to 0/1 flags only.
 control_direction_words:
-  lowers: [price, premium, competitor]
-  raises: [season, festive, holiday]
+  lowers: [price, competitor]
+  raises: [season, holiday, holidays]

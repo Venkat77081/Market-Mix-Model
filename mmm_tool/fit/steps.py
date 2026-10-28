@@ -29,6 +29,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .. import currency as money_fmt
 from ..configure.choices import meridian_defaults, prior_summary
 from ..ingest.pairing import Channel
 from ..ingest.types import StepResult, Verdict
@@ -232,7 +233,8 @@ def plausibility(ctx: ECtx) -> StepResult:
     warnings = [f"'{x['control']}' was set to {x['label']}, but {x['share_at_limit']:.0%} of its posterior sits at zero, "
                 "against that limit: the data may point the other way. Check the direction in step 21." for x in directions if x["flagged"]]
     if not money:
-        warnings.append("ROI is in KPI units per ₹ (no revenue per KPI, step 5), so the 0.05-20 ROI range isn't checked.")
+        warnings.append(f"ROI is in KPI units per {money_fmt.unit(money_fmt.of(ctx.d.kpi))} (no revenue per KPI, step 5), "
+                        "so the 0.05-20 ROI range isn't checked.")
     lo, hi = cfg["baseline_share"]
     parts = [f"baseline {con['baseline_share']:.0%} of the KPI",
              f"contributions reconcile with the fit to {abs(con['reconcile_error']):.2%}"]

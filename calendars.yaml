@@ -1,0 +1,4 @@
+# This project's calendar settings, layered on mmm_tool/configure/calendars.yaml.
+# Step 21 suggests default_preset; pick another (or none) in the app.
+# Add presets of your own under `presets:` in the same format.
+default_preset: india_insurance

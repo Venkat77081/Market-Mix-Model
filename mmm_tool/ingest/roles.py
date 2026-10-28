@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 import pandas as pd
 
+from .. import currency as money_fmt
 from .keywords import Keywords, load_keywords, words_of
 from .memory import RoleMemory
 from .types import ROLES, Answers, Decision, StepResult, Verdict
@@ -147,7 +148,8 @@ def value_checks(df: pd.DataFrame, out: list[RoleSuggestion], kpi: RoleSuggestio
             r = x[m] / k[m]
             rcv, ocv = _cv(r), _cv(x[m])
             if rcv < REVENUE_RATIO_CV and rcv < REVENUE_STEADIER * ocv:
-                reason = (f"{s.column} ÷ {kpi.column} stays between ₹{r.min():,.0f} and ₹{r.max():,.0f} "
+                cur = money_fmt.get(money_fmt.detect(df, [s.column]))
+                reason = (f"{s.column} ÷ {kpi.column} stays between {money_fmt.money(r.min(), cur)} and {money_fmt.money(r.max(), cur)} "
                           f"(varies {rcv:.0%}): revenue for the KPI. Use it as revenue per KPI = {s.column} ÷ {kpi.column}")
                 revenue.append((rcv, s, reason))
                 continue

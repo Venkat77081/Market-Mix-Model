@@ -1,0 +1,33 @@
+# Keyword pack: insurance. Turn it on with `packs: [insurance]` in roles.yaml
+# (or MMM_KEYWORD_PACKS=insurance). Same fields as role_keywords.yaml; these
+# words are added to the built-in ones and checked before them.
+
+rules:
+  - role: revenue_per_kpi
+    words: [per policy, avg premium, average premium]
+    unless: [index, idx]   # avg_premium_index is a price index, not money per policy
+    confidence: high
+    reason: value of one policy (insurance pack)
+
+  - role: control
+    words: [registrations, registration]   # vehicle registrations drive motor insurance demand
+    reason: outside factor by name (insurance pack)
+
+  - role: kpi
+    words: [policies, policy count]
+    confidence: high
+    reason: count of policies (insurance pack)
+
+  - role: kpi
+    # Money outcomes; step 3 checks by value whether one is revenue for the count KPI.
+    words: [gwp, nbp, premium, gross written, gross written premium, premium income, total premium]
+    unless: [index, idx, price, rate]   # an average premium index is a price, a control
+    reason: premium (insurance pack)
+
+kpi_count_words: [policies, policy]
+kpi_money_words: [premium, gwp, nbp]
+aggregation_sum_words: [registrations, registration]
+
+# Step 21: a premium (price) index usually lowers sales.
+control_direction_words:
+  lowers: [premium]

@@ -4,10 +4,13 @@
 # project root (or the file named by MMM_ROLES_FILE). Your rules are checked
 # before these, and your aliases and words are added to these.
 #
+# Words for one industry or country are in keyword packs (ingest/packs/*.yaml:
+# insurance, india). Turn them on with `packs: [insurance, india]` in roles.yaml.
+#
 # How a column name is matched: it is lowercased and split into words on
 # "_", "-", spaces and camelCase, so "TV_Spend (₹)" reads as "tv spend".
 # An entry matches when it appears as whole words, so "pop" matches
-# "adult pop" but not "popular". An entry can be a phrase: "per policy".
+# "adult pop" but not "popular". An entry can be a phrase: "revenue per".
 #
 # Rules are checked top to bottom; the first one that matches wins. Fields:
 #   role        one of: geo, population, kpi, revenue_per_kpi, revenue_for_kpi, media,
@@ -32,8 +35,9 @@ rules:
     reason: branded search rises because of other marketing; modelling it would steal their credit
 
   - role: revenue_per_kpi
-    words: [revenue per, per policy, per kpi, per unit, avg premium, average premium, avg ticket, aov, arpu]
-    unless: [index, idx]   # avg_premium_index is a price index, not ₹ per policy
+    words: [revenue per, value per, per kpi, per unit, per order, per customer, avg ticket, average ticket,
+            average order value, aov, arpu]
+    unless: [index, idx]   # an average price index is a control, not money per unit
     confidence: high
     reason: value of one KPI unit
 
@@ -62,7 +66,7 @@ rules:
     reason: outside factor by name
 
   - role: control
-    words: [price, rate, registrations, registration, holiday, season, festive, diwali, flag, temperature,
+    words: [price, rate, holiday, holidays, season, flag, temperature, weather, rain, rainfall,
             cpi, inflation, gdp, unemployment, event, covid, lockdown, trend]
     reason: outside factor by name
 
@@ -84,18 +88,18 @@ rules:
     reason: exposure metric by name
 
   - role: kpi
-    words: [kpi, policies, policy count, conversion, conversions, lead, leads, application, applications,
+    words: [kpi, conversion, conversions, lead, leads, application, applications,
             quote, quotes, quote requests, enquiry, enquiries, inquiry, inquiries, requests,
             order, orders, unit, units, signups, sign ups, acquisition, acquisitions, customers, quotes]
     confidence: high
     reason: count of outcomes by name
 
   - role: kpi
-    # Money and outcome words. ₹ in a column name reads as "inr". After the KPI is
-    # chosen, step 3 checks these columns by value: one that is a near-constant
-    # multiple of the KPI becomes "Revenue for KPI" (premium = policies x price).
-    words: [revenue, sales, gwp, nbp, premium, gross written, gross written premium, premium income, total premium,
-            gmv, turnover, bookings, inr, rs, value]
+    # Money and outcome words. A currency sign in a column name reads as its code
+    # ($ → usd). After the KPI is chosen, step 3 checks these columns by value: one
+    # that is a near-constant multiple of the KPI becomes "Revenue for KPI"
+    # (sales value = orders x price).
+    words: [revenue, sales, gmv, turnover, bookings, value, usd, eur, gbp]
     reason: money outcome by name
 
   # Only text columns are checked against geo rules; a text column with a
@@ -108,7 +112,7 @@ rules:
 # Words dropped from a column name to find its channel: "tv_spend" and
 # "tv_grps" both belong to channel "tv", so step 4 pairs them.
 channel_words_to_strip: [
-  spend, spends, cost, costs, investment, inr, rs, cr, lakh, lakhs, amount,
+  spend, spends, cost, costs, investment, amount, usd, eur, gbp, aud, cad, k, mn, million, bn,
   grp, grps, trp, trps, impressions, impression, impr, imps, clicks, click,
   views, view, reach, frequency, freq, rf, sends, send, opens, posts,
   media, paid, weekly, total, ads, ad, advertising, fees, fee, payout, payouts,
@@ -125,9 +129,9 @@ channel_aliases:
 
 # Step 5: is the KPI a count (non-revenue) or money (revenue)? Count words
 # are checked first.
-kpi_count_words: [policies, policy, count, conversions, leads, applications, orders, units, customers, quote, quotes,
+kpi_count_words: [count, conversions, leads, applications, orders, units, customers, quote, quotes,
                   requests, enquiries, inquiries, signups]
-kpi_money_words: [revenue, sales value, value, premium, gwp, gmv, turnover, amount, inr, rs, bookings, income]
+kpi_money_words: [revenue, sales value, value, gmv, turnover, amount, bookings, income, usd, eur, gbp]
 
 # Phase B (steps 8 and 9): how a control or non-media column is combined when
 # duplicate weeks collapse, regions add up to national, or days become weeks.
@@ -136,36 +140,30 @@ kpi_money_words: [revenue, sales value, value, premium, gwp, gmv, turnover, amou
 # if it has a sum word, and otherwise you are asked.
 aggregation_mean_words: [index, price, rate, pct, percent, percentage, share, ratio, avg, average, mean,
                          temperature, temp, cpi, inflation, gdp, unemployment, score, rating, discount]
-aggregation_sum_words: [spend, spends, cost, costs, registrations, registration, count, volume, sends,
+aggregation_sum_words: [spend, spends, cost, costs, count, volume, sends,
                         sales, units, orders, visits, sessions, calls, leads, amount, incentive, incentives]
 
-# Phase B (step 13): unit words in money column names, and the ₹ each unit is worth.
+# Phase B (step 13): unit words in money column names, and how many whole
+# currency units each is worth (lakh and crore are in the india pack).
 money_units:
-  crore: 10000000
-  crores: 10000000
-  cr: 10000000
-  lakh: 100000
-  lakhs: 100000
-  lac: 100000
-  lacs: 100000
   mn: 1000000
   million: 1000000
+  millions: 1000000
+  bn: 1000000000
+  billion: 1000000000
   thousand: 1000
+  thousands: 1000
 
 # Step 1: a trailing row whose label is one of these is a summary (TOTAL), not data.
 summary_row_words: [total, grand total, sub total, subtotal, sum, totals, average, avg, mean]
 
-# Unit words allowed after a number in a cell: "₹1.17 Cr", "12.6 L", "45k".
+# Unit words allowed after a number in a cell: "$1.2M", "45k" (lakh and crore are
+# in the india pack).
 value_units:
-  cr: 10000000
-  crore: 10000000
-  crores: 10000000
-  l: 100000
-  lakh: 100000
-  lakhs: 100000
-  lac: 100000
-  lacs: 100000
   k: 1000
+  m: 1000000
+  bn: 1000000000
+  billion: 1000000000
   thousand: 1000
   mn: 1000000
   million: 1000000

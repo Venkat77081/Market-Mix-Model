@@ -1,9 +1,13 @@
 """Keyword lists for role suggestions, loaded from YAML.
 
-Built-in lists live in role_keywords.yaml next to this file. The user's own
-file (MMM_ROLES_FILE, default ./roles.yaml) is layered on top: its rules are
-checked first, and its words and aliases are added to the built-in ones. Both
-files are re-read when they change, so edits apply on the next run.
+Built-in lists live in role_keywords.yaml next to this file and hold only
+words that mean the same in any industry or country. Keyword packs
+(packs/*.yaml: insurance, india, or your own) add words for one domain;
+they are off unless named in the user's file (`packs: [insurance, india]`)
+or in MMM_KEYWORD_PACKS (comma-separated, which takes precedence). The
+user's own file (MMM_ROLES_FILE, default ./roles.yaml) is layered on top.
+Rules are checked user first, then packs, then built-in; words and aliases
+add up. Files are re-read when they change, so edits apply on the next run.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import yaml
 from .types import ROLES
 
 BUILTIN = Path(__file__).with_name("role_keywords.yaml")
+PACKS = Path(__file__).with_name("packs")
 CONFIDENCE = ("high", "medium", "low")
 
 
@@ -25,8 +30,10 @@ def user_file() -> Path:
 
 
 def words_of(name: str) -> str:
-    """'TV_Spend (₹)' -> 'tv spend inr'; 'youtubeReach' -> 'youtube reach'. ₹ reads as the word inr."""
-    s = str(name).replace("₹", " inr ")
+    """'TV_Spend (₹)' -> 'tv spend inr'; 'youtubeReach' -> 'youtube reach'. A currency sign reads as its code."""
+    s = str(name)
+    for sign, word in (("₹", "inr"), ("€", "eur"), ("£", "gbp"), ("$", "usd")):
+        s = s.replace(sign, f" {word} ")
     s = re.sub(r"([a-z])([A-Z])", r"\1_\2", s).lower()
     return " ".join(re.findall(r"[a-z0-9]+", s))
 
@@ -70,6 +77,9 @@ class Keywords:
     value_units: dict[str, float] = field(default_factory=dict)
     summary_rows: re.Pattern | None = None
     sources: list[str] = field(default_factory=list)
+    packs: list[str] = field(default_factory=list)
+    direction_words: dict[str, list[str]] = field(default_factory=dict)  # step 21: lowers/raises name hints
+    default_currency: str | None = None    # step 5's suggestion when the file shows no currency (a pack's)
 
     def match(self, column: str, text: bool = False) -> Rule | None:
         """First matching rule. Text columns only take geo rules; numeric
@@ -123,13 +133,18 @@ _cache: dict = {}
 def load_keywords(user_path: Path | None = None) -> Keywords:
     """Built-in keywords with the user's file layered on top (cached by mtime)."""
     user_path = Path(user_path) if user_path else user_file()
-    stamp = (BUILTIN.stat().st_mtime, str(user_path), user_path.stat().st_mtime if user_path.is_file() else None)
+    user = _read(user_path) if user_path.is_file() else {}
+    names = enabled_packs(user)
+    paths = [_pack_path(n) for n in names]
+    stamp = (BUILTIN.stat().st_mtime, str(user_path), user_path.stat().st_mtime if user_path.is_file() else None,
+             tuple((str(p), p.stat().st_mtime) for p in paths))
     if _cache.get("stamp") == stamp:
         return _cache["kw"]
 
     layers = [("built-in", BUILTIN, _read(BUILTIN))]
+    layers += [(f"{n} pack", p, _read(p)) for n, p in zip(names, paths)]
     if user_path.is_file():
-        layers.append(("your", user_path, _read(user_path)))
+        layers.append(("your", user_path, user))
 
     kw = Keywords()
     count, money, mean_w, sum_w, summary = [], [], [], [], []
@@ -143,19 +158,46 @@ def load_keywords(user_path: Path | None = None) -> Keywords:
         mean_w += [str(x) for x in data.get("aggregation_mean_words") or []]
         sum_w += [str(x) for x in data.get("aggregation_sum_words") or []]
         summary += [str(x) for x in data.get("summary_row_words") or []]
+        if data.get("default_currency"):
+            kw.default_currency = str(data["default_currency"])
+        for way, words in (data.get("control_direction_words") or {}).items():
+            kw.direction_words.setdefault(way, []).extend(str(w) for w in words or [])
         for unit, mult in (data.get("value_units") or {}).items():
             try:
                 kw.value_units[words_of(unit)] = float(mult)
             except (TypeError, ValueError) as e:
                 raise KeywordError(f"{path}: value_units.{unit} must be a number.") from e
-        for unit, rupees in (data.get("money_units") or {}).items():
+        for unit, mult in (data.get("money_units") or {}).items():
             try:
-                kw.money_units[words_of(unit)] = float(rupees)
+                kw.money_units[words_of(unit)] = float(mult)
             except (TypeError, ValueError) as e:
-                raise KeywordError(f"{path}: money_units.{unit} must be a number of ₹.") from e
+                raise KeywordError(f"{path}: money_units.{unit} must be a number (whole currency units).") from e
         kw.sources.append(str(path))
     kw.kpi_count, kw.kpi_money = _pattern(count), _pattern(money)
     kw.agg_mean, kw.agg_sum = _pattern(mean_w), _pattern(sum_w)
     kw.summary_rows = _pattern(summary)
+    kw.packs = names
     _cache.update(stamp=stamp, kw=kw)
     return kw
+
+
+def available_packs() -> list[str]:
+    return sorted(p.stem for p in PACKS.glob("*.yaml"))
+
+
+def enabled_packs(user: dict | None = None) -> list[str]:
+    """Packs named in MMM_KEYWORD_PACKS, else in the user's file (`packs: [...]`)."""
+    env = os.environ.get("MMM_KEYWORD_PACKS")
+    names = [x.strip() for x in env.split(",")] if env is not None else [str(x) for x in (user or {}).get("packs") or []]
+    return [n for n in names if n]
+
+
+def _pack_path(name: str) -> Path:
+    p = Path(name)
+    if p.suffix in (".yaml", ".yml") and p.is_file():      # a pack of your own, by path
+        return p
+    p = PACKS / f"{name}.yaml"
+    if not p.is_file():
+        raise KeywordError(f"Unknown keyword pack '{name}'. Built-in packs: {', '.join(available_packs())}; "
+                           "or give the path to a .yaml file of your own.")
+    return p

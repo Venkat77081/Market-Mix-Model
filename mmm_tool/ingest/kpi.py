@@ -11,13 +11,17 @@ as a ratio:
                  revenue total ÷ KPI total per week
   per_unit_column a value-per-unit column: turned into a revenue total
                  (value × KPI) before rows are combined, then as above
-  value          a fixed ₹ value per unit the user types: the same every week
-  None           no ₹ value: ROI is reported in KPI units
+  value          a fixed money value per unit the user types: the same every week
+  None           no money value: ROI is reported in KPI units
+
+It also records the currency (decision "currency"): detected from the money
+columns' names and cells, used for every amount shown from here on.
 """
 from __future__ import annotations
 
 import pandas as pd
 
+from .. import currency as money_fmt
 from .keywords import load_keywords, words_of
 from .types import Answers, Decision, StepResult, Verdict
 
@@ -89,8 +93,29 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
         decisions.append(d_type)
         kpi_type = answers.ask(d_type) or guess
     warnings: list[str] = []
+    money_cols = [c for c, r in roles.items() if r in ("media_spend", "rf_spend", "revenue_for_kpi", "revenue_per_kpi")]
+    if kpi_type == "revenue":
+        money_cols.append(kpi_col)
+    detected = money_fmt.detect(df, money_cols)
+    d_cur = Decision(
+        id="currency",
+        step=STEP,
+        question="Which currency is the money in? Amounts and ROI are shown in it.",
+        options=list(money_fmt.CURRENCIES) + ["none"],
+        default=detected or load_keywords().default_currency or "none",
+        context={"detected": detected, "pack_default": load_keywords().default_currency, "symbols": {k: v["symbol"].strip() for k, v in money_fmt.CURRENCIES.items()}},
+    )
+    decisions.append(d_cur)
+    code = answers.ask(d_cur) or d_cur.default
+    if code != "none" and code not in money_fmt.CURRENCIES:
+        d_cur.answered, d_cur.blocking = False, True
+        return {}, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, f"Unknown currency '{code}'; use one of "
+                              f"{', '.join(money_fmt.CURRENCIES)} or none.", {}, [], decisions), df
+    cur = money_fmt.get(None if code == "none" else code)
+    sym = money_fmt.unit(cur)
     out = {"kpi": kpi_col, "kpi_type": kpi_type, "revenue_source": None, "revenue_column": None,
-           "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": "₹ per ₹"}
+           "revenue_per_kpi_column": None, "revenue_per_kpi_value": None, "roi_units": money_fmt.per(cur),
+           "currency": cur}
 
     if kpi_type == "revenue":
         out["revenue_source"] = "kpi"
@@ -98,7 +123,7 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
             if c and roles.get(c) in ("revenue_per_kpi", "revenue_for_kpi"):
                 warnings.append(f"KPI is already money, so '{c}' is not used as revenue per KPI.")
                 roles[c] = "excluded"
-        summary = f"'{kpi_col}' is revenue; ROI is ₹ returned per ₹ spent."
+        summary = f"'{kpi_col}' is revenue; ROI is {money_fmt.returned_per(cur)}."
     elif rev_col and roles.get(rev_col) == "revenue_for_kpi":
         out.update(revenue_source="column", revenue_column=rev_col)
         summary = f"'{kpi_col}' is a count; revenue per {kpi_col} = {rev_col} ÷ {kpi_col}, calculated after cleaning."
@@ -110,7 +135,7 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
         d_value = Decision(
             id="revenue_per_kpi_value",
             step=STEP,
-            question=f"What is one '{kpi_col}' worth in ₹ (for example, average premium per policy)? Leave blank to report ROI in KPI units.",
+            question=f"What is one '{kpi_col}' worth in {sym} (for example, the average value of one sale)? Leave blank to report ROI in KPI units.",
             options=[],
             default=None,
         )
@@ -121,11 +146,11 @@ def set_kpi_type(df: pd.DataFrame, roles: dict[str, str], answers: Answers) -> t
             if value <= 0:
                 return out, StepResult(STEP, NAME, Verdict.NEEDS_INPUT, "Revenue per KPI must be above zero.", out, warnings, decisions), df
             out.update(revenue_source="value", revenue_per_kpi_value=value)
-            summary = f"'{kpi_col}' is a count, valued at a fixed ₹{value:,.0f} per unit for ROI."
+            summary = f"'{kpi_col}' is a count, valued at a fixed {money_fmt.money(value, cur)} per unit for ROI."
         else:
-            out["roi_units"] = f"{kpi_col} per ₹"
-            warnings.append(f"No value per '{kpi_col}'; ROI is reported as {kpi_col} per ₹ and cost per {kpi_col}.")
-            summary = f"'{kpi_col}' is a count with no ₹ value; ROI is reported in KPI units."
+            out["roi_units"] = f"{kpi_col} per {sym}"
+            warnings.append(f"No value per '{kpi_col}'; ROI is reported as {kpi_col} per {sym} and cost per {kpi_col}.")
+            summary = f"'{kpi_col}' is a count with no money value; ROI is reported in KPI units."
     if notes:  # the KPI choice explains itself better than the generic sentence
         summary = f"'{kpi_col}' is {'revenue' if kpi_type == 'revenue' else 'a count'}; " + "; ".join(notes) + "."
     return out, StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary, out, warnings, decisions), df

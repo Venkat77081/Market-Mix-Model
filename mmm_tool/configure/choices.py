@@ -15,7 +15,7 @@ Carryover (step 23)   "share of the effect still working next week"
 
 Prior type (step 25)  one choice for all paid media
     roi           average return: LogNormal from a 90% range
-    mroi          return on the next rupee: LogNormal from a 90% range
+    mroi          return on the next unit spent: LogNormal from a 90% range
     contribution  share of sales: a Beta whose 5th and 95th percentiles match the range
 
 Control direction (step 21)  Either / Raises sales / Lowers sales, a
@@ -92,7 +92,13 @@ def carryover_summary(a: float, b: float, shape: str, max_lag: int) -> dict[str,
 
 # --- prior type ranges -----------------------------------------------------------
 
-PRIOR_TYPES = {"roi": "average return (ROI)", "mroi": "return on the next rupee", "contribution": "share of sales"}
+PRIOR_TYPES = {"roi": "average return (ROI)", "mroi": "return on the next unit spent", "contribution": "share of sales"}
+
+
+def prior_labels(cur: dict | None = None) -> dict[str, str]:
+    """PRIOR_TYPES in the file's currency: "return on the next rupee" / "...next dollar"."""
+    unit = (cur or {}).get("unit")
+    return {**PRIOR_TYPES, "mroi": f"return on the next {unit}"} if unit and unit != "unit of spend" else dict(PRIOR_TYPES)
 
 
 def lognormal_from_range(low: float, high: float) -> tuple[float, float]:

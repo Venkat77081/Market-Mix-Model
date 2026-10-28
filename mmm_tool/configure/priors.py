@@ -36,14 +36,18 @@ def _range(v) -> tuple[float, float] | None:
 
 
 def _money(ctx: DCtx) -> bool:
-    """A ₹ value per KPI unit exists (step 5), so returns can be stated in ₹ per ₹."""
+    """A money value per KPI unit exists (step 5), so returns can be stated in money per money."""
     return ctx.kpi.get("kpi_type") == "revenue" or bool(ctx.kpi.get("revenue_per_kpi_column") or ctx.kpi.get("revenue_per_kpi_value"))
 
 
 def roi_priors(ctx: DCtx, answers: Answers) -> StepResult:
     """Step 25: what the user knows about each paid channel, as one prior type for all of
     them (Meridian's media_prior_type and rf_prior_type) and a 90% range per channel."""
-    from .choices import PRIOR_TYPES, meridian_defaults, prior_from_range, prior_summary
+    from .. import currency as money_fmt
+    from .choices import meridian_defaults, prior_from_range, prior_labels, prior_summary
+
+    cur = money_fmt.of(ctx.kpi)
+    PRIOR_TYPES = prior_labels(cur)  # noqa: N806 - the labels, in the file's currency
 
     names = [c.name for c in ctx.channels]
     hard = [c for c in names if "hard_to_measure" in ctx.badges.get(c, [])]
@@ -54,8 +58,8 @@ def roi_priors(ctx: DCtx, answers: Answers) -> StepResult:
         question="I know about each channel's…",
         options=allowed, default="roi" if money else "contribution",
         context={"labels": PRIOR_TYPES, "money": money,
-                 "why_disabled": None if money else ("There is no ₹ value per KPI unit (step 5), so returns can't be "
-                                                     "stated in ₹; Meridian uses the share-of-sales prior in that case.")},
+                 "why_disabled": None if money else ("There is no money value per KPI unit (step 5), so returns can't be "
+                                                     "stated in money; Meridian uses the share-of-sales prior in that case.")},
     )
     kind = answers.ask(d_type) or d_type.default
     if kind not in allowed:
@@ -64,7 +68,7 @@ def roi_priors(ctx: DCtx, answers: Answers) -> StepResult:
         return StepResult(25, "ROI priors", Verdict.NEEDS_INPUT, f"'{kind}' isn't available here. {why}".strip(), {}, [], [d_type])
     ctx.config["prior_type"] = kind
     answers.describe(d_type, [f"priors set on {PRIOR_TYPES[kind]}"])
-    unit = "in %" if kind == "contribution" else "₹ returned per ₹"
+    unit = "in %" if kind == "contribution" else money_fmt.returned_per(cur)
     d = Decision(
         id="roi_ranges", step=25,
         question=(f"For any channel you know about, the range you're 90% sure of ({PRIOR_TYPES[kind]}, {unit}). "

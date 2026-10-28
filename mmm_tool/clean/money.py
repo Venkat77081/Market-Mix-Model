@@ -1,9 +1,10 @@
 """Step 13: normalise money.
 
   Level shift a money column whose level changes at one week by close to a
-             power of 10 (lakhs for a year, then rupees) is offered a
+             power of 10 (thousands for a year, then whole units) is offered a
              conversion of the lower-valued weeks. Thresholds in cleaning.yaml.
-  Units      money columns named in crore, lakh or million are converted to ₹
+  Units      money columns named in a unit word (million, or crore and lakh with the india
+             keyword pack) are converted to whole currency units
              when the money columns don't all use the same unit.
   Currency   warns when cells carry different currency symbols.
   Inflation  optional: restate spend and revenue in one base year's prices,
@@ -16,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .. import currency as money_fmt
 from ..ingest.keywords import load_keywords, words_of
 from ..ingest.types import Answers, Decision, StepResult, Verdict
 from .context import SPEND_ROLES, Ctx, settings
@@ -128,6 +130,7 @@ def normalise_money(ctx: Ctx, answers: Answers) -> StepResult:
 
     # Units
     units = {c: unit_of(c) for c in money}
+    unit_word = money_fmt.of(ctx.kpi)["unit"]
     named = {c: u for c, u in units.items() if u}
     converted = []
     if named and (len(named) < len(money) or len({u[1] for u in named.values()}) > 1):
@@ -136,17 +139,17 @@ def normalise_money(ctx: Ctx, answers: Answers) -> StepResult:
             step=STEP,
             question=("Money columns use different units: "
                       + ", ".join(f"{c} in {u[0]}" for c, u in named.items())
-                      + "; the rest in ₹. Convert them all to ₹?"),
+                      + f"; the rest in whole {unit_word}s. Convert them all to whole {unit_word}s?"),
             options=["convert", "keep"],
             default="convert",
-            context={"units": {c: {"unit": u[0], "rupees": u[1]} for c, u in named.items()}},
+            context={"units": {c: {"unit": u[0], "multiplier": u[1]} for c, u in named.items()}},
         )
         decisions.append(d)
         if (answers.ask(d) or "convert") == "convert":
-            for c, (unit, rupees) in named.items():
-                df[c] = df[c] * rupees
-                converted.append({"column": c, "unit": unit, "multiplied_by": rupees})
-            notes.append(f"{len(converted)} column(s) converted to ₹")
+            for c, (unit, mult) in named.items():
+                df[c] = df[c] * mult
+                converted.append({"column": c, "unit": unit, "multiplied_by": mult})
+            notes.append(f"{len(converted)} column(s) converted to whole {unit_word}s")
         else:
             warnings.append("Money columns keep different units; ROI across channels won't be comparable.")
 

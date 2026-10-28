@@ -56,11 +56,24 @@ Each column's suggested role comes from, in order:
 2. **Your words** in `roles.yaml` at the project root (or `MMM_ROLES_FILE`), checked before the
    built-in words. Example: `kharcha` means spend, and `policybazaar` is the aggregator channel.
    Edits apply on the next run; no restart needed.
-3. **Built-in words** in `mmm_tool/ingest/role_keywords.yaml`, which documents every field.
-4. **The values**: text with a few repeating values is a region; a 0/1 column is a flag.
+3. **Keyword packs** you turn on, checked after your words: words for one industry or country, in
+   `mmm_tool/ingest/packs/`. Two come with the tool: `insurance` (policies, premium, GWP, vehicle
+   registrations; a premium index lowers sales) and `india` (₹/INR/Rs, lakh and crore, festivals;
+   suggests INR when the file shows no currency). Turn them on with `packs: [india, insurance]` in
+   `roles.yaml` (this project's `roles.yaml` does), or `MMM_KEYWORD_PACKS=india,insurance`. A pack
+   of your own is a `.yaml` file in the same format, named by its path.
+4. **Built-in words** in `mmm_tool/ingest/role_keywords.yaml`, which documents every field. They hold
+   only words that mean the same in any industry or country.
+5. **The values**: text with a few repeating values is a region; a 0/1 column is a flag.
    Anything else becomes a low-confidence control.
 
 You still confirm every role before the run continues.
+
+**Currency (step 5).** The currency comes from the money columns' names and cells (`TV Spend ($)`,
+`spend_eur`, `₹4,500`), or a pack's default, and you can change it (`currency`: `INR`, `USD`,
+`EUR`, `GBP`, … or `none`). Every amount and the ROI unit use it, with its digit grouping: lakh and
+crore for INR (₹12,34,567; ₹2.3 Cr), thousands and millions otherwise ($1,234,567; $2.3M). With no
+currency, amounts are plain numbers and ROI is "return per unit of spend".
 
 ## Phase B: clean and align to weeks (steps 7–13)
 
@@ -116,7 +129,7 @@ interpolated or outlier-checked as a ratio. Step 5 records only where it comes f
 The revenue total is then dropped: Meridian gets the KPI and revenue per KPI. When step 12 fills or
 corrects a zero-KPI week, a zero revenue in that week is filled with it.
 
-The unit words in step 13 are in `role_keywords.yaml`; add your own in `roles.yaml`. The thresholds Phase B uses (when blanks count as
+The unit words in step 13 are in `role_keywords.yaml` (million, thousand, billion) and the india pack (lakh, crore); add your own in `roles.yaml`. The thresholds Phase B uses (when blanks count as
 zero spend, the 10x jump ratio, how close to a power of 10 a level shift must be) are in
 `mmm_tool/clean/cleaning.yaml`.
 
@@ -160,7 +173,7 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 
 | Step | Default | You can change | Meridian setting |
 |---|---|---|---|
-| 21 Calendar flags | India insurance preset in `mmm_tool/configure/calendars.yaml`: tax season, financial year-end, Diwali and festive weeks | events on or off (`calendar_events`), your own date ranges (`custom_events`); each control's effect on sales, Either / Raises / Lowers (`control_direction`) | added to `controls`; direction: `gamma_c` |
+| 21 Calendar flags | no preset; the presets in `mmm_tool/configure/calendars.yaml` are India insurance (tax season, financial year-end, Diwali and festive weeks) and US retail (Black Friday and Cyber week, Christmas shopping) | the preset (`calendar_preset`), its events on or off (`calendar_events`), your own date ranges (`custom_events`); each control's effect on sales, Either / Raises / Lowers (`control_direction`) | added to `controls`; direction: `gamma_c` |
 | 22 Carryover length | 8 weeks | 2–13 (`max_lag`) | `max_lag` |
 | 23 Carryover shape | geometric; binomial suggested for TV and outdoor; fade speed Don't know; diminishing returns Yes | per channel: shape (`adstock_shape`), how fast it fades (`carryover_speed`), diminishing returns (`diminishing_returns`) | `adstock_decay_spec`, `alpha_m`, `saturation_spec` |
 | 24 Baseline flexibility | one knot per quarter | `knots`, with a live preview (below); amber above weeks/8, red above weeks/6 | `knots` |
@@ -189,6 +202,10 @@ records the choice in the decision log and marks a Phase E fit out of date. Thre
 it (it can lie beyond the slider) and **Apply** saves it. The preview is a guide; Meridian
 estimates the real baseline in step 29. Code: `configure/baseline.py`; property tests on synthetic
 data with a known truth in `tests/test_step24.py` and `tests/gen.py`.
+
+**Calendar presets (step 21).** A `calendars.yaml` at the project root (or `MMM_CALENDARS`) adds
+presets of your own and sets the one step 21 suggests (`default_preset`); this project's file
+suggests India insurance. Without it, step 21 starts with none.
 
 **Prior choices (steps 21, 23, 25).** Every choice goes into the model configuration, the
 decision log (for example `#23 search fades fast (you)`) and the export; changing one marks a

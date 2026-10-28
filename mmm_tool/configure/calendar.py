@@ -1,9 +1,9 @@
 """Step 21: calendar flags.
 
-Adds a 0/1 control column per business event: by default the India
-insurance preset (tax-saving season, financial year-end, Diwali and festive
-weeks) from calendars.yaml. The user turns events on or off and adds their
-own date ranges. A flag that agrees with a column already in the data in at
+Adds a 0/1 control column per business event. The user picks a preset of
+events (calendar_preset: none by default; presets are in calendars.yaml and
+the project's own ./calendars.yaml, which can also set default_preset), turns
+its events on or off, and adds their own date ranges. A flag that agrees with a column already in the data in at
 least 95% of weeks, or that is the same in every week, is not added.
 """
 from __future__ import annotations
@@ -22,7 +22,14 @@ STEP = 21
 NAME = "Calendar flags"
 NAME_OK = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 SAME_EVENT_AGREEMENT = 0.95
-PRESET = "india_insurance"
+NO_PRESET = "none"
+
+
+def preset_of(values: dict, cal: dict | None = None) -> tuple[str, dict]:
+    """(name, preset) chosen in step 21; name "none" gives no events."""
+    cal = cal or load_calendars()
+    name = values.get("calendar_preset", cal["default_preset"])
+    return name, cal["presets"].get(name) or {"label": "No preset", "events": []}
 
 
 def _days(event: dict, years: range) -> set[date]:
@@ -55,7 +62,7 @@ def planned_events(values: dict) -> list[dict]:
     """The events step 21 will add, from the answers given so far: the preset
     events switched on (all by default) and any readable custom events. Step 19
     checks spend against these before step 21 runs."""
-    preset = load_calendars()["presets"][PRESET]
+    _, preset = preset_of(values)
     events = {e["name"]: e for e in preset["events"]}
     chosen = values.get("calendar_events")
     out = [events[n] for n in (list(events) if chosen is None else chosen) if n in events]
@@ -72,8 +79,20 @@ def planned_events(values: dict) -> list[dict]:
 
 def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
     cal = load_calendars()
-    preset_name = PRESET
-    preset = cal["presets"][preset_name]
+    d_preset = Decision(
+        id="calendar_preset",
+        step=STEP,
+        question="Which calendar of business events fits this data? Pick none and add your own events if no preset fits.",
+        options=[NO_PRESET] + list(cal["presets"]),
+        default=cal["default_preset"],
+        context={"presets": {n: p.get("label", n) for n, p in cal["presets"].items()}},
+    )
+    preset_name = answers.ask(d_preset) or d_preset.default
+    if preset_name != NO_PRESET and preset_name not in cal["presets"]:
+        d_preset.blocking, d_preset.answered = True, False
+        return StepResult(STEP, NAME, Verdict.NEEDS_INPUT,
+                          f"Unknown calendar preset '{preset_name}'; choose {', '.join(d_preset.options)}.", {}, [], [d_preset])
+    preset = cal["presets"].get(preset_name) or {"label": "No preset", "events": []}
     events = {e["name"]: e for e in preset["events"]}
     weeks = ctx.weeks
 
@@ -95,7 +114,7 @@ def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
     chosen = answers.ask(d_on)
     chosen = list(events) if chosen is None else chosen
     custom = answers.ask(d_custom) or []
-    decisions = [d_on, d_custom]
+    decisions = [d_preset, d_on, d_custom] if events else [d_preset, d_custom]
 
     problems = [f"unknown preset event '{n}'" for n in chosen if n not in events]
     todo = [events[n] | {"source": "preset"} for n in chosen if n in events]
@@ -156,7 +175,7 @@ def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
     if set_dirs:
         summary += "; effect direction set for " + ", ".join(f"{c} ({DIRECTION_LABEL[v]})" for c, v in set_dirs.items())
     return StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary + ".",
-                      {"events": rows, "preset": preset["label"], "directions": dirs,
+                      {"events": rows, "preset": preset["label"], "preset_name": preset_name, "directions": dirs,
                        "suggest_direction": d_dir.context["suggest"]}, warnings, decisions)
 
 
@@ -166,7 +185,11 @@ def control_directions(ctx: DCtx, answers: Answers) -> tuple[Decision, str | Non
     from ..ingest.keywords import words_of
 
     controls = [c for c, r in ctx.roles.items() if r == "control" and c in ctx.df.columns]
-    words = load_calendars().get("control_direction_words", {})
+    from ..ingest.keywords import load_keywords
+
+    words = {k: list(v) for k, v in (load_calendars().get("control_direction_words") or {}).items()}
+    for way, extra in load_keywords().direction_words.items():          # keyword packs (insurance: premium)
+        words.setdefault(way, []).extend(extra)
     suggest = {}
     for c in controls:
         w = set(words_of(c).split())

@@ -29,6 +29,7 @@ from typing import Any
 
 import numpy as np
 
+from .. import currency as money_fmt
 AGGREGATES = ("All Paid Channels", "All Channels")
 CONFIDENCE = 0.9
 SPEND_MULTIPLIERS = [round(x * 0.1, 1) for x in range(0, 21)] + [2.5, 3.0]
@@ -210,13 +211,14 @@ def build_summary(mmm, d, e_steps: dict[int, dict], badges: dict[str, list[str]]
     last52 = weeks[-52:] if len(weeks) >= 104 else None
     geos = int(np.asarray(mmm.input_data.kpi).shape[0])
     kpi_name = d.kpi.get("kpi")
+    cur = money_fmt.of(d.kpi)
     out = {
         "version": {
             "data_version": model_info.get("data_version"), "saved_at": model_info.get("saved_at"),
             "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "meridian": model_info.get("meridian"),
             "sampler": model_info.get("sampler"), "first_week": weeks[0], "last_week": weeks[-1], "weeks": len(weeks),
             "geos": geos, "kpi": kpi_name, "kpi_type": d.kpi.get("kpi_type"), "money": money,
-            "roi_unit": "₹ per ₹" if money else f"{kpi_name} per ₹",
+            "roi_unit": money_fmt.per(cur) if money else f"{kpi_name} per {money_fmt.unit(cur)}", "currency": cur,
             "not_converged": bool(model_info.get("not_converged")), "seed": model_info.get("seed"),
         },
         "fit": fit_health(an, mmm, e_steps, d.config),
