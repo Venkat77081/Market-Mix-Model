@@ -123,11 +123,11 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 
 | Step | Default | You can change | Meridian setting |
 |---|---|---|---|
-| 21 Calendar flags | India insurance preset in `mmm_tool/configure/calendars.yaml`: tax season, financial year-end, Diwali and festive weeks | events on or off (`calendar_events`), your own date ranges (`custom_events`) | added to `controls` |
+| 21 Calendar flags | India insurance preset in `mmm_tool/configure/calendars.yaml`: tax season, financial year-end, Diwali and festive weeks | events on or off (`calendar_events`), your own date ranges (`custom_events`); each control's effect on sales, Either / Raises / Lowers (`control_direction`) | added to `controls`; direction: `gamma_c` |
 | 22 Carryover length | 8 weeks | 2–13 (`max_lag`) | `max_lag` |
-| 23 Carryover shape | geometric; binomial suggested for TV and outdoor | per channel (`adstock_shape`) | `adstock_decay_spec` |
+| 23 Carryover shape | geometric; binomial suggested for TV and outdoor; fade speed Don't know; diminishing returns Yes | per channel: shape (`adstock_shape`), how fast it fades (`carryover_speed`), diminishing returns (`diminishing_returns`) | `adstock_decay_spec`, `alpha_m`, `saturation_spec` |
 | 24 Baseline flexibility | one knot per quarter | `knots`, with a live preview (below); amber above weeks/8, red above weeks/6 | `knots` |
-| 25 ROI priors | Meridian's LogNormal(0.2, 0.9) | a 90% ROI range per channel (`roi_ranges`) | `roi_m` / `roi_rf` |
+| 25 ROI priors | average return (ROI), Meridian's default prior | what you know (`prior_type`: `roi`, `mroi` or `contribution`) and a 90% range per channel (`roi_ranges`) | `media_prior_type`, `roi_m` / `mroi_m` / `contribution_m` (and `_rf`) |
 | 26 Lift-test calibration | none | tests: channel, dates, ROI and 90% range (`lift_tests`); several per channel are combined | prior + `roi_calibration` |
 | 27 Holdout | last 13 weeks | 8–26 (`holdout_weeks`) | `holdout` |
 
@@ -153,6 +153,32 @@ it (it can lie beyond the slider) and **Apply** saves it. The preview is a guide
 estimates the real baseline in step 29. Code: `configure/baseline.py`; property tests on synthetic
 data with a known truth in `tests/test_step24.py` and `tests/gen.py`.
 
+**Prior choices (steps 21, 23, 25).** Every choice goes into the model configuration, the
+decision log (for example `#23 search fades fast (you)`) and the export; changing one marks a
+Phase E fit out of date. Priors are float64 `meridian.backend.tfd` distributions, with one value
+per channel or control looked up by name in `input_data`'s order, never by the order on screen.
+
+- *How fast does it fade?* (23): "share of the effect still working next week". Don't know keeps
+  Meridian's Uniform(0, 1), i.e. Beta(1, 1); Fast, Medium and Slow are Beta(2, 8), Beta(4, 6) and
+  Beta(7, 3) on `alpha_m` (mean 20%, 40%, 70%). For binomial decay the share is
+  `(1 - 1/W) ** (1/alpha - 1)` with W = max_lag + 1 (Meridian's `_map_alpha_for_binomial_decay`),
+  so the preset is converted: a Beta on alpha whose median gives the same share.
+- *Diminishing returns* (23): No sets `saturation_spec={channel: "none"}` (a straight response
+  curve). No is hinted only for a channel under 5% of paid spend whose highest week is under 2x its
+  typical week, and choosing it warns that the optimizer will add budget up to the channel's limit.
+- *I know about each channel's…* (25): average return (`roi`), return on the next rupee (`mroi`)
+  or share of sales (`contribution`), with a 90% low-high range per channel. Returns are LogNormal
+  with mu = ln sqrt(low x high) and sigma = ln(high/low) / (2 x 1.645); a share is a Beta whose
+  5th and 95th percentiles are solved to match the range (and checked). Blank channels keep
+  Meridian's default. Without a ₹ value per KPI (step 5), only share of sales is offered. The
+  table shows the median and 90% range of the distribution actually built. Lift-test calibration
+  (26) needs the ROI type.
+- *Effect on sales* (21): Either / Raises / Lowers per control and calendar flag. A direction is a
+  TruncatedNormal(0, Meridian's default `gamma_c` scale) cut at zero. Names suggest one (price,
+  premium, competitor: lowers; season, festive, holiday flags: raises; words in `calendars.yaml`),
+  never applied for you. Step 32 warns when a control's posterior piles up at zero, i.e. the data
+  points the other way.
+
 With Meridian installed (`pip install -r requirements-model.txt`, about 1.5 GB with TensorFlow),
 `mmm_tool.configure.spec.build_input_data(result)` and `build_model_spec(result.config, input_data)`
 give the `InputData` and `ModelSpec` to fit. Tested with google-meridian 2.1.0: the tests build a
@@ -175,16 +201,36 @@ the other checks, so every reason shows; the final fit (36) runs only for an acc
 | Step | What it checks | Pass rule | Kind |
 |---|---|---|---|
 | 28 Prior check | `sample_prior`: does the prior imply believable sales? | prior 90% range of total KPI covers the actual total and is at most 10× as wide as it | warning |
-| 29 Fit with holdout | `sample_posterior` with the step 27 weeks held back | quick: 2 chains, 300/300/300; full: 4 chains, 500 adapt, 500 burn-in, 1,000 kept | — |
-| 30 Convergence | R-hat for every parameter | all below 1.1; otherwise one rerun with twice the draws, then fail | gate |
+| 29 Fit with holdout | `sample_posterior` with the step 27 weeks held back, with the run's seed | quick: 2 chains, 300/300/300; full: 4 chains, 500 adapt, 500 burn-in, 1,000 kept; or Custom | — |
+| 30 Convergence | largest R-hat, ignoring NaN (parameters the model doesn't use) | all below 1.1; otherwise one automatic retry with twice the adapt and burn-in, then fail and wait | gate |
 | 31 Holdout accuracy | test and train MAPE and R² (national) | test MAPE below 10% and below a same-week-last-year forecast | gate |
 | 32 Plausibility | ROI per channel, baseline share, contributions | ROI 0.05–20 (when ROI is ₹ per ₹); baseline 20–95% of the KPI; baseline + contributions = the fit | gate |
 | 33 Did the data teach anything? | each channel's ROI, posterior vs prior | 90% range at least 30% narrower than the prior's, else badge **prior-driven** | badge |
 | 34 Stability (optional) | refits without the first 26, last 26, and both | ROI CV below 0.3, else badge **unstable** | badge |
 | 35 Placebo (optional) | an extra channel: a real channel's weekly amounts in random weeks | not credited (see below) | warning |
-| 36 Final fit and save | refit on every week, `save_mmm` | saved as `model.pkl` with `model_meta.json`: data version, settings, gate results | — |
+| 36 Final fit and save | refit on every week (same sampler, seed and retry rule as step 30), `save_mmm` | saved as `model.pkl` with `model_meta.json`: data version, settings, seed, attempts, gate results, decision log | — |
 
 Thresholds and the two sampler presets are in `mmm_tool/fit/fit.yaml`.
+
+**Sampler, seed and run time (step 29).** *Custom* takes chains (at least 2), adapt, burn-in and
+kept draws (each at least 100); fewer than 4 chains or 500 kept draws shows an amber hint. Every
+run gets a random seed once, shown on the form (you can type your own, or `--seed` on the command
+line); it goes to `sample_prior` and `sample_posterior` and into the result and decision log, and
+the same data, settings and seed reproduce the fit exactly. The run-time estimate is
+`a + b x weeks x regions x channels x draws per chain x ceil(chains / cores)`, fitted by least
+squares on this machine's fit log (`~/.cache/mmm_tool/fit_times.jsonl`, or `MMM_FIT_LOG`): "about
+4 min (from 12 past runs)". Before 3 runs it times two fits of the bundled sample once
+(`python -m mmm_tool.fit --calibrate`) and says "(rough)". a, the start-up cost, is large.
+
+**When step 30 fails.** One automatic retry doubles adapt and burn-in (same chains, kept draws and
+seed); the screen shows "Retrying with longer warm-up (about N min)" with Cancel, and a table of
+both attempts (settings, largest R-hat, worst parameter, time). If it still fails, steps 31 onward
+wait: the step lists the unsettled parameters in plain words and what to try (more chains and kept
+draws; fewer knots; combine channels; tighter priors). **Continue anyway** carries on from the
+saved holdout fit without refitting, and every later screen and the export (summary, Meridian's
+HTML report, `model_meta.json`) carries a **did not converge** badge. Step 36 uses the same rule;
+there is never more than one automatic retry.
+
 
 Step 35 differs from the roadmap's wording ("its ROI range includes zero") on purpose: Meridian's
 ROI priors are LogNormal, so an ROI range can never include zero. The placebo counts as credited
@@ -198,7 +244,9 @@ Download the accepted model at `/api/runs/<id>/model.pkl` and load it with
 `tests/test_step24.py` also drives the step 24 panel in a real browser (it needs Node with Playwright, and skips otherwise).
 
 `pytest` checks the gate rules and the job bookkeeping in seconds. The tests that really fit with
-Meridian take several minutes, so they run only with `MMM_FIT_TESTS=1 pytest tests/test_phase_e.py`.
+Meridian take several minutes, so they run only with `MMM_FIT_TESTS=1 pytest tests/test_phase_e.py tests/test_priors_sampler.py`.
+`tests/test_priors_sampler.py` holds the property tests for the prior choices, the sampler, the seed,
+the estimate and the retry.
 
 ## Phase F: Model Summary (steps 37–42)
 

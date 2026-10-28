@@ -47,7 +47,9 @@ class AnswersIn(BaseModel):
 
 
 class FitIn(BaseModel):
-    sampler: str = "quick"
+    sampler: str = "quick"                      # a preset from fit.yaml, or "custom"
+    custom: dict[str, Any] | None = None        # n_chains, n_adapt, n_burnin, n_keep for "custom"
+    seed: int | None = None                     # defaults to the run's own seed
     stability: bool = False
     placebo: bool = False
 
@@ -136,10 +138,25 @@ def _evaluate(d: Path) -> dict:
             "fit": _clean(fit), "meridian_installed": meridian_installed()}
 
 
+def _new_seed() -> int:
+    """A run's seed: random, made once, shown on the Phase E screen and saved with every fit."""
+    import secrets
+
+    return secrets.randbelow(2**31 - 1) + 1
+
+
+def _run_seed(d: Path) -> int:
+    meta = _meta(d)
+    if not meta.get("seed"):
+        meta["seed"] = _new_seed()
+        (d / "meta.json").write_text(json.dumps(meta))
+    return int(meta["seed"])
+
+
 def _new_run(filename: str) -> Path:
     d = RUNS_DIR / uuid.uuid4().hex[:12]
     d.mkdir(parents=True)
-    (d / "meta.json").write_text(json.dumps({"file": filename, "answers": {}}))
+    (d / "meta.json").write_text(json.dumps({"file": filename, "answers": {}, "seed": _new_seed()}))
     return d
 
 
@@ -191,7 +208,7 @@ def create_sample_run(name: str) -> dict:
         raise HTTPException(404, "Unknown sample.")
     tmp = _new_run("")
     path = samples.SAMPLES[name][1](tmp)
-    (tmp / "meta.json").write_text(json.dumps({"file": path.name, "answers": {}}))
+    (tmp / "meta.json").write_text(json.dumps({"file": path.name, "answers": {}, "seed": _new_seed()}))
     return _evaluate(tmp)
 
 
@@ -315,19 +332,78 @@ def get_fit_settings() -> dict:
 @app.post("/api/runs/{run_id}/fit")
 def start_fit(run_id: str, body: FitIn) -> dict:
     """Start Phase E as a background job. Poll GET .../fit for progress."""
+    from ..fit.context import check_custom
+
     d = _run_dir(run_id)
     if not meridian_installed():
         raise HTTPException(503, "Phase E needs google-meridian: pip install -r requirements-model.txt, then restart.")
-    if body.sampler not in fit_settings()["samplers"]:
+    options = body.model_dump()
+    if body.sampler == "custom":
+        errors, _ = check_custom(body.custom or {})
+        if errors:
+            raise HTTPException(400, "Custom sampler: " + "; ".join(errors) + ".")
+        options["sampler"] = {"label": "Custom", **{k: int(body.custom[k]) for k in ("n_chains", "n_adapt", "n_burnin", "n_keep")}}
+    elif body.sampler not in fit_settings()["samplers"]:
         raise HTTPException(400, f"Unknown sampler '{body.sampler}'.")
+    run_seed = _run_seed(d)
+    options["seed_source"] = "user" if body.seed is not None and body.seed != run_seed else "default"
+    options["seed"] = int(body.seed) if body.seed is not None else run_seed
+    options.pop("custom", None)
     res = _evaluate(d)["result_d"]
     if not res or res["status"] != "complete":
         raise HTTPException(409, "Phase D is not complete yet.")
+    return _start_job(d, options)
+
+
+def _start_job(d: Path, options: dict) -> dict:
     memory = os.environ.get("MMM_ROLE_MEMORY") or str(RUNS_DIR / "role_memory.json")
     try:
-        return _clean(job.start(d, body.model_dump(), memory=memory))
+        return _clean(job.start(d, options, memory=memory))
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/runs/{run_id}/fit/continue")
+def continue_fit(run_id: str) -> dict:
+    """Step 30 failed: carry on with steps 31+ anyway, from the saved holdout fit. Every later
+    result is badged 'did not converge'."""
+    d = _run_dir(run_id)
+    st = job.status(d) or {}
+    if not (st.get("result") or {}).get("waiting"):
+        raise HTTPException(409, "Nothing is waiting: continue is only offered when step 30 fails.")
+    req = json.loads((job.fit_dir(d) / "request.json").read_text(encoding="utf-8"))
+    return _start_job(d, {**req["options"], "continue_unconverged": True})
+
+
+_calibration: subprocess.Popen | None = None
+
+
+@app.get("/api/runs/{run_id}/fit-estimate")
+def fit_estimate(run_id: str) -> dict:
+    """What the Phase E form needs to estimate run time as the user types: a and b for this
+    machine, and this run's size. Starts the one-off calibration if there's nothing to go on."""
+    global _calibration
+    from ..fit import estimate
+
+    d = _run_dir(run_id)
+    meta = _meta(d)
+    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    if run.d is None or run.d.status != "complete":
+        raise HTTPException(409, "Phase D is not complete yet.")
+    geo = run.d.coord_to_columns()["coord_to_columns"].get("geo")
+    weeks = int(run.d.table[run.d.coord_to_columns()["coord_to_columns"]["time"]].nunique())
+    geos = int(run.d.table[geo].nunique()) if geo else 1
+    channels = len(run.d.channels) + sum(1 for r in run.d.roles.values() if r == "organic_media")
+    model = estimate.model()
+    calibrating = _calibration is not None and _calibration.poll() is None
+    if model["a"] is None and not calibrating and meridian_installed():
+        root = str(Path(__file__).resolve().parents[2])
+        env = {**os.environ, "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}
+        _calibration = subprocess.Popen([sys.executable, "-m", "mmm_tool.fit", "--calibrate"], env=env,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+        calibrating = True
+    return _clean({**model, "calibrating": calibrating, "n_weeks": weeks, "n_geos": geos, "n_channels": channels,
+                   "seed": _run_seed(d), "presets": fit_settings()["samplers"]})
 
 
 @app.get("/api/runs/{run_id}/fit")

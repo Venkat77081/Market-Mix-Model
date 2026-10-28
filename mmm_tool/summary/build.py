@@ -217,6 +217,7 @@ def build_summary(mmm, d, e_steps: dict[int, dict], badges: dict[str, list[str]]
             "sampler": model_info.get("sampler"), "first_week": weeks[0], "last_week": weeks[-1], "weeks": len(weeks),
             "geos": geos, "kpi": kpi_name, "kpi_type": d.kpi.get("kpi_type"), "money": money,
             "roi_unit": "₹ per ₹" if money else f"{kpi_name} per ₹",
+            "not_converged": bool(model_info.get("not_converged")), "seed": model_info.get("seed"),
         },
         "fit": fit_health(an, mmm, e_steps, d.config),
         "badges": trust_badges(badges, e_steps, d.config, paid),
@@ -225,6 +226,7 @@ def build_summary(mmm, d, e_steps: dict[int, dict], badges: dict[str, list[str]]
         "curves": response_curves(an, money),
         "carryover": carryover(an, paid),
         "paid": paid,
+        "decision_log": list(getattr(d, "decision_log", None) or []),
     }
     return _jsonable(out)
 

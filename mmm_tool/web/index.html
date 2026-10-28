@@ -728,7 +728,19 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           <input id="ev-name" placeholder="name, e.g. price_change" ${inputStyle} aria-label="Event name">
           <input id="ev-start" type="date" ${inputStyle} aria-label="Start date"> to <input id="ev-end" type="date" ${inputStyle} aria-label="End date">
           <button class="btn" type="submit">Add</button></span></form>
-      <p class="muted small">Preset: ${esc(d.preset)}. ${custom.length} event(s) of your own.</p>`;
+      <p class="muted small">Preset: ${esc(d.preset)}. ${custom.length} event(s) of your own.</p>
+      ${stepDirections(s)}`;
+  }
+  const DIR_TEXT = { either: "Either", raises: "Raises sales", lowers: "Lowers sales" };
+  function stepDirections(s) {
+    const dd = decision(s, "control_direction");
+    if (!dd || !Object.keys(dd.default).length) return "";
+    const chosen = { ...dd.default, ...(answers.control_direction || {}) }, sug = dd.context.suggest || {};
+    return `<h4 style="margin:4px 0 0;font-size:13px">Effect on sales</h4><p class="muted small">${esc(dd.question)} A direction limits the control's effect to that side of zero.</p>
+      <div class="scroll"><table style="min-width:480px"><thead><tr><th>Control</th><th>Effect on sales</th><th></th></tr></thead><tbody>
+      ${Object.keys(dd.default).map(c => `<tr><td class="mono small">${esc(c)}</td>
+        <td><select data-dir="${esc(c)}" aria-label="Effect of ${esc(c)} on sales">${Object.keys(DIR_TEXT).map(o => `<option value="${o}" ${chosen[c] === o ? "selected" : ""}>${DIR_TEXT[o]}</option>`).join("")}</select></td>
+        <td class="muted small">${sug[c] && chosen[c] === "either" ? `suggested from its name: ${DIR_TEXT[sug[c]].toLowerCase()}` : ""}</td></tr>`).join("")}</tbody></table></div>`;
   }
 
   function step22(s) {
@@ -736,12 +748,23 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="max_lag" aria-label="Carryover weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
   }
 
+  const SPEED_TEXT = { dont_know: "Don't know", fast: "Fast", medium: "Medium", slow: "Slow" };
   function step23(s) {
     const dec = decision(s, "adstock_shape"), shapes = { ...dec.default, ...(answers.adstock_shape || {}) };
-    const sug = dec.context.suggest_binomial || [];
-    return `<p class="muted small">${esc(dec.question)}</p><div class="scroll"><table style="min-width:400px"><thead><tr><th>Channel</th><th>Shape</th><th></th></tr></thead><tbody>
-      ${Object.keys(dec.default).map(c => `<tr><td><b>${esc(c)}</b></td><td><select data-shape="${esc(c)}" aria-label="Carryover shape for ${esc(c)}">${["geometric", "binomial"].map(o => `<option ${shapes[c] === o ? "selected" : ""}>${o}</option>`).join("")}</select></td>
-        <td class="muted small">${sug.includes(c) ? "often peaks later: consider binomial" : ""}</td></tr>`).join("")}</tbody></table></div>`;
+    const dsp = decision(s, "carryover_speed"), speeds = { ...dsp.default, ...(answers.carryover_speed || {}) };
+    const dsat = decision(s, "diminishing_returns"), sat = { ...dsat.default, ...(answers.diminishing_returns || {}) };
+    const d = s.details, sug = dec.context.suggest_binomial || [], hintNo = dsat.context.suggest_no || [];
+    const share = v => `${Math.round(v * 100)}%`;
+    return `<p class="muted small">${esc(dec.question)}</p>
+      <div class="scroll"><table style="min-width:620px"><thead><tr><th>Channel</th><th>Shape</th><th style="white-space:normal">How fast does it fade?</th><th style="white-space:normal">Still working next week</th><th style="white-space:normal">Diminishing returns</th></tr></thead><tbody>
+      ${Object.keys(dec.default).map(c => { const nw = (d.carryover_prior[c] || {}).next_week;
+        return `<tr><td><b>${esc(c)}</b>${sug.includes(c) ? '<div class="muted small">often lingers: consider binomial</div>' : ""}</td>
+        <td><select data-shape="${esc(c)}" aria-label="Carryover shape for ${esc(c)}">${["geometric", "binomial"].map(o => `<option ${shapes[c] === o ? "selected" : ""}>${o}</option>`).join("")}</select></td>
+        <td><select data-speed="${esc(c)}" aria-label="How fast ${esc(c)}'s effect fades">${Object.keys(SPEED_TEXT).map(o => `<option value="${o}" ${speeds[c] === o ? "selected" : ""}>${SPEED_TEXT[o]}</option>`).join("")}</select></td>
+        <td class="small">${nw ? `about ${share(nw.median)}<div class="muted" style="white-space:nowrap">90%: ${share(nw.low)}–${share(nw.high)}</div>` : ""}</td>
+        <td><select data-sat="${esc(c)}" aria-label="Diminishing returns for ${esc(c)}"><option value="yes" ${sat[c] === "yes" ? "selected" : ""}>Yes</option><option value="no" ${sat[c] === "no" ? "selected" : ""}>No</option></select>
+          ${hintNo.includes(c) && sat[c] !== "no" ? '<div class="muted small">small and steady: No may fit</div>' : ""}</td></tr>`; }).join("")}</tbody></table></div>
+      <p class="muted small">Fast, Medium and Slow mean about 20%, 40% and 70% of the effect still working the week after it runs; Don't know keeps Meridian's default (any share is equally likely). Binomial fades slowly at first, then drops off by the end of the carryover length (step 22); its presets are converted so the shares mean the same.</p>`;
   }
 
   // Step 24: the knots preview. The server computes every K once (baseline-preview);
@@ -978,14 +1001,24 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   function step25(s) {
-    const pr = s.details.priors || {}, dec = decision(s, "roi_ranges");
+    const d = s.details, pr = d.priors || {}, dt = decision(s, "prior_type"), dec = decision(s, "roi_ranges");
+    const kind = d.prior_type || (dt ? current(dt) : "roi"), share = kind === "contribution";
     const given = { ...(answers.roi_ranges || {}) };
-    const hard = dec.context.hard_to_measure || [];
-    return `<p class="muted small">${esc(dec.question)}</p><div class="scroll"><table style="min-width:640px"><thead><tr><th>Channel</th><th>Prior median</th><th>90% range</th><th>From</th><th>Your expected range</th></tr></thead><tbody>
-      ${Object.entries(pr).map(([c, p]) => `<tr><td><b>${esc(c)}</b>${hard.includes(c) ? ' <span class="pill warn">hard to measure</span>' : ""}</td><td class="num">${p.median.toFixed(2)}</td><td class="num">${p.low.toFixed(2)}–${p.high.toFixed(2)}</td>
-        <td>${p.source === "benchmark" ? '<span class="pill pass">your range</span>' : '<span class="muted small">default</span>'}</td>
-        <td><span style="display:inline-flex;gap:6px;align-items:center"><input type="number" step="0.01" min="0" data-roi-lo="${esc(c)}" value="${given[c] ? given[c].low : ""}" placeholder="low" style="width:72px" aria-label="Low ROI for ${esc(c)}">–<input type="number" step="0.01" min="0" data-roi-hi="${esc(c)}" value="${given[c] ? given[c].high : ""}" placeholder="high" style="width:72px" aria-label="High ROI for ${esc(c)}"></span></td></tr>`).join("")}</tbody></table></div>
-      <div style="display:flex;gap:8px"><button class="btn" id="apply-roi">Apply ranges</button>${Object.keys(given).length ? '<button class="btn" id="clear-roi">Clear all</button>' : ""}</div>`;
+    const hard = (dec && dec.context.hard_to_measure) || [];
+    const fmt = v => v == null ? "" : share ? `${(v * 100).toFixed(1)}%` : v.toFixed(2);
+    const shown = v => v == null || v === "" ? "" : share ? +(v * 100).toFixed(4) : v;
+    const labels = dt ? dt.context.labels : {}, allowed = dt ? dt.options : ["roi"];
+    const kinds = Object.keys(labels);
+    return `<div class="decide soft" style="display:grid;gap:8px"><p><b>I know about each channel's…</b></p>
+        <div class="seg" role="group" aria-label="Prior type">${kinds.map(k => `<button data-ptype="${k}" aria-pressed="${kind === k}" ${allowed.includes(k) ? "" : "disabled"}>${esc(labels[k])}</button>`).join("")}</div>
+        ${dt && dt.context.why_disabled ? `<p class="muted small">${esc(dt.context.why_disabled)}</p>` : ""}</div>
+      <p class="muted small">${dec ? esc(dec.question) : ""}</p>
+      <div class="scroll"><table style="min-width:600px"><thead><tr><th>Channel</th><th>Your 90% range</th><th>Prior median</th><th>Prior 90% range</th><th>From</th></tr></thead><tbody>
+      ${Object.entries(pr).map(([c, p]) => `<tr><td><b>${esc(c)}</b>${hard.includes(c) ? ' <span class="pill warn">hard to measure</span>' : ""}</td>
+        <td><span style="display:inline-flex;gap:6px;align-items:center"><input type="number" step="any" min="0" data-roi-lo="${esc(c)}" value="${given[c] ? shown(given[c].low) : ""}" placeholder="low" style="width:64px" aria-label="Low end for ${esc(c)}">–<input type="number" step="any" min="0" data-roi-hi="${esc(c)}" value="${given[c] ? shown(given[c].high) : ""}" placeholder="high" style="width:64px" aria-label="High end for ${esc(c)}">${share ? "%" : ""}</span></td>
+        <td class="num">${fmt(p.median)}</td><td class="num">${fmt(p.low)}–${fmt(p.high)}</td>
+        <td>${p.source === "benchmark" ? '<span class="pill pass">your range</span>' : p.source === "lift_test" ? '<span class="pill pass">lift test</span>' : '<span class="muted small">Meridian default</span>'}</td></tr>`).join("")}</tbody></table></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="apply-roi" data-share="${share}">Apply ranges</button>${Object.keys(given).length ? '<button class="btn" id="clear-roi">Clear all</button>' : ""}</div>`;
   }
 
   function step26(s) {
@@ -1209,7 +1242,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div><p class="muted small">Shown beside these channels' ROI on every later screen.</p></div>` : ""}
           <div class="card"><h4>Run-level warnings</h4>${r.warnings.length ? `<ul class="warnlist">${r.warnings.map(w => `<li><span class="sn">#${w.step}</span><span>${esc(w.message)}</span></li>`).join("")}</ul>` : '<p class="muted small">None so far.</p>'}</div>
-          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.map(l => `<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"}${l.source === "user" && l.default != null && typeof l.default !== "object" && l.default !== l.answer ? `; default ${esc(l.default)}` : ""})</div>`).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
+          <div class="card"><h4>Decision log</h4>${log.length ? `<div class="log">${log.flatMap(l => l.lines ? l.lines.map(t => `<div>#${l.step} ${esc(t)} (${l.source === "user" ? "you" : "default"})</div>`)
+          : [`<div>#${l.step} ${esc(l.decision)} = ${esc(typeof l.answer === "object" && l.answer !== null ? "(table)" : l.answer)} (${l.source === "user" ? "you" : "default"}${l.source === "user" && l.default != null && typeof l.default !== "object" && l.default !== l.answer ? `; default ${esc(l.default)}` : ""})</div>`]).join("")}</div>` : '<p class="muted small">No answers yet.</p>'}</div>
           ${m ? `<div class="card"><h4>Meridian mapping</h4><div class="log">${mapping}</div></div>` : ""}
         </aside>
       </div>`;
@@ -1247,8 +1281,15 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <div><dt>Prior 90% range</dt><dd>${num(Math.round(d.prior_low))} – ${num(Math.round(d.prior_high))}</dd></div><div><dt>Width vs actual</dt><dd>${d.width_ratio.toFixed(1)}×</dd></div></dl>`; },
     29: s => { const d = s.details, k = d.sampler; return `<dl class="kv"><div><dt>Sampler</dt><dd>${k.n_chains} chains · ${k.n_adapt} adapt · ${k.n_burnin} burn-in · ${k.n_keep} kept</dd></div>
       <div><dt>Time</dt><dd>${num(d.seconds)} s</dd></div><div><dt>Held back</dt><dd>${d.holdout ? `${esc(d.holdout.start)} to ${esc(d.holdout.end)}` : "nothing"}</dd></div></dl>`; },
-    30: s => { const d = s.details, last = d.rerun || d.first; return `<dl class="kv"><div><dt>Largest R-hat</dt><dd>${r2(last.worst.rhat)} <span class="muted small mono">${esc(last.worst.parameter)}</span></dd></div>
-      <div><dt>Limit</dt><dd>${d.rhat_max}</dd></div><div><dt>Rerun</dt><dd>${d.rerun ? `yes (first try ${r2(d.first.worst.rhat)})` : "not needed"}</dd></div></dl>`; },
+    30: s => { const d = s.details, at = d.attempts || [];
+      const row = a => `<tr><td>${a.attempt}</td><td class="small">${a.sampler.n_chains} chains · ${a.sampler.n_adapt} adapt · ${a.sampler.n_burnin} burn-in · ${a.sampler.n_keep} kept</td>
+        <td class="num" ${a.ok ? "" : 'style="color:var(--block)"'}>${a.rhat == null ? (a.ok ? "–" : "very large") : a.rhat.toFixed(3)}</td><td class="mono small">${esc(a.parameter || "")}</td><td class="num">${a.seconds == null ? "–" : num(Math.round(a.seconds)) + " s"}</td></tr>`;
+      const res = fitResult();
+      return `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Attempt</th><th>Settings</th><th>Largest R-hat</th><th>Worst parameter</th><th>Time</th></tr></thead><tbody>${at.map(row).join("")}</tbody></table></div>
+        <p class="muted small">Limit ${d.rhat_max}. R-hats Meridian can't compute (parameters this model doesn't use) are ignored.</p>
+        ${(d.above || []).length ? `<div><p class="small"><b>Not settled:</b> ${d.above.slice(0, 12).map(x => esc(x.text)).join("; ")}${d.above.length > 12 ? "; …" : ""}</p>
+          <p class="small"><b>Try, in order:</b></p><ol class="small" style="margin:4px 0 0 18px;padding:0">${(d.suggestions || []).map(t => `<li>${esc(t)}</li>`).join("")}</ol></div>` : ""}
+        ${res && res.waiting ? `<div class="decide"><p>Steps 31 onward wait until the model converges. Continue anyway to check the rest; every later screen and the export will carry a <b>did not converge</b> badge.</p><button class="btn" id="fit-continue">Continue anyway</button></div>` : ""}`; },
     31: s => { const d = s.details, a = d.accuracy || {}; const row = k => a[k] ? `<tr><td>${k}</td><td class="num">${pct(a[k].MAPE)}</td><td class="num">${r2(a[k].R_Squared)}</td></tr>` : "";
       return `${fitChart(d.chart)}<div class="scroll"><table style="min-width:360px"><thead><tr><th></th><th>MAPE</th><th>R²</th></tr></thead><tbody>${row("Train")}${row("Test")}${row("All Data")}
       ${d.naive_mape != null ? `<tr><td>Same week last year</td><td class="num">${pct(d.naive_mape)}</td><td></td></tr>` : ""}</tbody></table></div>`; },
@@ -1268,24 +1309,66 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ${s.details.path ? `<p><a class="btn" href="/api/runs/${run.run_id}/model.pkl">Download model.pkl</a> <span class="muted small">Load it with <span class="mono">meridian.model.model.load_mmm</span> and the same Meridian version.</span></p>` : ""}`,
   };
 
+  // Step 29 settings. The estimate is computed here from a and b (fit-estimate), so it updates as the user types.
+  let fitEst = null;
+  const CUSTOM_KEYS = [["n_chains", "chains", 2], ["n_adapt", "adapt", 100], ["n_burnin", "burn-in", 100], ["n_keep", "kept", 100]];
+  const fitPresets = () => (fitEst && fitEst.presets) || (fitSettings && fitSettings.samplers) || { quick: { label: "Quick" }, full: { label: "Full" } };
   function fitForm(f) {
-    const smp = fitSettings ? fitSettings.samplers : { quick: { label: "Quick" }, full: { label: "Full" } };
+    const smp = fitPresets();
     const opts = (f && f.options) || { sampler: "quick", stability: false, placebo: false };
-    const desc = k => smp[k].n_chains ? `${smp[k].n_chains} chains, ${smp[k].n_adapt} adapt, ${smp[k].n_burnin} burn-in, ${smp[k].n_keep} kept` : "";
+    const cur = typeof opts.sampler === "object" ? "custom" : opts.sampler;
+    const cus = typeof opts.sampler === "object" ? opts.sampler : { n_chains: 4, n_adapt: 500, n_burnin: 500, n_keep: 1000 };
+    const desc = k => smp[k] && smp[k].n_chains ? `${smp[k].n_chains} chains, ${smp[k].n_adapt} adapt, ${smp[k].n_burnin} burn-in, ${smp[k].n_keep} kept` : "";
+    const seed = opts.seed ?? (fitEst ? fitEst.seed : "");
     return `<article class="card"><header><span class="n">▶</span><h3>Fit the model</h3>
       <p class="sum">Runs in the background; you can leave this page and come back. Steps 34 and 35 add fits, so they're optional.</p></header>
       <div class="body"><form id="fit-form" style="display:grid;gap:10px">
         <fieldset style="border:0;padding:0;margin:0;display:grid;gap:6px"><legend class="small muted" style="margin-bottom:4px">Sampler (step 29)</legend>
-          ${Object.keys(smp).map(k => `<label><input type="radio" name="sampler" value="${esc(k)}" ${opts.sampler === k ? "checked" : ""}> <b>${esc(smp[k].label || k)}</b> <span class="muted small">${esc(desc(k))}${k === "full" ? " · about 10 minutes for 156 weeks and 9 channels" : k === "quick" ? " · a first look, a few minutes" : ""}</span></label>`).join("")}
+          ${Object.keys(smp).map(k => `<label><input type="radio" name="sampler" value="${esc(k)}" ${cur === k ? "checked" : ""}> <b>${esc(smp[k].label || k)}</b> <span class="muted small">${esc(desc(k))}</span></label>`).join("")}
+          <label><input type="radio" name="sampler" value="custom" ${cur === "custom" ? "checked" : ""}> <b>Custom</b></label>
+          <div id="fit-custom" style="display:flex;flex-wrap:wrap;gap:8px 14px;padding-left:22px" ${cur === "custom" ? "" : "hidden"}>
+            ${CUSTOM_KEYS.map(([k, l, min]) => `<label class="small">${l} <input type="number" min="${min}" step="1" id="fc-${k}" value="${cus[k]}" style="width:84px"></label>`).join("")}
+          </div>
+          <div id="fit-custom-msg" class="small" style="padding-left:22px"></div>
         </fieldset>
+        <label class="small">Seed <input type="number" id="fit-seed" min="1" step="1" value="${esc(seed)}" style="width:140px"> <span class="muted">the same data, settings and seed give the same results</span></label>
         <label><input type="checkbox" id="fit-stability" ${opts.stability ? "checked" : ""}> Stability check (step 34): three extra fits that drop the first or last 26 weeks</label>
         <label><input type="checkbox" id="fit-placebo" ${opts.placebo ? "checked" : ""}> Placebo check (step 35): one extra fit with a random channel</label>
-        <div><button class="btn primary" type="submit">${f && f.result ? "Refit" : "Start fit"}</button></div>
+        <p class="small" id="fit-estimate"></p>
+        <div><button class="btn primary" type="submit" id="fit-go">${f && f.result ? "Refit" : "Start fit"}</button></div>
       </form></div></article>`;
+  }
+  // What the form currently asks for: the sampler numbers, or the Custom errors.
+  function fitFormSampler() {
+    const form = $("fit-form"), k = form.querySelector("[name=sampler]:checked").value;
+    if (k !== "custom") return { key: k, sampler: fitPresets()[k], errors: [], hints: [] };
+    const v = Object.fromEntries(CUSTOM_KEYS.map(([key]) => [key, Number($("fc-" + key).value)]));
+    const errors = CUSTOM_KEYS.filter(([key, , min]) => !Number.isInteger(v[key]) || v[key] < min).map(([key, l, min]) => `${l} must be a whole number of at least ${min}${key === "n_chains" ? " (R-hat needs two chains to compare)" : ""}`);
+    const hints = errors.length ? [] : [...(v.n_chains < 4 ? ["Fewer than 4 chains: R-hat (step 30) has less to compare."] : []), ...(v.n_keep < 500 ? ["Fewer than 500 kept draws: ROI ranges will be rougher."] : [])];
+    return { key: "custom", sampler: v, errors, hints };
+  }
+  function fitFormUpdate() {
+    const form = $("fit-form");
+    if (!form) return;
+    const sel = fitFormSampler();
+    $("fit-custom").hidden = sel.key !== "custom";
+    $("fit-custom-msg").innerHTML = sel.errors.map(e => `<div style="color:var(--block)">${esc(e)}</div>`).join("") + sel.hints.map(h => `<div style="color:var(--warn)">${esc(h)}</div>`).join("");
+    $("fit-go").disabled = sel.errors.length > 0;
+    const e = fitEst, out = $("fit-estimate");
+    if (!e) { out.textContent = ""; return; }
+    if (e.a == null) { out.innerHTML = `<span class="muted">${e.calibrating ? "Timing two short fits of the sample file, once, to estimate run times…" : "No run-time estimate yet."}</span>`; return; }
+    if (sel.errors.length || !sel.sampler || sel.sampler.n_chains == null) { out.textContent = ""; return; }
+    const x = sel.sampler, draws = x.n_adapt + x.n_burnin + x.n_keep;
+    const perFit = e.a + e.b * e.n_weeks * e.n_geos * e.n_channels * draws * Math.ceil(x.n_chains / e.cores);
+    const fits = 2 + ($("fit-stability").checked ? 3 : 0) + ($("fit-placebo").checked ? 1 : 0);
+    const total = perFit * fits, mins = total / 60;
+    out.innerHTML = `Estimated run time: <b>about ${mins >= 1 ? Math.round(mins) + " min" : Math.max(10, Math.round(total / 10) * 10) + " s"}</b> (${esc(e.basis)}),
+      ${fits} fits. <span class="muted">Each fit has a fixed start-up of about ${Math.round(e.a)} s, so small runs don't get proportionally faster. A step 30 retry adds one fit with a longer warm-up.</span>`;
   }
 
   function fitBanner(f, res) {
     if (f.stale) return `<div class="card needs" style="padding:14px 16px"><b>Out of date.</b> The data or the model settings changed after this fit; its results describe the old version. Refit to update them.</div>`;
+    if (res && res.waiting) return `<div class="card" style="padding:14px 16px;border-color:var(--block)"><span class="pill fail">Waiting</span> Step 30: the model did not converge, even after one retry with a longer warm-up. See step 30 for what to change, or continue anyway.</div>`;
     if (!res) return f.state === "failed" ? `<div class="error">The fit stopped: ${esc(f.message)}</div>` : f.state === "cancelled" ? `<div class="card" style="padding:14px 16px">The fit was cancelled.</div>` : "";
     const failed = res.gates.filter(g => !g.passed);
     const [cls, head, text] = res.status === "accepted"
@@ -1293,7 +1376,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       : res.status === "rejected"
         ? ["fail", "Rejected", `Failed ${failed.map(g => `step ${g.step} (${esc(g.name)})`).join(" and ")}. Nothing is saved; see the reasons below.`]
         : ["fail", "Stopped", esc(res.error || "An error stopped the fit.")];
-    return `<div class="card" style="padding:14px 16px;border-color:var(--${cls === "pass" ? "pass" : "block"})"><span class="pill ${cls}">${head}</span> ${text}
+    return `<div class="card" style="padding:14px 16px;border-color:var(--${cls === "pass" ? "pass" : "block"})"><span class="pill ${cls}">${head}</span>${res.not_converged ? ' <span class="pill fail">did not converge</span>' : ""} ${text}
       <div class="small muted" style="margin-top:6px">${res.gates.map(g => `${g.passed ? "✓" : "✕"} ${g.step} ${esc(g.name)}`).join(" &nbsp; ")}</div></div>`;
   }
 
@@ -1313,11 +1396,12 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <p class="sum">${esc(f.message)}</p></header><div class="body">
         <div style="height:10px;border-radius:5px;background:var(--line);overflow:hidden" role="progressbar" aria-valuenow="${Math.round((f.fraction || 0) * 100)}" aria-valuemin="0" aria-valuemax="100">
           <div style="height:100%;width:${Math.max(2, (f.fraction || 0) * 100)}%;background:var(--accent)"></div></div>
-        <p class="muted small">${Math.round((f.fraction || 0) * 100)}% · ${Math.floor(secs / 60)} min ${secs % 60} s so far · ${esc(f.options.sampler)} sampler</p>
+        <p class="muted small">${Math.round((f.fraction || 0) * 100)}% · ${Math.floor(secs / 60)} min ${secs % 60} s so far · ${esc(typeof f.options.sampler === "object" ? f.options.sampler.label || "Custom" : f.options.sampler)} sampler</p>
         <button class="btn" id="fit-cancel">Cancel</button></div></article>`;
     } else {
       const cards = res ? nums.map(n => { const s = stepOf(n); if (!s) return card(n, null);
-        try { return card(n, s, FIT_BODIES[n](s)); } catch (e) { console.error(e); return card(n, s, ""); } }).join("") : "";
+        const nc = res.not_converged && n > 30 ? '<p class="small"><span class="pill fail">did not converge</span> <span class="muted">from a fit whose chains hadn\'t settled (step 30)</span></p>' : "";
+        try { return card(n, s, nc + FIT_BODIES[n](s)); } catch (e) { console.error(e); return card(n, s, nc); } }).join("") : "";
       body = (f ? fitBanner(f, res) : "") + cards + fitForm(f);
     }
     const badges = Object.entries(res ? res.badges : (run.result_d || {}).badges || {});
@@ -1332,6 +1416,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <aside class="side">
           ${badges.length ? `<div class="card"><h4>Channel badges</h4><div class="log">${badges.map(([c, bs]) => `<div><b style="color:var(--ink)">${esc(c)}</b>: ${bs.map(esc).join(", ")}</div>`).join("")}</div></div>` : ""}
           <div class="card"><h4>Gates</h4><div class="log">${[[28, "warning"], [30, "gate"], [31, "gate"], [32, "gate"], [33, "badge"], [34, "badge, optional"], [35, "warning, optional"]].map(([n, k]) => `<div>${n} ${esc(STEP_NAMES[n - 1])} <span class="muted">(${k})</span></div>`).join("")}</div></div>
+          ${res && (res.decision_log || []).length ? `<div class="card"><h4>Decision log</h4><div class="log">${res.decision_log.map(l => `<div>#${l.step} ${esc(l.text)} (${l.source === "user" ? "you" : "default"})</div>`).join("")}</div></div>` : ""}
           ${res && res.timings ? `<div class="card"><h4>Fit times</h4><div class="log">${Object.entries(res.timings).map(([k, v]) => `<div>${esc(k.replace(/_/g, " "))}: ${num(v)} s</div>`).join("")}</div></div>` : ""}
         </aside>
       </div>`;
@@ -1353,10 +1438,33 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function wireFit() {
     if (!fitSettings) api("GET", "/api/fit-settings").then(x => { fitSettings = x; if (view === "e" && !(run.fit && FIT_ACTIVE.includes(run.fit.state))) renderFit(); }).catch(() => {});
     const form = $("fit-form");
+    if (form) {
+      form.oninput = fitFormUpdate; form.onchange = fitFormUpdate;
+      if (!fitEst || fitEst.run !== run.run_id || (fitEst.a == null && fitEst.calibrating && Date.now() - fitEst.at > 15000)) {
+        fetch(`/api/runs/${run.run_id}/fit-estimate`).then(r => r.ok ? r.json() : null).then(x => {
+          if (!x) return;
+          const seedField = $("fit-seed"), keepSeed = fitEst && fitEst.run === run.run_id;
+          fitEst = { ...x, run: run.run_id, at: Date.now() };
+          if (seedField && !keepSeed && !seedField.value) seedField.value = x.seed;
+          fitFormUpdate();
+          if (x.a == null && x.calibrating) setTimeout(() => { if (view === "e" && $("fit-form")) wireFit(); }, 15000);
+        }).catch(() => {});
+      }
+      fitFormUpdate();
+    }
     if (form) form.onsubmit = async e => {
       e.preventDefault();
-      const body = { sampler: form.querySelector("[name=sampler]:checked").value, stability: $("fit-stability").checked, placebo: $("fit-placebo").checked };
+      const sel = fitFormSampler();
+      if (sel.errors.length) return;
+      const seed = parseInt($("fit-seed").value, 10);
+      const body = { sampler: sel.key, custom: sel.key === "custom" ? sel.sampler : null, seed: Number.isFinite(seed) ? seed : null,
+        stability: $("fit-stability").checked, placebo: $("fit-placebo").checked };
       try { run.fit = { ...(await api("POST", `/api/runs/${run.run_id}/fit`, body)), stale: false }; renderFit(); window.scrollTo(0, 0); }
+      catch (err) { alert(err.message); }
+    };
+    const cont = $("fit-continue");
+    if (cont) cont.onclick = async () => {
+      try { run.fit = { ...(await api("POST", `/api/runs/${run.run_id}/fit/continue`)), stale: false }; renderFit(); window.scrollTo(0, 0); }
       catch (err) { alert(err.message); }
     };
     const cancel = $("fit-cancel");
@@ -1439,7 +1547,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     $("main").innerHTML = `
       <div class="runhead"><div><span class="eyebrow">Screen F · steps 37–42</span><h1>Model Summary</h1></div>
         <div class="chips"><span class="chip mono">model ${esc(v.data_version || "–")}</span><span class="chip">data to ${esc(v.last_week)}</span>
-          <span class="chip">${v.weeks} weeks · ${v.geos === 1 ? "national" : `${v.geos} regions`}</span><span class="chip">${esc((v.sampler && v.sampler.label) || "")} sampler</span></div></div>
+          <span class="chip">${v.weeks} weeks · ${v.geos === 1 ? "national" : `${v.geos} regions`}</span><span class="chip">${esc((v.sampler && v.sampler.label) || "")} sampler</span>${v.seed ? `<span class="chip mono">seed ${esc(v.seed)}</span>` : ""}
+          ${v.not_converged ? '<span class="pill fail">did not converge</span>' : ""}</div></div>
       ${stale}
       <div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between">${per}
         <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/api/runs/${run.run_id}/summary" download="model_summary.json">Summary (JSON)</a>
@@ -1680,6 +1789,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const eventKey = name => name.trim().toLowerCase().replace(/ /g, "_");  // as step 21 names it
     main.querySelectorAll("[data-del-event]").forEach(x => x.onclick = () => answer({ custom_events: customNow().filter(c => eventKey(c.name) !== x.dataset.delEvent) }));
     main.querySelectorAll("[data-shape]").forEach(x => x.onchange = () => answer({ adstock_shape: { ...(answers.adstock_shape || {}), [x.dataset.shape]: x.value } }));
+    main.querySelectorAll("[data-speed]").forEach(x => x.onchange = () => answer({ carryover_speed: { ...(answers.carryover_speed || {}), [x.dataset.speed]: x.value } }));
+    main.querySelectorAll("[data-sat]").forEach(x => x.onchange = () => answer({ diminishing_returns: { ...(answers.diminishing_returns || {}), [x.dataset.sat]: x.value } }));
+    main.querySelectorAll("[data-ptype]").forEach(b => b.onclick = () => answer({ prior_type: b.dataset.ptype, roi_ranges: {} }));
+    main.querySelectorAll("[data-dir]").forEach(x => x.onchange = () => answer({ control_direction: { ...(answers.control_direction || {}), [x.dataset.dir]: x.value } }));
     const kf = $("knots-form");
     if (kf) kf.onsubmit = e => { e.preventDefault(); answer({ knots: +$("knots-v").value }); };
     const ar = $("apply-roi");
@@ -1687,7 +1800,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const out = {};
       main.querySelectorAll("[data-roi-lo]").forEach(lo => {
         const c = lo.dataset.roiLo, hi = main.querySelector(`[data-roi-hi="${CSS.escape(c)}"]`);
-        if (lo.value !== "" || hi.value !== "") out[c] = { low: +lo.value, high: +hi.value };
+        const k = ar.dataset.share === "true" ? 0.01 : 1;         // share of sales is typed in percent
+        if (lo.value !== "" || hi.value !== "") out[c] = { low: +lo.value * k, high: +hi.value * k };
       });
       answer({ roi_ranges: out });
     };
@@ -1719,7 +1833,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdef]))?$/);
   if (m) {
     view = m[2] || "a";
-    api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(startScreen);
+    api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(e => { console.error(e); startScreen(); });
   } else startScreen();
 })();
 </script>

@@ -123,3 +123,11 @@ class Answers:
             }
         )
         return True, value
+
+    def describe(self, decision: Decision, lines: list[str]) -> None:
+        """Plain-words lines for a table-like answer, shown in the decision log in
+        place of the raw value ("#23 search fades fast (you)")."""
+        for entry in reversed(self.log):
+            if entry["decision"] == decision.id:
+                entry["lines"] = lines
+                return

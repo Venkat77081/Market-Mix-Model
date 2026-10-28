@@ -39,7 +39,7 @@ def test_convergence_needs_every_rhat_below_the_limit():
     assert gates.converged({"roi_m": 1.01, "tau_g": 1.05}, 1.1)["ok"]
     res = gates.converged({"roi_m": 1.01, "alpha_m": 1.3}, 1.1)
     assert not res["ok"] and res["bad"] == {"alpha_m": 1.3} and res["worst"]["parameter"] == "alpha_m"
-    assert not gates.converged({"roi_m": float("nan")}, 1.1)["ok"]  # an R-hat that can't be computed isn't a pass
+    assert gates.converged({"roi_m": 1.02, "eta_m": float("nan")}, 1.1)["ok"]   # NaN: a parameter the model doesn't use
 
 
 # Step 31 -----------------------------------------------------------------

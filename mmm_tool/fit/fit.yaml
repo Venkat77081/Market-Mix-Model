@@ -28,6 +28,10 @@ plausibility:              # step 32 (gate)
   baseline_share: [0.20, 0.95]
   reconcile_tolerance: 0.001   # contributions + baseline vs the fit, as a share of the fit
 
+direction_check:           # step 32 (warning): a control whose direction is set in step 21
+  near_zero: 0.02          # "at the limit": within 2% of Meridian's gamma_c prior scale from zero
+  max_share_at_limit: 0.5  # flagged when more than half of the posterior sits there
+
 prior_driven:              # step 33 (badge)
   min_narrowing: 0.30      # posterior 90% range at least 30% narrower than the prior's
 

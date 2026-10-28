@@ -54,34 +54,73 @@ def _calibration(spec_mod, config: dict[str, Any], channels: list[str]):
     return spec_mod.CalibrationSpec(entries) if entries else None
 
 
+def _vector(names: list[str], values: dict[str, Any], key, default) -> np.ndarray:
+    """One float64 entry per channel (or control) in Meridian's order, looked up by name."""
+    return np.array([key(values[n]) if n in values else default for n in names], dtype=np.float64)
+
+
 def build_model_spec(config: dict[str, Any], input_data):
+    """Meridian's ModelSpec from Phase D's config. Every per-channel vector follows
+    input_data's own channel order (media_channel, rf_channel, control_variable), built by
+    name; distributions are Meridian's backend.tfd with float64 arrays."""
     from meridian import backend, constants
     from meridian.model import prior_distribution
     from meridian.model import spec as spec_mod
 
+    from .choices import direction_bounds, meridian_defaults
+
+    tfd = backend.tfd
     media = _channels(input_data, "media_channel")
     rf = _channels(input_data, "rf_channel")
+    kind = config.get("prior_type", "roi")
     priors = config["roi_priors"]
+    defaults = meridian_defaults()
+    family, d1, d2 = defaults[kind]
+    names = {"roi": (constants.ROI_M, constants.ROI_RF), "mroi": (constants.MROI_M, constants.MROI_RF),
+             "contribution": (constants.CONTRIBUTION_M, constants.CONTRIBUTION_RF)}[kind]
 
-    def lognormal(names: list[str], name: str):
-        mu = np.array([priors[n]["mu"] for n in names], dtype=np.float64)
-        sigma = np.array([priors[n]["sigma"] for n in names], dtype=np.float64)
-        return backend.tfd.LogNormal(mu, sigma, name=name)
+    def treatment(chans: list[str], name: str):
+        p1 = _vector(chans, priors, lambda p: p.get("p1", p.get("mu")), d1)
+        p2 = _vector(chans, priors, lambda p: p.get("p2", p.get("sigma")), d2)
+        return tfd.LogNormal(p1, p2, name=name) if family == "lognormal" else tfd.Beta(p1, p2, name=name)
 
     prior_args = {}
     if media:
-        prior_args["roi_m"] = lognormal(media, constants.ROI_M)
+        prior_args[names[0]] = treatment(media, names[0])
     if rf:
-        prior_args["roi_rf"] = lognormal(rf, constants.ROI_RF)
+        prior_args[names[1]] = treatment(rf, names[1])
+
+    # Carryover: one Beta on alpha, per channel; Beta(1, 1) (= Meridian's Uniform(0, 1)) where unknown.
+    carry = config.get("carryover_prior") or {}
+    if any(v.get("speed", "dont_know") != "dont_know" for v in carry.values()):
+        for chans, name in ((media, constants.ALPHA_M), (rf, constants.ALPHA_RF)):
+            if chans:
+                a = _vector(chans, carry, lambda v: v["beta"][0], 1.0)
+                b = _vector(chans, carry, lambda v: v["beta"][1], 1.0)
+                prior_args[name] = tfd.Beta(a, b, name=name)
+
+    # Control directions: a TruncatedNormal on each control's coefficient, at Meridian's default scale.
+    dirs = config.get("control_direction") or {}
+    controls = _channels(input_data, "control_variable")
+    if controls and any(dirs.get(c, "either") != "either" for c in controls):
+        bounds = [direction_bounds(dirs.get(c, "either")) for c in controls]
+        prior_args[constants.GAMMA_C] = tfd.TruncatedNormal(
+            loc=np.zeros(len(controls), dtype=np.float64),
+            scale=np.full(len(controls), defaults["gamma_c_scale"], dtype=np.float64),
+            low=np.array([lo for lo, _ in bounds], dtype=np.float64),
+            high=np.array([hi for _, hi in bounds], dtype=np.float64), name=constants.GAMMA_C)
+
+    saturation = {ch: v for ch, v in (config.get("saturation") or {}).items() if ch in media + rf and v == "none"}
     holdout = config.get("holdout")
     return spec_mod.ModelSpec(
         prior=prior_distribution.PriorDistribution(**prior_args),
-        media_prior_type=constants.TREATMENT_PRIOR_TYPE_ROI if media else None,
-        rf_prior_type=constants.TREATMENT_PRIOR_TYPE_ROI if rf else None,
+        media_prior_type=kind if media else None,
+        rf_prior_type=kind if rf else None,
         max_lag=config["max_lag"],
         knots=config["knots"],
         adstock_decay_spec={ch: shape for ch, shape in config["adstock"].items() if ch in media + rf},
-        roi_calibration=_calibration(spec_mod, config, media),
-        rf_roi_calibration=_calibration(spec_mod, config, rf),
+        saturation_spec=saturation if saturation else constants.HILL,
+        roi_calibration=_calibration(spec_mod, config, media) if kind == "roi" else None,
+        rf_roi_calibration=_calibration(spec_mod, config, rf) if kind == "roi" else None,
         holdout=spec_mod.HoldoutSpec([spec_mod.DateRange(holdout["start"], holdout["end"])]) if holdout else None,
     )

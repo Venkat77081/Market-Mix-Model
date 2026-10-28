@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from ..ingest.types import Answers, Decision, StepResult, Verdict
+from .choices import DIRECTION_LABEL, DIRECTIONS
 from .context import DCtx, load_calendars
 
 STEP = 21
@@ -140,10 +141,49 @@ def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
         row["weeks"] = [str(w.date()) for w, f in zip(weeks, flag) if f]
         rows.append(row)
     ctx.config["calendar"] = {"preset": preset_name, "events": rows, "added": added}
+    d_dir, problem = control_directions(ctx, answers)
+    decisions.append(d_dir)
+    if problem:
+        d_dir.blocking, d_dir.answered = True, False
+        return StepResult(STEP, NAME, Verdict.NEEDS_INPUT, problem, {"events": rows}, [], decisions)
     summary = (f"{len(added)} calendar flag(s) added as controls: {', '.join(added)}" if added
                else "No calendar flags added")
     skipped = [r for r in rows if r["status"].startswith("already")]
     if skipped:
         summary += "; " + ", ".join(f"{r['event']} {r['status']}" for r in skipped)
+    dirs = ctx.config["control_direction"]
+    set_dirs = {c: v for c, v in dirs.items() if v != "either"}
+    if set_dirs:
+        summary += "; effect direction set for " + ", ".join(f"{c} ({DIRECTION_LABEL[v]})" for c, v in set_dirs.items())
     return StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary + ".",
-                      {"events": rows, "preset": preset["label"]}, warnings, decisions)
+                      {"events": rows, "preset": preset["label"], "directions": dirs,
+                       "suggest_direction": d_dir.context["suggest"]}, warnings, decisions)
+
+
+def control_directions(ctx: DCtx, answers: Answers) -> tuple[Decision, str | None]:
+    """Each control's (and calendar flag's) effect on sales: either way (default), raises or
+    lowers. Becomes a TruncatedNormal on its coefficient (gamma_c) in spec.py."""
+    from ..ingest.keywords import words_of
+
+    controls = [c for c, r in ctx.roles.items() if r == "control" and c in ctx.df.columns]
+    words = load_calendars().get("control_direction_words", {})
+    suggest = {}
+    for c in controls:
+        w = set(words_of(c).split())
+        flag = set(pd.unique(ctx.df[c].dropna())) <= {0, 1}
+        if w & set(words.get("lowers", [])):
+            suggest[c] = "lowers"
+        elif flag and w & set(words.get("raises", [])):
+            suggest[c] = "raises"
+    d = Decision(
+        id="control_direction", step=STEP,
+        question="Which way can each control move sales? Leave 'either' unless you're sure.",
+        options=list(DIRECTIONS), default={c: "either" for c in controls}, context={"suggest": suggest},
+    )
+    chosen = {**d.default, **(answers.ask(d) or {})}
+    bad = {k: v for k, v in chosen.items() if k not in d.default or v not in DIRECTIONS}
+    ctx.config["control_direction"] = {c: chosen[c] for c in controls}
+    answers.describe(d, [f"{c} {DIRECTION_LABEL[v]}" for c, v in chosen.items() if v != "either" and c in d.default])
+    if bad:
+        return d, f"Unknown control or direction in {bad}; use either, raises or lowers."
+    return d, None

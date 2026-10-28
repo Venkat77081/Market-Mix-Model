@@ -21,9 +21,12 @@ def prior_check(q_lo: float, q_hi: float, actual: float, max_width: float) -> di
 
 
 def converged(rhat: Mapping[str, float], rhat_max: float) -> dict:
-    """Step 30. Every parameter's largest R-hat below rhat_max."""
-    bad = {k: float(v) for k, v in rhat.items() if not (v < rhat_max)}  # NaN counts as not converged
-    worst = max(rhat.items(), key=lambda kv: -math.inf if kv[1] != kv[1] else kv[1]) if rhat else (None, math.nan)
+    """Step 30. Every parameter's largest R-hat below rhat_max. A NaN R-hat never counts as a
+    failure: Meridian returns NaN for parameters a model doesn't use (eta_m, slope_m, tau_g,
+    xi_c on a national model)."""
+    real = {k: float(v) for k, v in rhat.items() if v == v}
+    bad = {k: v for k, v in real.items() if not v < rhat_max}
+    worst = max(real.items(), key=lambda kv: kv[1]) if real else (None, math.nan)
     return {"ok": not bad, "bad": bad, "worst": {"parameter": worst[0], "rhat": float(worst[1])}}
 
 

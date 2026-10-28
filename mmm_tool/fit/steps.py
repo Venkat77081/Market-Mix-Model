@@ -24,11 +24,12 @@ import hashlib
 import json
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from ..configure.context import DEFAULT_ROI_MU, DEFAULT_ROI_SIGMA, lognormal_summary
+from ..configure.choices import meridian_defaults, prior_summary
 from ..ingest.pairing import Channel
 from ..ingest.types import StepResult, Verdict
 from . import gates
@@ -49,10 +50,54 @@ def _fmt_sampler(s: dict) -> str:
 
 
 def _fit(ctx: ECtx, mmm, sampler: dict, label: str) -> float:
+    """sample_posterior with the run's seed; every fit's time goes into this machine's log (estimate.py)."""
+    from . import estimate
+
     t = time.time()
     m.sample_posterior(mmm, sampler, ctx.seed)
-    ctx.timings[label] = round(time.time() - t, 1)
+    secs = time.time() - t
+    ctx.timings[label] = round(secs, 1)
+    try:
+        estimate.record(*estimate.model_size(mmm), sampler, secs)
+    except OSError:
+        pass                                        # a read-only home folder never stops a fit
     return ctx.timings[label]
+
+
+def _retry_sampler(sampler: dict) -> dict:
+    """Step 30's one automatic retry: twice the adapt and burn-in; same chains, kept draws and seed."""
+    return {**sampler, "label": f"{sampler.get('label', 'Custom')}, longer warm-up",
+            "n_adapt": 2 * int(sampler["n_adapt"]), "n_burnin": 2 * int(sampler["n_burnin"])}
+
+
+def _about(ctx: ECtx, mmm, sampler: dict) -> str:
+    from . import estimate
+
+    try:
+        e = estimate.estimate(*estimate.model_size(mmm), sampler)
+    except Exception:  # noqa: BLE001 - an estimate is a courtesy
+        e = None
+    return f" (about {max(1, round(e['seconds'] / 60))} min)" if e else ""
+
+
+def _fit_converged(ctx: ECtx, build, sampler: dict, label: str, step: int) -> tuple[Any, list[dict], dict]:
+    """Fit; if the largest R-hat (NaN ignored) is over the limit, refit once with a longer warm-up.
+    Returns (model, attempts, final check)."""
+    limit = float(ctx.cfg["convergence"]["rhat_max"])
+    attempts, mmm = [], None
+    for i, smp in enumerate((sampler, _retry_sampler(sampler))):
+        if i:
+            ctx.progress(step, "Retrying with longer warm-up" + _about(ctx, mmm, smp), 0.5)
+        mmm = build()
+        mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
+        secs = _fit(ctx, mmm, smp, label if not i else label + "_retry")
+        res = gates.converged(m.rhat(mmm), limit)
+        attempts.append({"attempt": i + 1, "sampler": smp, "rhat": res["worst"]["rhat"],
+                         "parameter": res["worst"]["parameter"], "seconds": secs, "ok": res["ok"]})
+        if res["ok"]:
+            break
+    res["above"] = [] if res["ok"] else m.rhat_detail(mmm, limit)
+    return mmm, attempts, res
 
 
 def prior_check(ctx: ECtx) -> StepResult:
@@ -87,29 +132,53 @@ def fit_holdout(ctx: ECtx) -> StepResult:
                  {"sampler": ctx.sampler, "seconds": secs, "holdout": hold})
 
 
+SUGGESTIONS = [
+    "Use more chains and more kept draws (Custom sampler, step 29).",
+    "Use fewer knots (step 24).",
+    "Combine channels that move together (step 17).",
+    "Set tighter priors for prior-driven channels (steps 23 and 25).",
+]
+
+
 def convergence(ctx: ECtx) -> StepResult:
+    """Step 30: the largest R-hat over all parameters (NaN ignored) must be under the limit. Above it,
+    one automatic retry with a longer warm-up; then the step fails and steps 31+ wait for the user."""
     limit = float(ctx.cfg["convergence"]["rhat_max"])
-    res = gates.converged(m.rhat(ctx.mmm), limit)
-    details = {"rhat_max": limit, "first": res, "rerun": None}
-    if not res["ok"]:
-        f = int(ctx.cfg["convergence"]["rerun_factor"])
-        more = {**ctx.sampler, **{k: ctx.sampler[k] * f for k in ("n_adapt", "n_burnin", "n_keep")}}
-        ctx.progress(30, f"R-hat {res['worst']['rhat']:.2f} on {res['worst']['parameter']}: refitting with {_fmt_sampler(more)}", 0.0)
+    first = gates.converged(m.rhat(ctx.mmm), limit)
+    attempts = [{"attempt": 1, "sampler": ctx.sampler, "rhat": first["worst"]["rhat"], "parameter": first["worst"]["parameter"],
+                 "seconds": ctx.timings.get("fit_holdout"), "ok": first["ok"]}]
+    res = {**first, "above": []}
+    if not first["ok"]:
+        smp = _retry_sampler(ctx.sampler)
+        ctx.progress(30, "Retrying with longer warm-up" + _about(ctx, ctx.mmm, smp), 0.0)
         ctx.mmm = m.build(ctx.d, ctx.config)
         ctx.mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
-        _fit(ctx, ctx.mmm, more, "fit_rerun")
-        ctx.sampler = more
+        secs = _fit(ctx, ctx.mmm, smp, "fit_holdout_retry")
         res = gates.converged(m.rhat(ctx.mmm), limit)
-        details["rerun"] = {"sampler": more, **res}
+        attempts.append({"attempt": 2, "sampler": smp, "rhat": res["worst"]["rhat"], "parameter": res["worst"]["parameter"],
+                         "seconds": secs, "ok": res["ok"]})
+        ctx.fit_sampler = smp                       # later refits (steps 34-35) use the settings that converged
+        res["above"] = [] if res["ok"] else m.rhat_detail(ctx.mmm, limit)
     ctx.gates[30] = res["ok"]
+    details = {"rhat_max": limit, "attempts": attempts, "above": res["above"], "suggestions": [],
+               "continue_anyway": ctx.options.continue_unconverged}
     worst = res["worst"]
-    again = " after one rerun with twice the draws" if details["rerun"] else ""
+    again = " after one retry with a longer warm-up" if len(attempts) > 1 else ""
     if res["ok"]:
         return _step(30, Verdict.PASS, f"Every R-hat is below {limit}{again} (largest {worst['rhat']:.3f}, {worst['parameter']}).", details)
-    bad = ", ".join(f"{k} {v:.2f}" for k, v in sorted(res["bad"].items(), key=lambda kv: -kv[1] if kv[1] == kv[1] else 0)[:5])
-    return _step(30, Verdict.FAIL, f"Failed: the chains disagree{again} (R-hat above {limit}: {bad}).", details,
-                 ["The sampler hasn't settled, so none of this fit's numbers can be trusted. Try the full sampler, "
-                  "fewer knots (step 24), or tighter ROI priors (steps 25-26)."])
+    details["suggestions"] = SUGGESTIONS
+    n = len(res["above"])
+    names = (f"{n} parameter{'s' if n != 1 else ''} above {limit}, the worst {res['above'][0]['text']}" if n
+             else f"largest R-hat {worst['rhat']}")
+    if ctx.options.continue_unconverged:
+        ctx.not_converged = True
+        ctx.log.append({"step": 30, "text": "continue although the model did not converge", "source": "user"})
+        return _step(30, Verdict.FAIL, f"Did not converge{again}: {names}. You chose to continue: every later result "
+                     "carries a 'did not converge' badge.", details,
+                     ["The sampler hasn't settled, so these numbers can't be fully trusted."])
+    return _step(30, Verdict.FAIL, f"Failed: the chains disagree{again}: {names}.", details,
+                 ["Steps 31 onward wait: none of this fit's numbers can be trusted yet. See the list of what to try, "
+                  "or choose 'Continue anyway'."])
 
 
 def holdout_accuracy(ctx: ECtx) -> StepResult:
@@ -157,9 +226,11 @@ def plausibility(ctx: ECtx) -> StepResult:
                           roi_max=float(cfg["roi_max"]), share_range=tuple(cfg["baseline_share"]),
                           tolerance=float(cfg["reconcile_tolerance"]), roi_in_money=money)
     ctx.gates[32] = res["ok"]
-    details = {"roi": roi, "roi_in_money": money, "contributions": con, **res,
+    directions = direction_check(ctx)
+    details = {"roi": roi, "roi_in_money": money, "contributions": con, **res, "directions": directions,
                "limits": {"roi": [cfg["roi_min"], cfg["roi_max"]], "baseline_share": cfg["baseline_share"]}}
-    warnings = []
+    warnings = [f"'{x['control']}' was set to {x['label']}, but {x['share_at_limit']:.0%} of its posterior sits at zero, "
+                "against that limit: the data may point the other way. Check the direction in step 21." for x in directions if x["flagged"]]
     if not money:
         warnings.append("ROI is in KPI units per ₹ (no revenue per KPI, step 5), so the 0.05-20 ROI range isn't checked.")
     lo, hi = cfg["baseline_share"]
@@ -179,6 +250,33 @@ def plausibility(ctx: ECtx) -> StepResult:
     if not res["reconciles"]:
         why.append(f"baseline plus contributions miss the fit by {con['reconcile_error']:.2%}")
     return _step(32, Verdict.FAIL, "Failed: " + "; ".join(why) + ".", details, warnings)
+
+
+def direction_check(ctx: ECtx) -> list[dict[str, Any]]:
+    """Step 32: each control with a direction set (step 21). Its prior is truncated at zero, so the
+    posterior can't cross it; when the data points the other way, the draws pile up at zero instead.
+    Flagged when most of the posterior sits within a small distance of the limit."""
+    from ..configure.choices import DIRECTION_LABEL, meridian_defaults
+
+    dirs = {c: v for c, v in (ctx.config.get("control_direction") or {}).items() if v != "either"}
+    post = ctx.mmm.inference_data.posterior
+    if not dirs or "gamma_c" not in post:
+        return []
+    cfg = ctx.cfg["direction_check"]
+    near = float(cfg["near_zero"]) * float(meridian_defaults()["gamma_c_scale"])
+    names = [str(x) for x in ctx.mmm.input_data.control_variable.values]
+    g = np.asarray(post["gamma_c"]).reshape(-1, len(names))
+    out = []
+    for c, v in dirs.items():
+        if c not in names:
+            continue
+        draws = g[:, names.index(c)]
+        wrong = float(np.mean(draws < 0)) if v == "raises" else float(np.mean(draws > 0))
+        at_limit = float(np.mean(np.abs(draws) < near))
+        out.append({"control": c, "direction": v, "label": DIRECTION_LABEL[v], "median": float(np.median(draws)),
+                    "share_at_limit": at_limit, "share_wrong_side": wrong,
+                    "flagged": wrong > 0 or at_limit > float(cfg["max_share_at_limit"])})
+    return out
 
 
 def prior_driven(ctx: ECtx) -> StepResult:
@@ -225,7 +323,7 @@ def stability(ctx: ECtx) -> StepResult:
         part = m.variant(ctx.d, table=ctx.d.table[ctx.d.table[date].isin(wk)].reset_index(drop=True))
         mmm = m.build(part, m.window_config(ctx.config, wk))
         mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
-        _fit(ctx, mmm, ctx.sampler, f"stability_{i + 1}")
+        _fit(ctx, mmm, ctx.fit_sampler, f"stability_{i + 1}")
         rois[label] = m.channel_metrics(mmm, ctx.confidence).loc[paid, "roi_posterior_mean"].to_dict()
     limit = float(cfg["cv_max"])
     table = [{"channel": ch, "roi": {k: v[ch] for k, v in rois.items()}, "cv": gates.cv([v[ch] for v in rois.values()])}
@@ -266,11 +364,13 @@ def placebo(ctx: ECtx) -> StepResult:
     channel = Channel(name=name, kind="media", spend=col, exposure=col, exposure_is_spend=True)
     variant = m.variant(ctx.d, table=table, channels=[*ctx.d.channels, channel], roles={**ctx.d.roles, col: "media_spend"})
     cfg = {**ctx.config, "holdout": None, "adstock": {**ctx.config["adstock"], name: "geometric"},
-           "roi_priors": {**ctx.config["roi_priors"], name: {**lognormal_summary(DEFAULT_ROI_MU, DEFAULT_ROI_SIGMA), "source": "default"}}}
+           "roi_priors": {**ctx.config["roi_priors"], name: _default_prior(ctx.config.get("prior_type", "roi"))},
+           "carryover_prior": {**(ctx.config.get("carryover_prior") or {}), name: {"speed": "dont_know", "beta": [1.0, 1.0]}},
+           "saturation": {**(ctx.config.get("saturation") or {}), name: "hill"}}
     ctx.progress(35, f"Fitting with a placebo shaped like {model_on}", 0.0)
     mmm = m.build(variant, cfg)
     mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
-    _fit(ctx, mmm, ctx.sampler, "placebo")
+    _fit(ctx, mmm, ctx.fit_sampler, "placebo")
     r = m.channel_metrics(mmm, ctx.confidence).loc[name]
     lo, hi = r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"]
     credited = gates.placebo_credited(r["roi_prior_median"], r["roi_posterior_median"], lo, float(ctx.cfg["plausibility"]["roi_min"]))
@@ -285,26 +385,35 @@ def placebo(ctx: ECtx) -> StepResult:
                   "ROI may be inflated the same way. Tighter priors or lift tests (steps 25-26) help."])
 
 
+def _default_prior(kind: str) -> dict:
+    family, p1, p2 = meridian_defaults()[kind]
+    out = {**prior_summary(family, p1, p2), "family": family, "p1": p1, "p2": p2, "source": "default"}
+    return {**out, "mu": p1, "sigma": p2} if family == "lognormal" else out
+
+
 def data_version(table: pd.DataFrame) -> str:
     return hashlib.sha256(table.to_csv(index=False).encode()).hexdigest()[:12]
 
 
 def final_fit(ctx: ECtx) -> StepResult:
-    failed = [n for n in GATES if not ctx.gates.get(n, False)]
+    """Step 36: refit on every week with the chosen settings (and the same one-retry rule as
+    step 30), then save. A model the user continued with after step 30 is saved, badged."""
+    failed = [n for n in GATES if not ctx.gates.get(n, False) and not (n == 30 and ctx.not_converged)]
     if failed:
         return _step(36, Verdict.WARN, f"Not run: the model failed step(s) {', '.join(map(str, failed))}, so nothing is saved.",
                      {"skipped": True, "failed_gates": failed})
     ctx.progress(36, "Refitting on every week", 0.0)
     cfg = {**ctx.config, "holdout": None}
-    mmm = m.build(ctx.d, cfg)
-    mmm.sample_prior(int(ctx.cfg["prior_draws"]), seed=ctx.seed)
-    secs = _fit(ctx, mmm, ctx.sampler, "final")
-    res = gates.converged(m.rhat(mmm), float(ctx.cfg["convergence"]["rhat_max"]))
+    mmm, attempts, res = _fit_converged(ctx, lambda: m.build(ctx.d, cfg), ctx.sampler, "final", 36)
+    secs = sum(a["seconds"] for a in attempts)
+    if not res["ok"]:
+        ctx.not_converged = True
     import meridian
 
     version = data_version(ctx.d.table)
-    info = {"data_version": version, "weeks": len(m.weeks(mmm)), "sampler": ctx.sampler, "seconds": secs,
-            "rhat_worst": res["worst"], "meridian": getattr(meridian, "__version__", "?"),
+    info = {"data_version": version, "weeks": len(m.weeks(mmm)), "sampler": attempts[-1]["sampler"], "seconds": secs,
+            "rhat_worst": res["worst"], "attempts": attempts, "seed": ctx.seed, "not_converged": ctx.not_converged,
+            "meridian": getattr(meridian, "__version__", "?"),
             "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "path": None}
     if ctx.out_dir is not None:
         path = ctx.out_dir / "model.pkl"
@@ -312,15 +421,20 @@ def final_fit(ctx: ECtx) -> StepResult:
         m.save(mmm, path)
         info["path"] = str(path)
         meta = {**info, "config": ctx.config, "gates": {str(k): v for k, v in ctx.gates.items()}, "badges": ctx.badges,
-                "options": ctx.options.to_dict()}
+                "options": ctx.options.to_dict(), "decision_log": list(getattr(ctx.d, "decision_log", None) or []) + ctx.log}
         (ctx.out_dir / "model_meta.json").write_text(json.dumps(meta, indent=2, default=str))
     ctx.model = info
     ctx.final = mmm
-    warnings = [] if res["ok"] else [f"The final fit's largest R-hat is {res['worst']['rhat']:.2f} ({res['worst']['parameter']}); "
-                                     "refit with the full sampler before relying on it."]
+    warnings = []
+    if not res["ok"]:
+        warnings.append(f"The final fit did not converge either (largest R-hat {res['worst']['rhat']:.2f}, {res['worst']['parameter']}); "
+                        "it is saved with a 'did not converge' badge.")
+    elif ctx.not_converged:
+        warnings.append("Saved with a 'did not converge' badge: step 30 failed and you chose to continue.")
     where = f"saved as {info['path']}" if info["path"] else "not saved (no folder given)"
+    again = " after one retry with a longer warm-up" if len(attempts) > 1 else ""
     return _step(36, Verdict.WARN if warnings else Verdict.PASS,
-                 f"Refitted on all {info['weeks']} weeks in {secs:,.0f} s; {where}; data version {version}.", info, warnings)
+                 f"Refitted on all {info['weeks']} weeks{again} in {secs:,.0f} s; {where}; data version {version}.", info, warnings)
 
 
 STEPS = [prior_check, fit_holdout, convergence, holdout_accuracy, plausibility, prior_driven, stability, placebo, final_fit]

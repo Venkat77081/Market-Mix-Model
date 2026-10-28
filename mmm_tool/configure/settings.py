@@ -1,9 +1,11 @@
 """Steps 22, 23, 24 and 27: the model's structural settings.
 
 22 Carryover length   max_lag: how many weeks an ad keeps working. 8 by default (2-13).
-23 Carryover shape    adstock_decay_spec per channel: geometric (strongest the week it
-                      runs, then fading) by default; binomial (a delayed peak) is
-                      suggested for channels like TV and outdoor.
+23 Carryover shape    per channel: adstock_decay_spec, geometric (the same share lost
+                      every week) by default or binomial (slow at first, then dropping
+                      off by the end of the carryover length; Meridian's binomial has
+                      no delayed peak); how fast the effect fades, a Beta prior on
+                      alpha (choices.py); and diminishing returns (Hill) or none.
 24 Baseline flexibility  knots: about one per quarter. More knots let the baseline bend
                       more, and a very flexible baseline absorbs media effects. The
                       UI previews every choice first (baseline.py).
@@ -50,16 +52,22 @@ def carryover_length(ctx: DCtx, answers: Answers) -> StepResult:
 
 
 def carryover_shape(ctx: DCtx, answers: Answers) -> StepResult:
-    words = load_calendars().get("delayed_peak_words", [])
+    """Step 23: per channel, the decay shape, how fast the effect fades (a prior on
+    alpha), and whether returns diminish (Hill) or not (saturation "none")."""
+    from .choices import NO_SATURATION_WARNING, SPEED_LABEL, SPEEDS, carryover_beta, carryover_summary, saturation_hint
+
+    cal = load_calendars()
+    words = cal.get("binomial_words", cal.get("delayed_peak_words", []))
     pattern = re.compile(r"(?<![a-z0-9])(" + "|".join(map(re.escape, words)) + r")(?![a-z0-9])") if words else None
     suggest = [c.name for c in ctx.channels if pattern and pattern.search(words_of(c.name))]
+    names = [c.name for c in ctx.channels]
     d = Decision(
         id="adstock_shape",
         step=23,
-        question=("How does each channel's effect build? Geometric is strongest the week it runs, then fades; "
-                  "binomial peaks a week or two later, as TV and outdoor often do."),
+        question=("How does each channel's effect fade? Geometric loses the same share every week; binomial fades "
+                  "slowly at first, then drops off by the end of the carryover length (step 22)."),
         options=list(SHAPES),
-        default={c.name: "geometric" for c in ctx.channels},
+        default={c: "geometric" for c in names},
         context={"suggest_binomial": suggest},
     )
     chosen = {**d.default, **(answers.ask(d) or {})}
@@ -67,12 +75,56 @@ def carryover_shape(ctx: DCtx, answers: Answers) -> StepResult:
     if bad:
         return _blocked(23, "Carryover shape", d, f"unknown channel or shape in {bad}; use geometric or binomial")
     ctx.config["adstock"] = chosen
+    max_lag = int(ctx.config.get("max_lag", DEFAULT_MAX_LAG))
+
+    d_speed = Decision(
+        id="carryover_speed", step=23,
+        question="How fast does each channel's effect fade? Share of the effect still working next week.",
+        options=list(SPEEDS), default={c: "dont_know" for c in names},
+    )
+    speeds = {**d_speed.default, **(answers.ask(d_speed) or {})}
+    bad = {k: v for k, v in speeds.items() if k not in d_speed.default or v not in SPEEDS}
+    if bad:
+        return _blocked(23, "Carryover shape", d_speed, f"unknown channel or speed in {bad}; use dont_know, fast, medium or slow")
+    prior = {}
+    for c in names:
+        a, b = carryover_beta(speeds[c], chosen[c], max_lag)
+        prior[c] = {"speed": speeds[c], "beta": [a, b], "next_week": carryover_summary(a, b, chosen[c], max_lag)}
+    ctx.config["carryover_prior"] = prior
+    answers.describe(d_speed, [f"{c} fades {speeds[c]}" for c in names if speeds[c] != "dont_know"])
+
+    spend = {c.name: ctx.df.groupby(ctx.date)[c.spend].sum().to_numpy(float) for c in ctx.channels}
+    total = sum(float(v.sum()) for v in spend.values())
+    hints = [c for c in names if saturation_hint(spend[c], total)]
+    d_sat = Decision(
+        id="diminishing_returns", step=23,
+        question="Does each extra rupee on a channel bring a little less than the one before (diminishing returns)?",
+        options=["yes", "no"], default={c: "yes" for c in names}, context={"suggest_no": hints},
+    )
+    sat = {**d_sat.default, **(answers.ask(d_sat) or {})}
+    bad = {k: v for k, v in sat.items() if k not in d_sat.default or v not in ("yes", "no")}
+    if bad:
+        return _blocked(23, "Carryover shape", d_sat, f"unknown channel or answer in {bad}; use yes or no")
+    ctx.config["saturation"] = {c: ("hill" if sat[c] == "yes" else "none") for c in names}
+    answers.describe(d_sat, [f"{c} has no diminishing returns" for c in names if sat[c] == "no"])
+    off = [c for c in names if sat[c] == "no"]
+    warnings = [f"'{c}': {NO_SATURATION_WARNING}" for c in off]
+
     binomial = [c for c, v in chosen.items() if v == "binomial"]
     summary = (f"Geometric for all {len(chosen)} channels" if not binomial
-               else f"Binomial (delayed peak) for {', '.join(binomial)}; geometric for the rest")
-    if suggest and not set(suggest) & set(binomial):
-        summary += f". {', '.join(suggest)} often peak later; consider binomial"
-    return StepResult(23, "Carryover shape", Verdict.PASS, summary + ".", {"shapes": chosen, "suggest_binomial": suggest}, [], [d])
+               else f"Binomial for {', '.join(binomial)}; geometric for the rest")
+    set_speed = [c for c in names if speeds[c] != "dont_know"]
+    if set_speed:
+        summary += "; fade speed set for " + ", ".join(f"{c} ({speeds[c]})" for c in set_speed)
+    if off:
+        summary += "; no diminishing returns for " + ", ".join(off)
+    elif suggest and not set(suggest) & set(binomial):
+        summary += f". {', '.join(suggest)} often fade slowly at first; consider binomial"
+    details = {"shapes": chosen, "suggest_binomial": suggest, "carryover_prior": prior, "speed_labels": SPEED_LABEL,
+               "saturation": ctx.config["saturation"], "suggest_no_saturation": hints,
+               "share_of_spend": {c: (float(spend[c].sum()) / total if total else 0.0) for c in names}}
+    return StepResult(23, "Carryover shape", Verdict.WARN if warnings else Verdict.PASS, summary + ".", details, warnings,
+                      [d, d_speed, d_sat])
 
 
 def baseline_flexibility(ctx: DCtx, answers: Answers) -> StepResult:

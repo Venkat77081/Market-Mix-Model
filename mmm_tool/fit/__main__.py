@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--stability", action="store_true", help="step 34: three extra fits on shorter windows")
     p.add_argument("--placebo", action="store_true", help="step 35: one extra fit with a random channel")
     p.add_argument("--out", default="fit", help="folder for model.pkl and result.json (default ./fit)")
+    p.add_argument("--seed", type=int, help="random seed for the prior and the fits (default: a new random one, printed)")
+    p.add_argument("--calibrate", action="store_true", help="time two fits of the bundled sample, for run-time estimates")
     p.add_argument("--run-dir", help=argparse.SUPPRESS)
     args = p.parse_args(argv)
 
@@ -30,6 +32,11 @@ def main(argv: list[str] | None = None) -> int:
         from .job import run_job
 
         return run_job(Path(args.run_dir))
+    if args.calibrate:
+        from .estimate import calibrate
+
+        print(calibrate())
+        return 0
     if not args.file:
         p.error("give a file, or --run-dir")
 
@@ -50,7 +57,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {d['id']}: {d['question']}", file=sys.stderr)
         return 1
     out = Path(args.out)
-    options = {"sampler": args.sampler, "stability": args.stability, "placebo": args.placebo}
+    import secrets
+
+    seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1) + 1
+    print(f"seed {seed}")
+    options = {"sampler": args.sampler, "stability": args.stability, "placebo": args.placebo, "seed": seed,
+               "seed_source": "user" if args.seed is not None else "default"}
     result = run_phase_e(run.d, options, out_dir=out,
                          progress=lambda step, msg, frac: print(f"[{frac:4.0%}] step {step}: {msg}", flush=True))
     (out / "result.json").write_text(json.dumps(_jsonable(result.to_dict()), indent=2), encoding="utf-8")

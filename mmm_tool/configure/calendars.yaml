@@ -31,5 +31,13 @@ presets:
         weeks_before: 2
         weeks_after: 0
 
-# Channel words that suggest a delayed peak (binomial carryover) in step 23.
-delayed_peak_words: [tv, television, outdoor, ooh, hoarding, hoardings, cinema]
+# Channel words for which step 23 suggests binomial carryover: an effect that
+# lingers, fading slowly at first and then dropping off by the end of the
+# carryover length. (Meridian's binomial decay has no delayed peak.)
+binomial_words: [tv, television, outdoor, ooh, hoarding, hoardings, cinema]
+
+# Step 21 suggests a direction for a control's effect on sales from its name.
+# Suggestions only: the user confirms. "raises" applies to 0/1 flags only.
+control_direction_words:
+  lowers: [price, premium, competitor]
+  raises: [season, festive, holiday]
