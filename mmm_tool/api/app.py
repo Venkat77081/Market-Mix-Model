@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
@@ -661,6 +662,155 @@ def whatif_saved(run_id: str, body: SavedIn) -> dict:
             raise HTTPException(400, "Each scenario needs a name and its multipliers.")
     wi.write(wi.folder(d) / "saved.json", {"scenarios": body.scenarios, "model_key": wi.model_key(d)})
     return {"saved": body.scenarios}
+
+
+# ---------- Phase H: Plan, Optimize (steps 48-54) ----------
+
+class PlanIn(BaseModel):
+    plan: dict[str, Any]
+
+
+def _plan_inputs(d: Path) -> dict[str, Any]:
+    """The model's paid channels in Meridian's order, the periods, and each channel's historical
+    spend per period, from the run's model table (no Meridian needed)."""
+    st = _accepted_model(d)
+    fd = job.fit_dir(d)
+    summary = json.loads((fd / "summary.json").read_text(encoding="utf-8")) if (fd / "summary.json").exists() else {}
+    version = summary.get("version") or {}
+    run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+    if run.d is None or run.d.status != "complete":
+        raise HTTPException(409, "Phase D isn't complete for this run's current answers.")
+    cols = run.d.coord_to_columns()["coord_to_columns"]
+    date = cols["time"]
+    chans = [c for c in run.d.channels if c.kind == "media"] + [c for c in run.d.channels if c.kind == "rf"]
+    names = [c.name for c in chans]
+    paid = summary.get("paid")
+    built_from = (st.get("result") or {}).get("inputs")
+    stale = bool(built_from and job.inputs_hash(run.d) != built_from)
+    if paid and sorted(paid) != sorted(names):
+        raise HTTPException(409, "The channels changed after this model was fitted (steps 15-17); refit in Phase E first.")
+    weeks = sorted(pd.to_datetime(run.d.table[date].unique()))
+    wk = [str(w.date()) for w in weeks]
+    periods = {"all": (wk[0], wk[-1])}
+    if len(wk) >= 104:
+        periods["last_52"] = (wk[-52], wk[-1])
+    hist = {}
+    for p_, (a, b) in periods.items():
+        t = run.d.table[(pd.to_datetime(run.d.table[date]) >= a) & (pd.to_datetime(run.d.table[date]) <= b)]
+        hist[p_] = {c.name: float(t[c.spend].sum()) for c in chans}
+    meta = json.loads((fd / "model_meta.json").read_text(encoding="utf-8")) if (fd / "model_meta.json").exists() else {}
+    money = version.get("money")
+    if money is None:
+        money = bool(run.d.kpi.get("kpi_type") == "revenue" or run.d.kpi.get("revenue_per_kpi_column") or run.d.kpi.get("revenue_per_kpi_value"))
+    return {"channels": names, "periods": periods, "hist": hist, "money": bool(money), "kpi": version.get("kpi") or run.d.kpi.get("kpi"),
+            "kpi_type": version.get("kpi_type") or run.d.kpi.get("kpi_type"), "currency": version.get("currency") or run.d.kpi.get("currency"),
+            "no_saturation": sorted(c for c, v in ((meta.get("config") or {}).get("saturation") or {}).items() if v == "none"),
+            "stale": stale, "run": run}
+
+
+def _plan_check(inp: dict, plan: dict) -> dict:
+    from ..plan.optimize import PlanError, check
+
+    period = plan.get("period", "all")
+    if period not in inp["hist"]:
+        raise HTTPException(400, f"Unknown period '{period}'; use {', '.join(inp['hist'])}.")
+    try:
+        return check(plan, inp["hist"][period], inp["money"], inp["periods"])
+    except PlanError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/runs/{run_id}/plan")
+def plan_screen(run_id: str) -> dict:
+    """What the Plan and Optimize screens need, and the last optimization."""
+    from .. import whatif as wi
+    from ..plan.optimize import defaults, settings as psettings
+
+    d = _run_dir(run_id)
+    inp = _plan_inputs(d)
+    pd_ = job.fit_dir(d) / "plan"
+    last = None
+    if (pd_ / "last.json").exists():
+        k = json.loads((pd_ / "last.json").read_text(encoding="utf-8")).get("key")
+        last = _cached(pd_ / f"result_{k}.json", wi.model_key(d)) if k else None
+        if last is None and k and (pd_ / f"request_{k}.json").exists():
+            proc = _whatif_jobs.get(f"{d.name}|plan_{k}")
+            if proc is not None and proc.poll() is None:
+                last = {"key": k, "building": True}
+    out = {k: v for k, v in inp.items() if k != "run"}
+    out.update(settings=psettings(), defaults=defaults(inp["channels"], inp["money"]), last=last)
+    key = _answer_key(d)
+    st = job.status(d) or {}
+    if key and st.get("result"):
+        from ..fit import truth
+
+        out["truth_marginal_roi"] = truth.compare(st["result"], inp["run"].d.channels, key, inp["run"].d.kpi)["true_marginal_roi"]
+    return _clean(out)
+
+
+@app.post("/api/runs/{run_id}/plan/check")
+def plan_check(run_id: str, body: PlanIn) -> dict:
+    """Step 53: the plan as BudgetOptimizer.optimize() arguments, or every problem with it
+    (a plan being edited is often incomplete, so problems are an answer, not an error)."""
+    try:
+        return _clean({"ok": True, **_plan_check(_plan_inputs(_run_dir(run_id)), body.plan)})
+    except HTTPException as e:
+        if e.status_code != 400:
+            raise
+        return {"ok": False, "problems": e.detail}
+
+
+@app.post("/api/runs/{run_id}/plan/optimize")
+def plan_optimize(run_id: str, body: PlanIn) -> dict:
+    """Step 54: run the optimizer in the background (about a minute). Cached by plan and model."""
+    import hashlib as _h
+
+    from .. import whatif as wi
+
+    d = _run_dir(run_id)
+    checked = _plan_check(_plan_inputs(d), body.plan)
+    k = _h.sha256(json.dumps(checked["args"], sort_keys=True, default=str).encode()).hexdigest()[:12]
+    pd_ = job.fit_dir(d) / "plan"
+    wi.write(pd_ / "last.json", {"key": k})
+    done = _cached(pd_ / f"result_{k}.json", wi.model_key(d))
+    if done is not None:
+        return _clean({"key": k, "result": done})
+    wi.write(pd_ / f"request_{k}.json", checked)
+    tag = f"{d.name}|plan_{k}"
+    proc = _whatif_jobs.get(tag)
+    if proc is None or proc.poll() is not None:
+        root = str(Path(__file__).resolve().parents[2])
+        env = {**os.environ, "PYTHONPATH": root + os.pathsep + os.environ.get("PYTHONPATH", "")}
+        log = open(pd_ / f"log_{k}.txt", "w", encoding="utf-8")
+        _whatif_jobs[tag] = subprocess.Popen([sys.executable, "-m", "mmm_tool.plan", "--run-dir", str(d), "--key", k],
+                                             stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+    return {"key": k, "building": True}
+
+
+@app.get("/api/runs/{run_id}/plan/result/{key}")
+def plan_result(run_id: str, key: str) -> dict:
+    from .. import whatif as wi
+
+    d = _run_dir(run_id)
+    done = _cached(job.fit_dir(d) / "plan" / f"result_{key}.json", wi.model_key(d))
+    if done is not None:
+        return _clean({"key": key, "result": done})
+    proc = _whatif_jobs.get(f"{d.name}|plan_{key}")
+    if proc is None or proc.poll() is not None:
+        raise HTTPException(404, "No optimization for this plan: run it again.")
+    return {"key": key, "building": True}
+
+
+@app.get("/api/runs/{run_id}/plan/report/{key}")
+def plan_report(run_id: str, key: str) -> Response:
+    """Meridian's own optimization report for a finished optimization."""
+    d = _run_dir(run_id)
+    if not re.fullmatch(r"[0-9a-f]{12}", key):
+        raise HTTPException(404, "No such report.")
+    path = job.fit_dir(d) / "plan" / f"report_{key}" / "optimization_summary.html"
+    if not path.exists():
+        raise HTTPException(404, "No Meridian report for this optimization.")
+    return FileResponse(path, media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_optimization.html")
 
 
 @app.get("/api/runs/{run_id}/model_results_summary.html")

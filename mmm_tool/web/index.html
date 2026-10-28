@@ -241,6 +241,18 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .wi-move { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13.5px; }
 @media (max-width: 1000px) { .wi { grid-template-columns: minmax(0, 1fr); } }
 
+/* Phase H: Plan, Optimize */
+.pl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.pl-col { display: grid; gap: 14px; min-width: 0; }
+.pl-col > .card, .pl-col .body > * { min-width: 0; }
+.pl-full { grid-column: 1 / -1; min-width: 0; }
+.pl input[type=number] { width: 64px; }
+.pl td.lim { white-space: nowrap; }
+.pl-call { font: 12.5px/1.55 var(--mono); background: var(--sunken); border-radius: var(--r); padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pl-bar { position: relative; height: 10px; background: var(--line); border-radius: 5px; min-width: 80px; }
+.pl-bar i { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+@media (max-width: 1000px) { .pl { grid-template-columns: minmax(0, 1fr); } }
+
 @media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -292,8 +304,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     "Calendar flags", "Carryover length", "Carryover shape", "Baseline flexibility", "ROI priors", "Lift-test calibration", "Holdout",
     "Prior check", "Fit with holdout", "Convergence", "Holdout accuracy", "Plausibility", "Did the data teach anything?", "Stability", "Placebo channel", "Final fit and save",
     "Fit health", "Sales breakdown", "ROI table", "Trust badges", "Response curves", "Carryover",
-    "Enter a scenario", "Quick result", "Exact result", "Extrapolation warning", "Save and compare"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42], g: [43, 44, 46, 45, 47] };
+    "Enter a scenario", "Quick result", "Exact result", "Extrapolation warning", "Save and compare",
+    "Period", "Budget", "Budget type", "Channel limits", "Locks and floors", "Review", "Optimize"];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42], g: [43, 44, 46, 45, 47], h: [48, 49, 50, 51, 52, 53, 54] };
   const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
@@ -342,7 +355,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
-    if ((view === "f" || view === "g") && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
+    if (["f", "g", "h"].includes(view) && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
     if (view === "e" && !(data.result_d && data.result_d.status === "complete")) view = "d";
     if (view === "d" && !data.result_d) view = "c";
     if (view === "c" && !data.result_c) view = "b";
@@ -1220,7 +1233,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
       done: "The model is configured. Phase E fits and validates it.", next: "e", nextLabel: "Continue to E · Validate" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail(), g: () => summaryRail() };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail(), g: () => summaryRail(), h: () => summaryRail() };
   // Phase F opens once a model is accepted; its dot is amber when the model is out of date.
   function summaryRail() {
     const f = run.fit, res = fitResult();
@@ -1257,6 +1270,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (view === "e") return renderFit();
     if (view === "f") return renderSummary();
     if (view === "g") return renderWhatIf();
+    if (view === "h") return renderPlan();
     const r = phaseResult(view);
     const info = PHASE_INFO[view];
     const nums = PHASE_STEPS[view];
@@ -1702,7 +1716,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const live = chans.filter(c => wiBase(c) > 0);
     const opts = sel => live.map(c => `<option ${c === sel ? "selected" : ""}>${esc(c)}</option>`).join("");
     $("main").innerHTML = `${head}
-        <div class="chips"><span class="chip">${esc(D.curves.first_week)} to ${esc(D.curves.last_week)}</span><span class="chip">${D.curves.weeks} weeks</span>
+        <div class="chips"><button class="btn" data-view="h">Plan, optimize (H)</button><span class="chip">${esc(D.curves.first_week)} to ${esc(D.curves.last_week)}</span><span class="chip">${D.curves.weeks} weeks</span>
           <span class="chip">${esc(kpi)} from paid media</span></div></div>
       ${D.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so these scenarios use the earlier model. Refit in Phase E to update them.</div>` : ""}
       ${per}
@@ -1825,6 +1839,163 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       wiPeriod = sc.period; Object.assign(wiMult, sc.multipliers); wiExact = sc.exact || null; renderWhatIf(); });
     host.querySelectorAll("[data-widel]").forEach(bt => bt.onclick = async () => { const saved = D.saved.filter((_, i) => i !== +bt.dataset.widel);
       D.saved = (await api("PUT", `/api/runs/${run.run_id}/whatif/saved`, { scenarios: saved })).saved; wiSaved(); });
+  }
+
+  // ---------- Phase H: Plan, Optimize (steps 48-54) ----------
+  // Steps 48-52 build the plan; every field is one argument of Meridian's BudgetOptimizer.optimize().
+  // Step 53 checks it on the server as you edit (no Meridian needed) and shows the exact call;
+  // step 54 runs it in the background (about a minute) and compares current with optimized spend.
+  let plData = null, plPlan = null, plCheck = null, plResult = null, plTimer = null;
+  async function renderPlan(fetchAgain = true) {
+    $("rail").innerHTML = railHtml();
+    const head = `<div class="runhead"><div><span class="eyebrow">Screen H · steps 48–54</span><h1>Plan, Optimize</h1></div>`;
+    if (fetchAgain || !plData || plData.run !== run.run_id) {
+      try { plData = { ...(await api("GET", `/api/runs/${run.run_id}/plan`)), run: run.run_id }; }
+      catch (e) { $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); return; }
+      if (!plPlan || plPlan.__run !== run.run_id) plPlan = { ...structuredClone(plData.defaults), __run: run.run_id };
+      if (plData.last && !plResult) plResult = plData.last.building ? { building: true, key: plData.last.key } : { result: plData.last, key: plData.last.key };
+    }
+    const D = plData, P = plPlan, hist = D.hist[P.period], kpi = D.kpi || "KPI", money = D.money;
+    const total = Object.values(hist).reduce((a, b) => a + b, 0), budget = P.budget_type === "fixed" ? (P.budget ?? total) : null;
+    const planned = c => (budget ?? total) * (total ? hist[c] / total : 0);
+    const segBtn = (attr, val, cur, label, dis = false) => `<button data-${attr}="${esc(val)}" aria-pressed="${cur === val}" ${dis ? "disabled" : ""}>${esc(label)}</button>`;
+    const periodLbl = k => k === "all" ? `All weeks (${esc(D.periods.all[0])} to ${esc(D.periods.all[1])})` : `Last 52 weeks (from ${esc(D.periods.last_52[0])})`;
+    const limRows = D.channels.map(c => { const L = P.limits[c], locked = P.locks.includes(c), zero = !(hist[c] > 0);
+      return `<tr><td><b>${esc(c)}</b>${D.no_saturation.includes(c) ? ' <span class="badge model_only" title="No diminishing returns (step 23)">straight line</span>' : ""}</td>
+        <td class="num">${fmoney(hist[c])}</td><td class="num">${fmoney(planned(c))}</td>
+        <td class="lim"><input type="number" min="0" max="100" step="5" data-pllim="${esc(c)}" data-way="down" value="${L.down}" ${locked || zero ? "disabled" : ""} aria-label="${esc(c)} may go down, %"> %</td>
+        <td class="lim"><input type="number" min="0" max="${D.settings.limits.max_up}" step="5" data-pllim="${esc(c)}" data-way="up" value="${L.up}" ${locked || zero ? "disabled" : ""} aria-label="${esc(c)} may go up, %"> %</td>
+        <td class="num small">${zero ? "no spend in the period" : locked ? "locked" : `${fmoney(planned(c) * (1 - L.down / 100))}–${fmoney(planned(c) * (1 + L.up / 100))}`}</td></tr>`; }).join("");
+    const lockRows = D.channels.map(c => `<tr><td><b>${esc(c)}</b></td><td><label class="small"><input type="checkbox" data-pllock="${esc(c)}" ${P.locks.includes(c) ? "checked" : ""}> keep at ${fmoney(planned(c))}</label></td>
+        <td><input type="number" min="0" step="any" data-plfloor="${esc(c)}" value="${P.floors[c] ?? ""}" placeholder="none" ${P.locks.includes(c) ? "disabled" : ""} style="width:120px" aria-label="${esc(c)} floor"></td></tr>`).join("");
+    const straight = D.no_saturation.filter(c => !P.locks.includes(c) && P.limits[c] && P.limits[c].up > 0);
+    $("main").innerHTML = `${head}
+        <div class="chips"><button class="btn" data-view="g">What-If (G)</button><span class="chip">${esc(kpi)}${money ? " and revenue" : ""}</span></div></div>
+      ${D.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so the plan uses the earlier model. Refit in Phase E to update it.</div>` : ""}
+      <div class="pl">
+        <div class="pl-col">
+          <article class="card" id="step-48"><header><span class="n">48</span><h3>Period</h3><span></span><p class="sum">The weeks whose spend pattern is planned. Each channel keeps its week-by-week pattern; only its level changes.</p></header>
+            <div class="body"><div class="seg" role="group" aria-label="Period">${Object.keys(D.periods).map(k => segBtn("plperiod", k, P.period, periodLbl(k))).join("")}</div></div></article>
+          <article class="card" id="step-49"><header><span class="n">49</span><h3>Budget</h3><span></span><p class="sum">Total paid spend over the period. ${P.budget_type === "fixed" ? `Historical: ${fmoney(total)}.` : "A flexible budget sets its own total (step 50)."}</p></header>
+            <div class="body">${P.budget_type === "fixed" ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${esc(sym())}</span><input type="number" id="pl-budget" min="0" step="any" value="${Math.round(budget)}" style="width:150px" aria-label="Budget">
+              ${[-10, 0, 10, 20].map(p => `<button class="btn" data-plbudgetpct="${p}">${p === 0 ? "Historical" : (p > 0 ? "+" : "") + p + "%"}</button>`).join("")}</div>` : '<p class="muted small">Not used for a flexible budget.</p>'}</div></article>
+          <article class="card" id="step-50"><header><span class="n">50</span><h3>Budget type</h3><span></span><p class="sum">Fixed: split this budget for the most ${money && P.objective === "revenue" ? "revenue" : esc(kpi)}. Flexible: spend until the plan's return falls to a target.</p></header>
+            <div class="body" style="display:grid;gap:10px">
+              <div class="seg" role="group" aria-label="Budget type">${segBtn("pltype", "fixed", P.budget_type, "Fixed budget")}${segBtn("pltype", "flexible", P.budget_type, "Flexible budget")}</div>
+              ${P.budget_type === "flexible" ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="seg" role="group" aria-label="Target">${segBtn("pltarget", "roi", P.target, "Target ROI")}${segBtn("pltarget", "mroi", P.target, "Target marginal ROI")}</div>
+                <input type="number" id="pl-target" min="0" step="0.05" value="${P.target_value}" aria-label="Target value"></div>` : ""}
+              <div><span class="small muted">Maximise</span> <div class="seg" role="group" aria-label="Objective">${segBtn("plobj", "revenue", P.objective, "Revenue", !money)}${segBtn("plobj", "kpi", P.objective, kpi)}</div>
+                ${money ? "" : `<p class="muted small">No money value per ${esc(kpi)} (step 5), so the plan maximises ${esc(kpi)}.</p>`}</div></div></article>
+        </div>
+        <div class="pl-col">
+          <article class="card" id="step-51"><header><span class="n">51</span><h3>Channel limits</h3><span></span><p class="sum">How far each channel may move from its planned spend (the budget split as in the period).</p></header>
+            <div class="body"><div class="scroll"><table style="min-width:560px"><thead><tr><th>Channel</th><th class="r">Historical</th><th class="r">Planned</th><th>May go down</th><th>May go up</th><th>Range</th></tr></thead><tbody>${limRows}</tbody></table></div>
+              ${straight.length ? `<p class="small" style="color:var(--warn)"><b>${straight.map(esc).join(", ")}</b>: no diminishing returns (step 23), so the optimizer will keep adding budget there up to its upper limit. Set a sensible limit.</p>` : ""}</div></article>
+          <article class="card" id="step-52"><header><span class="n">52</span><h3>Locks and floors</h3><span></span><p class="sum">Keep a channel at its planned spend, or give it a minimum (${esc(symOr("in money"))}, up to its planned spend).</p></header>
+            <div class="body"><div class="scroll"><table style="min-width:420px"><thead><tr><th>Channel</th><th>Lock</th><th>Floor</th></tr></thead><tbody>${lockRows}</tbody></table></div></div></article>
+        </div>
+        <article class="card pl-full" id="step-53"><header><span class="n">53</span><h3>Review</h3><span></span><p class="sum">What will run: the plan as Meridian's BudgetOptimizer.optimize() arguments, checked first.</p></header>
+          <div class="body" id="pl-review"><p class="muted small">Checking…</p></div></article>
+        <article class="card pl-full" id="step-54"><header><span class="n">54</span><h3>Optimize</h3><span></span><p class="sum">Current against optimized spend, with 90% ranges. About a minute on the saved model.</p></header>
+          <div class="body" id="pl-result"></div></article>
+      </div>`;
+    wire();
+    const set = (patch, now = false) => { Object.assign(plPlan, patch); if (now) renderPlan(false); else plReview(); };
+    $("main").querySelectorAll("[data-plperiod]").forEach(b => b.onclick = () => set({ period: b.dataset.plperiod, budget: null }, true));
+    $("main").querySelectorAll("[data-pltype]").forEach(b => b.onclick = () => { const t = b.dataset.pltype, L = D.settings.limits[t];
+      set({ budget_type: t, limits: Object.fromEntries(D.channels.map(c => [c, { down: L.down, up: L.up }])) }, true); });
+    $("main").querySelectorAll("[data-pltarget]").forEach(b => b.onclick = () => set({ target: b.dataset.pltarget, target_value: D.settings.flexible[b.dataset.pltarget === "roi" ? "target_roi" : "target_mroi"] }, true));
+    $("main").querySelectorAll("[data-plobj]").forEach(b => b.onclick = () => set({ objective: b.dataset.plobj }, true));
+    $("main").querySelectorAll("[data-plbudgetpct]").forEach(b => b.onclick = () => set({ budget: Math.round(total * (1 + Number(b.dataset.plbudgetpct) / 100)) }, true));
+    const bud = $("pl-budget"); if (bud) bud.onchange = () => set({ budget: Number(bud.value) || null }, true);
+    const tgt = $("pl-target"); if (tgt) tgt.onchange = () => set({ target_value: Number(tgt.value) });
+    $("main").querySelectorAll("[data-pllim]").forEach(x => x.onchange = () => { plPlan.limits[x.dataset.pllim][x.dataset.way] = Number(x.value); renderPlan(false); });
+    $("main").querySelectorAll("[data-pllock]").forEach(x => x.onchange = () => { const c = x.dataset.pllock;
+      plPlan.locks = x.checked ? [...new Set([...plPlan.locks, c])] : plPlan.locks.filter(v => v !== c); renderPlan(false); });
+    $("main").querySelectorAll("[data-plfloor]").forEach(x => x.onchange = () => { const c = x.dataset.plfloor;
+      if (x.value === "") delete plPlan.floors[c]; else plPlan.floors[c] = Number(x.value); plReview(); });
+    plReview();
+    plShowResult();
+  }
+
+  function plPlanBody() { const { __run, ...p } = plPlan; return p; }
+  function plReview() {
+    clearTimeout(plTimer);
+    plTimer = setTimeout(async () => {
+      const host = $("pl-review"); if (!host) return;
+      try {
+        plCheck = await api("POST", `/api/runs/${run.run_id}/plan/check`, { plan: plPlanBody() });
+        if (!plCheck.ok) throw new Error(plCheck.problems);
+        const a = plCheck.args, D = plData, kpi = D.kpi || "KPI";
+        const arr = v => `[${v.map(x => x.toFixed(2)).join(", ")}]`;
+        const call = `BudgetOptimizer(mmm).optimize(
+    start_date="${a.start_date}", end_date="${a.end_date}",
+    fixed_budget=${a.fixed_budget ? "True" : "False"},${a.fixed_budget ? `\n    budget=${Math.round(a.budget)},` : ""}${a.target_roi != null ? `\n    target_roi=${a.target_roi},` : ""}${a.target_mroi != null ? `\n    target_mroi=${a.target_mroi},` : ""}
+    spend_constraint_lower=${arr(a.spend_constraint_lower)},   # ${D.channels.join(", ")}
+    spend_constraint_upper=${arr(a.spend_constraint_upper)},
+    use_kpi=${a.use_kpi ? "True" : "False"},   # maximise ${a.use_kpi ? kpi : "revenue"}
+    confidence_level=${a.confidence_level}, gtol=${a.gtol})`;
+        host.innerHTML = `<dl class="kv"><div><dt>Period</dt><dd>${esc(a.start_date)} to ${esc(a.end_date)}</dd></div>
+            <div><dt>Budget</dt><dd>${a.fixed_budget ? fmoney(a.budget) : `flexible, until ${a.target_roi != null ? `ROI ${a.target_roi}` : `marginal ROI ${a.target_mroi}`}`}</dd></div>
+            <div><dt>Maximise</dt><dd>${a.use_kpi ? esc(kpi) : "revenue"}</dd></div>
+            <div><dt>Channels</dt><dd>${plCheck.channels.map(r => `${esc(r.channel)} ${r.note === "locked" ? "locked" : `${fmoney(r.min)}–${fmoney(r.max)}`}${r.note === "floor" ? " (floor)" : ""}`).join("; ")}</dd></div></dl>
+          <div class="pl-call">${esc(call)}</div>
+          <div><button class="btn primary" id="pl-go">Optimize</button></div>`;
+        $("pl-go").onclick = plOptimize;
+        if (plResult && plResult.result && plResult.result.plan && JSON.stringify(plResult.result.plan.args) !== JSON.stringify(a)) plShowResult(true);
+      } catch (e) {
+        plCheck = null;
+        host.innerHTML = `<p style="color:var(--block)">${esc(e.message)}</p><div><button class="btn primary" disabled>Optimize</button></div>`;
+      }
+    }, 250);
+  }
+
+  async function plOptimize() {
+    plResult = { building: true }; plShowResult();
+    try {
+      let r = await api("POST", `/api/runs/${run.run_id}/plan/optimize`, { plan: plPlanBody() });
+      while (r.building) { await new Promise(ok => setTimeout(ok, 3000)); if (view !== "h") return; r = await api("GET", `/api/runs/${run.run_id}/plan/result/${r.key}`); }
+      plResult = { result: r.result, key: r.key };
+    } catch (e) { plResult = { error: e.message }; }
+    plShowResult();
+  }
+
+  function plShowResult(changed = false) {
+    const host = $("pl-result"); if (!host) return;
+    const R = plResult;
+    if (!R) { host.innerHTML = '<p class="muted small">Check the plan above, then Optimize.</p>'; return; }
+    if (R.building) { host.innerHTML = '<p><span class="pill warn">Working</span> Optimizing on the saved model (about a minute). You can leave this page and come back.</p>'; return; }
+    if (R.error || (R.result && R.result.error)) { host.innerHTML = `<p style="color:var(--block)">${esc(R.error || R.result.error)}</p>`; return; }
+    const X = R.result, D = plData, kpi = D.kpi || "KPI", T = X.totals, hasRev = !!T.current.revenue;
+    const sg = v => (v >= 0 ? "+" : "−"), dr = (s, f) => `${sg(s.mean)}${f(Math.abs(s.mean))} <span class="muted small">(90%: ${sg(s.lo)}${f(Math.abs(s.lo))} to ${sg(s.hi)}${f(Math.abs(s.hi))})</span>`;
+    const outW = X.plan.args.use_kpi ? kpi : "revenue";
+    const truth = D.truth_marginal_roi;
+    const maxS = Math.max(...X.channels.map(c => Math.max(X.before.channels[c].spend, X.after.channels[c].spend))) || 1;
+    const bar = (a, b) => `<div class="pl-bar" title="current ${fmoney(a)}, optimized ${fmoney(b)}"><i style="left:0;width:${(a / maxS * 100).toFixed(1)}%;background:var(--s2);opacity:.45"></i><i style="left:0;width:${(b / maxS * 100).toFixed(1)}%;height:4px;top:3px;background:var(--accent)"></i></div>`;
+    const atLimit = c => { const r = X.plan.channels.find(x => x.channel === c), s = X.after.channels[c].spend;
+      return r && r.note !== "locked" && (Math.abs(s - r.max) <= Math.max(1, r.max * 0.002) ? "at its upper limit" : Math.abs(s - r.min) <= Math.max(1, r.min * 0.002) && r.min < r.planned ? "at its lower limit" : ""); };
+    host.innerHTML = `${changed ? '<div class="fbanner">The plan above changed since this result: Optimize again to update it.</div>' : ""}
+      <div class="fstats">
+        <div class="fstat"><b>${fmoney(T.scenario.spend)}</b><span>Optimized spend</span><br><small class="muted">current ${fmoney(T.current.spend)}</small></div>
+        <div class="fstat"><b>${fnum(T.scenario.kpi.mean)}</b><span>${esc(kpi)} from paid media</span><br><small>${dr(T.delta_kpi, fnum)}</small></div>
+        ${hasRev && D.kpi_type !== "revenue" ? `<div class="fstat"><b>${fmoney(T.scenario.revenue.mean)}</b><span>Revenue from paid media</span><br><small>${dr(T.delta_revenue, fmoney)}</small></div>` : ""}
+        <div class="fstat"><b>${X.after.attrs.total_roi.toFixed(hasRev ? 2 : 4)}</b><span>ROI (${esc(outW)} per ${esc(symOr("unit of spend"))})</span><br><small class="muted">current ${X.before.attrs.total_roi.toFixed(hasRev ? 2 : 4)}</small></div></div>
+      <div class="scroll"><table style="min-width:720px"><thead><tr><th>Channel</th><th class="r">Current</th><th class="r">Optimized</th><th class="r">Change</th><th style="width:22%"></th><th class="r">${esc(outW)} (90%)</th><th class="r">ROI</th><th class="r">Next-${esc(symOr("unit"))} ROI</th>${truth ? `<th class="r">True next-${esc(symOr("unit"))} ROI</th>` : ""}<th></th></tr></thead><tbody>
+        ${X.channels.map(c => { const a = X.before.channels[c], b = X.after.channels[c], ch = a.spend ? b.spend / a.spend - 1 : 0, lim = atLimit(c);
+          return `<tr><td><b>${esc(c)}</b></td><td class="num">${fmoney(a.spend)}</td><td class="num">${fmoney(b.spend)}</td>
+            <td class="num ${Math.abs(ch) < 0.005 ? "" : ch > 0 ? "delta up" : "delta down"}">${Math.abs(ch) < 0.005 ? "–" : (ch > 0 ? "+" : "−") + Math.round(Math.abs(ch) * 100) + "%"}</td><td>${bar(a.spend, b.spend)}</td>
+            <td class="num">${(outW === "revenue" ? fmoney : fnum)(b.outcome.mean)} <span class="muted small">(${(outW === "revenue" ? fmoney : fnum)(b.outcome.lo)}–${(outW === "revenue" ? fmoney : fnum)(b.outcome.hi)})</span></td>
+            <td class="num">${b.roi.mean.toFixed(hasRev ? 2 : 4)}</td><td class="num">${b.mroi.mean.toFixed(hasRev ? 2 : 4)}</td>
+            ${truth ? `<td class="num">${truth[c] != null ? Number(truth[c]).toFixed(2) : '<span class="muted small">no truth</span>'}</td>` : ""}
+            <td class="small muted">${lim}${D.no_saturation.includes(c) ? (lim ? "; " : "") + "straight line" : ""}</td></tr>`; }).join("")}</tbody></table></div>
+      <div class="flegend"><span><i style="background:var(--s2);opacity:.45"></i>current spend</span><span><i style="background:var(--accent)"></i>optimized spend</span></div>
+      <p class="muted small">The ${esc(kpi)}${hasRev ? " and revenue" : ""} totals and the change are the optimized split run on every draw of the saved model, against the period's historical spend.
+        ${X.plan.args.fixed_budget && Math.abs(X.after.attrs.budget - X.plan.args.budget) > 1 ? ` Meridian rounds the budget to ${money(X.after.attrs.budget)} (asked: ${money(X.plan.args.budget)}).` : ""}
+        ${(T.delta_kpi.lo <= 0 && T.delta_kpi.hi >= 0) ? " The 90% range of the change includes zero: the model can't tell the optimized plan from the current one." : ""}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pl-whatif">Open in What-If (G)</button>
+        ${X.report && !String(X.report).startsWith("error") ? `<a class="btn" href="/api/runs/${run.run_id}/plan/report/${esc(R.key)}">Meridian's optimization report (HTML)</a>` : ""}</div>`;
+    $("pl-whatif").onclick = () => { wiPeriod = X.plan.period; wiMult = { ...X.multipliers, __run: run.run_id }; wiExact = null; view = "g";
+      history.replaceState(null, "", `#run=${run.run_id}/g`); render(); };
   }
 
   function fsumPoll() {
@@ -2099,7 +2270,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdefg]))?$/);
+  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdefgh]))?$/);
   if (m) {
     view = m[2] || "a";
     api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(e => { console.error(e); startScreen(); });

@@ -1,0 +1,12 @@
+# Phase H (Plan, Optimize, steps 48-54). Defaults the screen starts from; judgment calls.
+
+limits:                  # step 51: how far each channel may move from its planned spend, in %
+  fixed: {down: 30, up: 30}       # Meridian's own defaults: 30% for a fixed budget...
+  flexible: {down: 100, up: 100}  # ...and 100% for a flexible one
+  max_up: 200                     # the screen won't go past 3x a channel's planned spend
+
+flexible:                # step 50: a flexible budget spends until the whole plan's ROI (or
+  target_roi: 1.0        # marginal ROI) falls to this target
+  target_mroi: 1.0
+
+gtol: 0.0001             # Meridian's budget rounding tolerance (BudgetOptimizer.optimize gtol)

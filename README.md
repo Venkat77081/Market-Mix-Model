@@ -360,3 +360,26 @@ checks that on a real fit with `MMM_FIT_TESTS=1`. The curves and exact results a
 background process (`python -m mmm_tool.whatif`) and cached in `runs/<id>/fit/whatif/` for the saved
 model, so a refit recomputes them. The slider range, the curve grid, the 50–200% limits and the
 number of saved scenarios are in `mmm_tool/whatif/whatif.yaml`.
+
+## Phase H: Plan, Optimize (steps 48–54)
+
+Opens once a model is accepted (the rail, or the button on the What-If screen). Every Plan field is
+one argument of Meridian's `BudgetOptimizer.optimize()`:
+
+| Step | Field | Argument |
+|---|---|---|
+| 48 Period | all weeks, or the last 52 | `start_date`, `end_date` |
+| 49 Budget | total spend (default: the period's historical spend; quick −10% to +20%) | `budget` |
+| 50 Budget type | fixed, or flexible until a target ROI or marginal ROI; maximise revenue (with a money value) or the KPI | `fixed_budget`, `target_roi` / `target_mroi`, `use_kpi` |
+| 51 Channel limits | how far each channel may move from its planned spend (the budget split as historically); 30% for a fixed budget and 100% for a flexible one by default, as Meridian's | `spend_constraint_lower`, `spend_constraint_upper` |
+| 52 Locks and floors | lock a channel at its planned spend, or give it a minimum in money (up to its planned spend, since Meridian's limits sit around it) | the same two, per channel |
+| 53 Review | the plan checked as you edit, shown as the exact call; every problem at once | |
+| 54 Optimize | about a minute on the saved model, in the background: current against optimized spend per channel, its outcome with a 90% range, ROI and marginal ROI, and the channels left at a limit | |
+
+The KPI and revenue totals in step 54, and the change, are the optimized split run on every
+posterior draw (the What-If calculation), so they come with 90% ranges. **Open in What-If** puts the
+optimized split on the What-If sliders; Meridian's own optimization report is a download. With an
+answer key loaded (step 32), the table adds the true next-₹ ROI. A channel with no diminishing
+returns (step 23) is flagged: the optimizer adds budget there up to its upper limit. Defaults are in
+`mmm_tool/plan/plan.yaml`; `tests/test_phase_h.py` checks the mapping and, with `MMM_FIT_TESTS=1`,
+a real optimization (budget kept, limits and locks respected, never worse than the current split).
