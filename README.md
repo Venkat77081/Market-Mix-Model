@@ -59,9 +59,9 @@ Each column's suggested role comes from, in order:
 3. **Keyword packs** you turn on, checked after your words: words for one industry or country, in
    `mmm_tool/ingest/packs/`. Two come with the tool: `insurance` (policies, premium, GWP, vehicle
    registrations; a premium index lowers sales) and `india` (₹/INR/Rs, lakh and crore, festivals;
-   suggests INR when the file shows no currency). Turn them on with `packs: [india, insurance]` in
-   `roles.yaml` (this project's `roles.yaml` does), or `MMM_KEYWORD_PACKS=india,insurance`. A pack
-   of your own is a `.yaml` file in the same format, named by its path.
+   suggests INR when the file shows no currency). They are off by default and chosen per run (see
+   *How a file is read* below). A pack of your own is a `.yaml` file in the same format, with a
+   `title` and a `describe` list for the upload screen.
 4. **Built-in words** in `mmm_tool/ingest/role_keywords.yaml`, which documents every field. They hold
    only words that mean the same in any industry or country.
 5. **The values**: text with a few repeating values is a region; a 0/1 column is a flag.
@@ -204,8 +204,23 @@ estimates the real baseline in step 29. Code: `configure/baseline.py`; property 
 data with a known truth in `tests/test_step24.py` and `tests/gen.py`.
 
 **Calendar presets (step 21).** A `calendars.yaml` at the project root (or `MMM_CALENDARS`) adds
-presets of your own and sets the one step 21 suggests (`default_preset`); this project's file
-suggests India insurance. Without it, step 21 starts with none.
+presets of your own. The preset step 21 suggests is the run's own (see below); with none chosen,
+step 21 starts with none.
+
+**How a file is read.** Every run keeps its keyword packs and calendar preset in `meta.json`:
+
+- **Upload screen.** "Read this file as" starts generic (no packs, no calendar, currency detected
+  from the file). **Change** shows each pack with what it changes, and the calendar presets.
+  "Use these for my new runs" remembers the choice (`runs/settings.json`). The samples are read
+  with the India and Insurance packs and the India insurance calendar.
+- **In a run.** The chip in the top bar shows how the run's file is read. Changing it re-reads the
+  file from Phase A; answers stay, except the step 21 calendar pick.
+- **Bundles and refits** keep the run's settings, and `--verify` reads with them.
+- **Command line.** Use `--packs india,insurance --calendar india_insurance` with
+  `python -m mmm_tool.ingest` and `python -m mmm_tool.fit`.
+- **No choice anywhere** (and for runs made before runs kept settings): the remembered default,
+  else `MMM_KEYWORD_PACKS` / `packs:` in `roles.yaml` and `MMM_CALENDARS`. The repo's own files
+  turn nothing on. `examples/india_insurance/` has the India insurance setup as files.
 
 **Prior choices (steps 21, 23, 25).** Every choice goes into the model configuration, the
 decision log (for example `#23 search fades fast (you)`) and the export; changing one marks a

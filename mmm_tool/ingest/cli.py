@@ -12,9 +12,11 @@ in roles.yaml (MMM_ROLES_FILE).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 
+from ..settings import ARGS_HELP, SettingsError, from_args, use
 from .keywords import KeywordError
 from .memory import RoleMemory
 from .pipeline import run_phase_a
@@ -34,6 +36,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--config", help="write the Phase D model configuration to this JSON file")
     p.add_argument("--no-memory", action="store_true", help="don't use or update remembered column roles")
     p.add_argument("--forget", action="store_true", help="clear remembered column roles and exit")
+    p.add_argument("--packs", help=ARGS_HELP["packs"])
+    p.add_argument("--calendar", help=ARGS_HELP["calendar"])
     args = p.parse_args(argv)
 
     memory = None if args.no_memory else RoleMemory()
@@ -47,23 +51,29 @@ def main(argv: list[str] | None = None) -> int:
     answers = json.load(open(args.answers)) if args.answers else {}
     ans = Answers(answers, args.accept_defaults)
     try:
-        result = run_phase_a(args.file, ans, memory=memory)
-        phases = [result]
-        if result.status == "complete" and args.phase in ("b", "c", "d"):
-            from ..clean import run_phase_b
+        chosen = from_args(args.packs, args.calendar)
+    except SettingsError as e:
+        print(f"Settings: {e}", file=sys.stderr)
+        return 1
+    try:
+        with use(chosen) if chosen is not None else contextlib.nullcontext():
+            result = run_phase_a(args.file, ans, memory=memory)
+            phases = [result]
+            if result.status == "complete" and args.phase in ("b", "c", "d"):
+                from ..clean import run_phase_b
 
-            result = run_phase_b(result, ans)
-            phases.append(result)
-        if result.status == "complete" and args.phase in ("c", "d"):
-            from ..profile import run_phase_c
+                result = run_phase_b(result, ans)
+                phases.append(result)
+            if result.status == "complete" and args.phase in ("c", "d"):
+                from ..profile import run_phase_c
 
-            result = run_phase_c(result, ans)
-            phases.append(result)
-        if result.status == "complete" and args.phase == "d":
-            from ..configure import run_phase_d
+                result = run_phase_c(result, ans)
+                phases.append(result)
+            if result.status == "complete" and args.phase == "d":
+                from ..configure import run_phase_d
 
-            result = run_phase_d(result, ans)
-            phases.append(result)
+                result = run_phase_d(result, ans)
+                phases.append(result)
     except KeywordError as e:
         print(f"Role keywords: {e}", file=sys.stderr)
         return 1

@@ -2,6 +2,12 @@
 # (or MMM_KEYWORD_PACKS=insurance). Same fields as role_keywords.yaml; these
 # words are added to the built-in ones and checked before them.
 
+title: Insurance
+describe:
+  - "Policies and policy counts as the KPI"
+  - "Premium, GWP, NBP as revenue"
+  - "Premium index words as price controls"
+
 rules:
   - role: revenue_per_kpi
     words: [per policy, avg premium, average premium]

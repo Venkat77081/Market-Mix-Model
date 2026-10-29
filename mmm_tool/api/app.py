@@ -102,6 +102,14 @@ def _update_meta(d: Path, change) -> dict:
         return meta
 
 
+def _pipeline(d: Path, meta: dict | None = None):
+    """Phases A-D for a run, read with the run's own keyword packs and calendar."""
+    from .. import settings as rs
+
+    meta = meta if meta is not None else _meta(d)
+    return run_pipeline(d / meta["file"], meta["answers"], memory=_memory(), settings=rs.for_run(d, meta)[0])
+
+
 def _memory() -> RoleMemory:
     """Remembered column roles, shared by every run (MMM_ROLE_MEMORY, or next to the runs)."""
     return RoleMemory(os.environ.get("MMM_ROLE_MEMORY") or RUNS_DIR / "role_memory.json")
@@ -117,11 +125,15 @@ def _preview(table) -> dict:
 
 def _evaluate(d: Path) -> dict:
     """Run Phase A, then Phase B once A is complete, with the run's answers."""
+    from .. import settings as rs
+
     meta = _meta(d)
     try:
-        run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+        run = _pipeline(d, meta)
     except KeywordError as e:
         raise HTTPException(400, f"Your role keywords file has a problem: {e}") from e
+    except rs.SettingsError as e:
+        raise HTTPException(400, f"This run's reading settings have a problem: {e}") from e
     out_a = run.a.to_dict()
     if run.a.status == "complete":
         out_a["table_preview"] = _preview(run.a.table)
@@ -166,7 +178,62 @@ def _evaluate(d: Path) -> dict:
             "result": _clean(out_a), "result_b": _clean(out_b), "result_c": _clean(out_c), "result_d": _clean(out_d),
             "fit": _clean(fit), "meridian_installed": meridian_installed(),
             "answer_key": {"loaded": bool(key), "file": (key or {}).get("_file")},
-            "refit_of": meta.get("refit_of"), "refit_options": meta.get("refit_options")}
+            "refit_of": meta.get("refit_of"), "refit_options": meta.get("refit_options"),
+            "settings": _settings_view(d, meta)}
+
+
+def _settings_view(d: Path, meta: dict) -> dict:
+    from .. import settings as rs
+
+    s, source = rs.for_run(d, meta)
+    return {**s, "source": source, "label": rs.describe(s)}
+
+
+class SettingsIn(BaseModel):
+    packs: list[str] = []
+    calendar: str = "none"
+
+
+@app.get("/api/settings")
+def get_settings() -> dict:
+    """Every keyword pack and calendar preset, and the settings a new run starts with."""
+    from .. import settings as rs
+
+    new = rs.for_new_run(RUNS_DIR)
+    return {**rs.catalog(), "default": {**new, "label": rs.describe(new), "remembered": rs.remembered(RUNS_DIR) is not None},
+            "sample": {**samples.SETTINGS, "label": rs.describe(samples.SETTINGS)}}
+
+
+@app.put("/api/settings/default")
+def set_default_settings(body: SettingsIn) -> dict:
+    """"Use these for my new runs"."""
+    from .. import settings as rs
+
+    try:
+        s = rs.remember(RUNS_DIR, body.model_dump())
+    except rs.SettingsError as e:
+        raise HTTPException(400, str(e)) from e
+    return {**s, "label": rs.describe(s), "remembered": True}
+
+
+@app.put("/api/runs/{run_id}/settings")
+def set_run_settings(run_id: str, body: SettingsIn) -> dict:
+    """Change how a run's file is read (the chip): it is re-read from Phase A. Answers stay, except
+    the step 21 calendar pick, so the new calendar applies."""
+    from .. import settings as rs
+
+    d = _run_dir(run_id)
+    try:
+        s = rs.clean(body.model_dump())
+    except rs.SettingsError as e:
+        raise HTTPException(400, str(e)) from e
+
+    def change(m: dict) -> None:
+        if m.get("settings") != s:
+            m["answers"] = {k: v for k, v in m.get("answers", {}).items() if k != "calendar_preset"}
+        m["settings"] = s
+    _update_meta(d, change)
+    return _evaluate(d)
 
 
 ANSWER_KEY = "answer_key.json"
@@ -199,11 +266,27 @@ def _run_seed(d: Path) -> int:
     return int(_update_meta(d, seed)["seed"])
 
 
-def _new_run(filename: str) -> Path:
+def _new_run(filename: str, settings: dict | None = None) -> Path:
+    """A run folder; its settings are the ones given, else the remembered default, else the machine's."""
+    from .. import settings as rs
+
+    chosen = rs.clean(settings) if settings is not None else rs.for_new_run(RUNS_DIR)
     d = RUNS_DIR / uuid.uuid4().hex[:12]
     d.mkdir(parents=True)
-    (d / "meta.json").write_text(json.dumps({"file": filename, "answers": {}, "seed": _new_seed()}))
+    (d / "meta.json").write_text(json.dumps({"file": filename, "answers": {}, "seed": _new_seed(), "settings": chosen}))
     return d
+
+
+def _form_settings(packs: str | None, calendar: str | None) -> dict | None:
+    """The upload form's settings: packs as a comma list ("" for none); both absent means the default."""
+    from .. import settings as rs
+
+    if packs is None and calendar is None:
+        return None
+    try:
+        return rs.clean({"packs": packs or "", "calendar": calendar or "none"})
+    except rs.SettingsError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -236,14 +319,20 @@ def list_samples() -> list[dict]:
 
 
 @app.post("/api/runs")
-async def create_run(file: UploadFile = File(...)) -> dict:
+async def create_run(file: UploadFile = File(...), packs: str | None = Form(None), calendar: str | None = Form(None),
+                     remember: bool = Form(False)) -> dict:
+    from .. import settings as rs
+
+    chosen = _form_settings(packs, calendar)
     name = _upload_name(file.filename)
     if Path(name).suffix.lower() not in EXCEL_EXT | TEXT_EXT:
         raise HTTPException(400, "Upload a CSV, TSV, TXT or Excel file.")
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File is over 50 MB.")
-    d = _new_run(name)
+    if chosen is not None and remember:
+        rs.remember(RUNS_DIR, chosen)
+    d = _new_run(name, chosen)
     (d / name).write_bytes(data)
     return _evaluate(d)
 
@@ -252,9 +341,9 @@ async def create_run(file: UploadFile = File(...)) -> dict:
 def create_sample_run(name: str) -> dict:
     if name not in samples.SAMPLES:
         raise HTTPException(404, "Unknown sample.")
-    tmp = _new_run("")
+    tmp = _new_run("", samples.SETTINGS)
     path = samples.SAMPLES[name][1](tmp)
-    (tmp / "meta.json").write_text(json.dumps({"file": path.name, "answers": {}, "seed": _new_seed()}))
+    _update_meta(tmp, lambda m: m.update(file=path.name))
     return _evaluate(tmp)
 
 
@@ -330,7 +419,7 @@ _previews: dict[str, dict] = {}
 def _phase_d(d: Path):
     """The run's pipeline result, which must have reached a complete Phase D."""
     meta = _meta(d)
-    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    run = _pipeline(d, meta)
     if run.d is None or run.d.status != "complete":
         raise HTTPException(409, "Phase D is not complete yet.")
     return run
@@ -435,7 +524,7 @@ def fit_estimate(run_id: str) -> dict:
 
     d = _run_dir(run_id)
     meta = _meta(d)
-    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    run = _pipeline(d, meta)
     if run.d is None or run.d.status != "complete":
         raise HTTPException(409, "Phase D is not complete yet.")
     geo = run.d.coord_to_columns()["coord_to_columns"].get("geo")
@@ -465,7 +554,7 @@ async def load_answer_key(run_id: str, file: UploadFile = File(...)) -> dict:
         key = json.loads((await file.read()).decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise HTTPException(400, f"The answer key isn't valid JSON: {e}") from e
-    run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+    run = _pipeline(d)
     if run.a is None or run.a.status != "complete":
         raise HTTPException(409, "Finish Phase A first: the answer key is checked against the KPI column.")
     try:
@@ -526,7 +615,7 @@ def get_summary(run_id: str) -> dict:
     out = json.loads(path.read_text(encoding="utf-8"))
     built_from = (st.get("result") or {}).get("inputs")
     if built_from:
-        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        run = _pipeline(d)
         out["stale"] = bool(run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
     out["downloads"] = {"meridian_html": (job.fit_dir(d) / "model_results_summary.html").exists(),
                         "model": (job.fit_dir(d) / "model.pkl").exists()}
@@ -534,7 +623,7 @@ def get_summary(run_id: str) -> dict:
     if key and st.get("result"):
         from ..fit import truth
 
-        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        run = _pipeline(d)
         if run.d is not None and run.d.status == "complete":
             out["truth_marginal_roi"] = truth.compare(st["result"], run.d.channels, key, run.d.kpi)["true_marginal_roi"]
     return _clean(out)
@@ -637,7 +726,7 @@ def whatif(run_id: str, period: str = "all") -> dict:
     }
     built_from = (st.get("result") or {}).get("inputs")
     if built_from:
-        run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+        run = _pipeline(d)
         out["stale"] = bool(run.d is not None and run.d.status == "complete" and job.inputs_hash(run.d) != built_from)
     return _clean(out)
 
@@ -705,7 +794,7 @@ def _plan_inputs(d: Path) -> dict[str, Any]:
     fd = job.fit_dir(d)
     summary = json.loads((fd / "summary.json").read_text(encoding="utf-8")) if (fd / "summary.json").exists() else {}
     version = summary.get("version") or {}
-    run = run_pipeline(d / _meta(d)["file"], _meta(d)["answers"], memory=_memory())
+    run = _pipeline(d)
     if run.d is None or run.d.status != "complete":
         raise HTTPException(409, "Phase D isn't complete for this run's current answers.")
     cols = run.d.coord_to_columns()["coord_to_columns"]
@@ -855,7 +944,7 @@ class VersionIn(BaseModel):
 
 def _run_log(d: Path):
     meta = _meta(d)
-    run = run_pipeline(d / meta["file"], meta["answers"], memory=_memory())
+    run = _pipeline(d, meta)
     return run, run.last.decision_log if run.last else []
 
 

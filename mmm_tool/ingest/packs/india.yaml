@@ -1,6 +1,13 @@
 # Keyword pack: India. Turn it on with `packs: [india]` in roles.yaml (or
 # MMM_KEYWORD_PACKS=india). Rupee words, lakh and crore, and Indian festivals.
 
+title: India
+describe:
+  - "Suggests ₹ (INR) as the currency"
+  - "Reads lakh and crore: 12.6 L = 12,60,000"
+  - "Festival words (Diwali, Holi) become controls"
+  - "Strips Rs, Cr, lakh from channel names"
+
 rules:
   - role: control
     words: [festive, diwali, navratri, durga puja, onam, pongal, eid]

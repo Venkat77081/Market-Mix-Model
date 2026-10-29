@@ -3,10 +3,9 @@
 # Edits take effect on the next run; no restart needed.
 # Use a different file by setting MMM_ROLES_FILE.
 
-# Keyword packs for this project's data (mmm_tool/ingest/packs/): insurance words
-# (policies, premium, GWP, registrations) and India words (₹/INR/Rs, lakh, crore,
-# festivals). Remove them for a file from another industry or country.
-packs: [india, insurance]
+# Keyword packs (India, Insurance) and the calendar preset are chosen per run on the
+# upload screen ("Read this file as"), or with --packs / --calendar on the command line.
+# examples/india_insurance/ shows them as files, for MMM_ROLES_FILE / MMM_CALENDARS.
 
 rules:
   # Hindi "kharcha" (spend): tv_kharcha, search_kharcha -> paid media spend.

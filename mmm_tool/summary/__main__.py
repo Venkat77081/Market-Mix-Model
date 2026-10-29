@@ -29,7 +29,9 @@ def rebuild(run_dir: Path) -> Path:
     meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
     req = json.loads((fd / "request.json").read_text(encoding="utf-8")) if (fd / "request.json").exists() else {}
     memory = RoleMemory(req["memory"]) if req.get("memory") else None
-    run = run_pipeline(run_dir / meta["file"], meta["answers"], memory=memory)
+    from ..settings import for_run
+
+    run = run_pipeline(run_dir / meta["file"], meta["answers"], memory=memory, settings=for_run(run_dir, meta)[0])
     if run.d is None or run.d.status != "complete":
         raise SystemExit("Phase D isn't complete for this run's current answers.")
     steps = [StepResult(s["step"], s["name"], Verdict(s["verdict"]), s["summary"], s["details"], s.get("warnings", []))

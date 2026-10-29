@@ -258,6 +258,23 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .s34 .s34-note td { padding-top: 0; }
 @media (max-width: 760px) { .s34 .s34-note td > div { position: sticky; left: 10px; max-width: calc(100vw - 92px); } }
 
+/* How a file is read: keyword packs and calendar (upload panel and the run's chip) */
+.set { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.set > header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; }
+.set > header .what { display: grid; gap: 2px; flex: 1; min-width: 200px; }
+.set .setbody { border-top: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 16px; min-width: 0; }
+.packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.pack { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: start; cursor: pointer; }
+.pack.on { border-color: var(--accent); background: var(--accent-soft); }
+.pack input { margin-top: 3px; }
+.pack ul { grid-column: 2; margin: 0; padding-left: 16px; }
+.set select { width: 100%; min-width: 0; }
+.setchip { border: 1px solid var(--line); background: var(--sunken); color: var(--ink); border-radius: 999px; padding: 5px 12px; font: 500 13px var(--sans, inherit); cursor: pointer;
+  max-width: min(46vw, 420px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setchip:hover, .setchip[aria-expanded="true"] { border-color: var(--accent); }
+.setpop { position: absolute; right: 16px; top: 60px; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 76px); overflow: auto; z-index: 6; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); border-radius: var(--r); }
+.setpop .set { border-color: var(--accent); }
+
 /* Phase I: Export, refit */
 .ex-parts { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
 .ex-parts li { break-inside: avoid; margin-bottom: 2px; }
@@ -278,8 +295,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" rx="6" fill="var(--accent)"/><path d="M4 19 C8 19 9 7 13 7 C17 7 18 19 22 19" stroke="var(--surface)" stroke-width="2" fill="none"/></svg>
       Meridian MMM Tool
     </a>
-    <div class="right"><a class="btn" href="/app" id="new-run" hidden>New run</a></div>
+    <div class="right"><button class="setchip" id="run-settings" hidden aria-haspopup="dialog" aria-expanded="false"></button><a class="btn" href="/app" id="new-run" hidden>New run</a></div>
   </div>
+  <div class="setpop" id="setpop" role="dialog" aria-label="Read this file as" hidden></div>
 </header>
 
 <section class="start" id="start">
@@ -288,6 +306,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     <h1>Upload a spend-and-sales export</h1>
     <p class="lede">The tool reads the file, parses the dates and suggests a role for every column. It stops only where it needs you: confirming column roles, and anything the data leaves ambiguous.</p>
   </div>
+  <div class="set" id="read-as"></div>
   <label class="drop" id="drop" for="file">
     <b>Drop a CSV or Excel file here</b>
     <span class="muted small">or click to choose one · .csv .tsv .txt .xlsx .xls · up to 50 MB</span>
@@ -295,7 +314,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   </label>
   <div id="start-error" class="error" hidden></div>
   <div style="display:grid;gap:10px">
-    <span class="eyebrow">Or try a sample insurance export</span>
+    <span class="eyebrow" id="samples-head">Or try a sample export</span>
     <div class="samples" id="samples"></div>
   </div>
 </section>
@@ -375,6 +394,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const hash = `#run=${data.run_id}${view === "a" ? "" : "/" + view}`;
     if (location.hash !== hash) history.replaceState(null, "", hash);
     render();
+    renderChip();
     if (keepScroll) window.scrollTo(0, y);
   }
   async function answer(patch) {
@@ -385,9 +405,80 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- start screen ----------
+  // ---------- how a file is read: keyword packs and calendar ----------
+  let SET = null, readAs = null, readAsOpen = false, remember = false;
+  const setLabel = x => { if (!SET) return "Generic";
+    const parts = x.packs.map(n => (SET.packs.find(p => p.name === n) || { title: n }).title);
+    const cal = SET.calendars.find(c => c.name === x.calendar);
+    if (x.calendar !== "none") parts.push(`${cal ? cal.label : x.calendar} calendar`);
+    return parts.join(" · ") || "Generic"; };
+  const setSub = x => x.packs.length || x.calendar !== "none" ? "Changes how columns, amounts and festivals are read"
+    : "No keyword packs · no calendar preset · currency detected from the file";
+  // The packs and calendar picker; id prefixes keep the upload panel and the chip's panel apart.
+  function setBody(x, pre) {
+    return `<div style="display:grid;gap:8px"><span class="eyebrow">Keyword packs</span><div class="packs">${SET.packs.map(p =>
+        `<label class="pack ${x.packs.includes(p.name) ? "on" : ""}"><input type="checkbox" data-${pre}pack="${esc(p.name)}" ${x.packs.includes(p.name) ? "checked" : ""}><b>${esc(p.title)}</b>
+          ${p.describe.length ? `<ul class="small muted">${p.describe.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}</label>`).join("") || '<p class="muted small">No keyword packs installed.</p>'}</div></div>
+      <div style="display:grid;gap:8px;max-width:520px;min-width:0"><span class="eyebrow">Calendar preset (step 21)</span>
+        <select id="${pre}cal" aria-label="Calendar preset">${SET.calendars.map(c => `<option value="${esc(c.name)}" ${c.name === x.calendar ? "selected" : ""}>${esc(c.label)}${c.events.length ? ": " + esc(c.events.join(", ")) : ""}</option>`).join("")}</select></div>`;
+  }
+  function wireSetBody(x, pre, redraw) {
+    document.querySelectorAll(`[data-${pre}pack]`).forEach(b => b.onchange = () => {
+      const n = b.dataset[pre + "pack"];
+      x.packs = b.checked ? [...x.packs, n] : x.packs.filter(v => v !== n); redraw(); });
+    const cal = $(pre + "cal"); if (cal) cal.onchange = () => { x.calendar = cal.value; redraw(); };
+  }
+  function renderReadAs() {
+    const host = $("read-as"); if (!host || !SET) return;
+    host.innerHTML = `<header><div class="what"><span class="eyebrow">Read this file as</span><b>${esc(setLabel(readAs))}</b><span class="muted small">${esc(setSub(readAs))}</span></div>
+        <button class="btn" id="ra-toggle" aria-expanded="${readAsOpen}">${readAsOpen ? "Done" : "Change"}</button></header>
+      ${readAsOpen ? `<div class="setbody">${setBody(readAs, "ra")}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="small"><input type="checkbox" id="ra-remember" ${remember ? "checked" : ""}> Use these for my new runs</label>
+          <span class="muted small">Saved with each run and in its bundle. A sample file uses the settings it was made for.</span></div></div>` : ""}`;
+    $("ra-toggle").onclick = () => { readAsOpen = !readAsOpen; renderReadAs(); };
+    wireSetBody(readAs, "ra", renderReadAs);
+    const rem = $("ra-remember"); if (rem) rem.onchange = () => { remember = rem.checked; };
+  }
+
+  // The chip in the top bar: how this run's file is read, and a panel to change it (re-reads from A).
+  let chipDraft = null;
+  function renderChip() {
+    const chip = $("run-settings"), pop = $("setpop");
+    if (!run || !run.settings || $("app").hidden) { chip.hidden = true; pop.hidden = true; return; }
+    chip.hidden = false;
+    chip.textContent = `Read as: ${run.settings.label}`;
+    chip.title = `${run.settings.label}${run.settings.source === "run" ? "" : " (your default: this run was made before runs kept their own settings)"}. Click to change.`;
+    chip.setAttribute("aria-expanded", String(!pop.hidden));
+    chip.onclick = async () => {
+      if (!pop.hidden) { pop.hidden = true; chip.setAttribute("aria-expanded", "false"); return; }
+      if (!SET) SET = await api("GET", "/api/settings").catch(() => null);
+      if (!SET) return;
+      chipDraft = { packs: [...run.settings.packs], calendar: run.settings.calendar };
+      pop.hidden = false; chip.setAttribute("aria-expanded", "true"); renderChipPanel();
+    };
+  }
+  function renderChipPanel() {
+    const pop = $("setpop"), x = chipDraft;
+    const changed = JSON.stringify([...x.packs].sort()) !== JSON.stringify([...run.settings.packs].sort()) || x.calendar !== run.settings.calendar;
+    pop.innerHTML = `<div class="set"><header><div class="what"><span class="eyebrow">Read this run's file as</span><b>${esc(setLabel(x))}</b><span class="muted small">${esc(setSub(x))}</span></div></header>
+      <div class="setbody">${setBody(x, "rc")}
+        ${changed ? `<div class="fbanner">Changing this re-reads the file from Phase A: suggested roles, the currency and the step 21 calendar may change, and a fitted model goes out of date. Answers you gave stay.</div>` : ""}
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="rc-apply" ${changed ? "" : "disabled"}>Re-read with these</button><button class="btn" id="rc-cancel">Cancel</button></div></div></div>`;
+    wireSetBody(x, "rc", renderChipPanel);
+    $("rc-cancel").onclick = () => { pop.hidden = true; $("run-settings").setAttribute("aria-expanded", "false"); };
+    $("rc-apply").onclick = async () => {
+      try { const d = await api("PUT", `/api/runs/${run.run_id}/settings`, x); pop.hidden = true; view = null; show(d, false); }
+      catch (e) { alert(e.message); }
+    };
+  }
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("setpop").hidden) { $("setpop").hidden = true; $("run-settings").setAttribute("aria-expanded", "false"); } });
+
   async function startScreen() {
-    $("start").hidden = false; $("app").hidden = true; $("new-run").hidden = true;
+    $("start").hidden = false; $("app").hidden = true; $("new-run").hidden = true; renderChip();
+    SET = await api("GET", "/api/settings").catch(() => null);
+    if (SET) { readAs = { packs: [...SET.default.packs], calendar: SET.default.calendar }; renderReadAs(); }
     const list = await api("GET", "/api/samples").catch(() => []);
+    if (SET) $("samples-head").textContent = `Or try a sample export · read as ${SET.sample.label}`;
     $("samples").innerHTML = list.map(s => `<button class="sample" data-sample="${esc(s.name)}"><b>${esc(s.name)}</b><span>${esc(s.description)}</span></button>`).join("");
     $("samples").querySelectorAll("[data-sample]").forEach(b => b.onclick = () => startRun(() => api("POST", `/api/runs/sample/${b.dataset.sample}`)));
   }
@@ -399,6 +490,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function upload(file) {
     const fd = new FormData();
     fd.append("file", file);
+    if (readAs) { fd.append("packs", readAs.packs.join(",")); fd.append("calendar", readAs.calendar); fd.append("remember", remember ? "true" : "false"); }
     startRun(() => api("POST", "/api/runs", fd));
   }
   $("file").onchange = e => e.target.files[0] && upload(e.target.files[0]);

@@ -4,6 +4,7 @@
     python -m mmm_tool.fit data.csv --defaults --stability --placebo
 
 Phases A-D run first with the given answers (--defaults takes every default).
+--packs and --calendar read the file with those keyword packs and calendar preset.
 --run-dir is how the web UI starts a fit in the background.
 """
 from __future__ import annotations
@@ -12,6 +13,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+from ..settings import ARGS_HELP, SettingsError, from_args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="fit", help="folder for model.pkl and result.json (default ./fit)")
     p.add_argument("--seed", type=int, help="random seed for the prior and the fits (default: a new random one, printed)")
     p.add_argument("--calibrate", action="store_true", help="time two fits of the bundled sample, for run-time estimates")
+    p.add_argument("--packs", help=ARGS_HELP["packs"])
+    p.add_argument("--calendar", help=ARGS_HELP["calendar"])
     p.add_argument("--run-dir", help=argparse.SUPPRESS)
     args = p.parse_args(argv)
 
@@ -49,7 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Phase E needs google-meridian: pip install -r requirements-model.txt", file=sys.stderr)
         return 2
     answers = json.loads(Path(args.answers).read_text(encoding="utf-8")) if args.answers else {}
-    run = run_pipeline(Path(args.file), answers, accept_defaults=args.defaults)
+    try:
+        chosen = from_args(args.packs, args.calendar)
+    except SettingsError as e:
+        print(f"Settings: {e}", file=sys.stderr)
+        return 2
+    run = run_pipeline(Path(args.file), answers, accept_defaults=args.defaults, settings=chosen)
     if run.d is None or run.d.status != "complete":
         last = run.last
         print(f"Phase {run.phase} needs answers first: {last.steps[-1].summary}", file=sys.stderr)

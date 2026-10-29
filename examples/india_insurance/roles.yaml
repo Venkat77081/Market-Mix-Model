@@ -1,0 +1,4 @@
+# Turns on the India and Insurance keyword packs for every run that has no settings of
+# its own (MMM_ROLES_FILE=examples/india_insurance/roles.yaml). The upload screen's
+# "Read this file as" panel does the same per run, and remembers it for new runs.
+packs: [india, insurance]

@@ -38,7 +38,14 @@ class PipelineResult:
 
 
 def run_pipeline(path: str | Path, answers: dict[str, Any] | None = None, accept_defaults: bool = False,
-                 memory: RoleMemory | None = None) -> PipelineResult:
+                 memory: RoleMemory | None = None, settings: dict | None = None) -> PipelineResult:
+    """Phases A-D. settings ({"packs", "calendar"}, mmm_tool.settings) are the run's own; with
+    None, the machine-wide keyword packs and calendar apply."""
+    if settings is not None:
+        from .settings import use
+
+        with use(settings):
+            return run_pipeline(path, answers, accept_defaults, memory)
     ans = Answers(answers, accept_defaults)
     a = run_phase_a(path, ans, memory=memory)
     if a.status != "complete":

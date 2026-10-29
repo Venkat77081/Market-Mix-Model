@@ -239,6 +239,9 @@ def write_season(dir: Path) -> Path:
     return _weekly_csv(df, dir / "ins_season.csv")
 
 
+# The samples are Indian insurance exports: they are read with the packs and calendar made for them.
+SETTINGS = {"packs": ["india", "insurance"], "calendar": "india_insurance"}
+
 SAMPLES = {
     "ins_clean": ("156 weeks, 9 channels, clean CSV", write_clean),
     "ins_export": ("Excel, two sheets, title lines above the header", write_excel_with_preamble),

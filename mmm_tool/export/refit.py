@@ -12,6 +12,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from ..settings import for_run
+
 
 def start(source_dir: Path, new_dir: Path, new_file: Path, line: str, version: int,
           roles: dict[str, str] | None = None) -> dict[str, Any]:
@@ -30,7 +32,7 @@ def start(source_dir: Path, new_dir: Path, new_file: Path, line: str, version: i
     opts = {k: v for k, v in (req.get("options") or {}).items() if k in ("sampler", "stability", "placebo", "seed")}
     meta = {"file": Path(new_file).name, "answers": answers, "seed": opts.get("seed") or src.get("seed"),
             "refit_of": {"line": line, "version": version, "run_id": Path(source_dir).name, "file": src.get("file")},
-            "refit_options": opts}
+            "refit_options": opts, "settings": for_run(Path(source_dir), src)[0]}       # read the same way
     new_dir.mkdir(parents=True, exist_ok=True)
     if Path(new_file).parent != new_dir:
         shutil.copy(new_file, new_dir / Path(new_file).name)

@@ -73,8 +73,8 @@ Python {manifest['python']}, Meridian {manifest.get('meridian') or 'unknown'}.
 
        unzip this_bundle.zip -d bundle
        MMM_ROLES_FILE=bundle/config/roles.yaml MMM_CALENDARS=bundle/config/calendars.yaml \\
-       MMM_KEYWORD_PACKS={','.join(f'bundle/config/packs/{n}.yaml' for n in manifest.get('packs') or [])} \\
        python -m mmm_tool.fit "bundle/input/{meta.get('file', '')}" --answers bundle/answers.json \\
+           --packs "{','.join(f'bundle/config/packs/{n}.yaml' for n in manifest.get('packs') or [])}" --calendar {manifest.get('calendar') or 'none'} \\
            --seed {opts.get('seed', manifest.get('seed'))} --sampler {_sampler_arg(opts.get('sampler'))}{extra} --out refit/
 
 3. Or load the saved model directly: `meridian.model.model.load_mmm("bundle/model/model.pkl")`
@@ -84,22 +84,20 @@ Every decision, and who made it, is in decisions.json / decisions.csv.
 """
 
 
-def _settings_files() -> dict[str, bytes]:
+def _settings_files(run_settings: dict) -> dict[str, bytes]:
     """The keyword and calendar settings the run was read with, so a rebuild elsewhere reads it the same way."""
     from ..configure.context import user_calendars_file
-    from ..ingest.keywords import _pack_path, enabled_packs, user_file
+    from ..ingest.keywords import _pack_path, user_file
 
     out: dict[str, bytes] = {}
     uf = user_file()
-    user = {}
     if uf.is_file():
         out["config/roles.yaml"] = uf.read_bytes()
-        import yaml
-        user = yaml.safe_load(uf.read_text(encoding="utf-8")) or {}
-    packs = enabled_packs(user)
+    packs = list(run_settings["packs"])
     for n in packs:
         out[f"config/packs/{Path(n).stem}.yaml"] = _pack_path(n).read_bytes()
     out["config/packs.json"] = json.dumps([Path(n).stem for n in packs]).encode()
+    out["config/settings.json"] = json.dumps({"packs": [Path(n).stem for n in packs], "calendar": run_settings["calendar"]}).encode()
     cf = user_calendars_file()
     if cf.is_file():
         out["config/calendars.yaml"] = cf.read_bytes()
@@ -124,7 +122,9 @@ def build(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: di
     # remembered roles, which another machine may not have.
     answers = {**meta.get("answers", {}), **({"roles": roles} if roles else {})}
     files["answers.json"] = json.dumps(answers, indent=1).encode()
-    files.update(_settings_files())
+    from ..settings import for_run
+
+    files.update(_settings_files(for_run(run_dir, meta)[0]))
     full_log = list(decision_log) + [{**e, "phase": "E"} for e in (json.loads((fd / "result.json").read_text(encoding="utf-8")).get("decision_log", [])
                                                                 if (fd / "result.json").exists() else [])]
     files["decisions.json"] = json.dumps(full_log, indent=1, default=str).encode()
@@ -150,6 +150,7 @@ def build(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: di
     files.setdefault("decisions.csv", files.get("reports/decisions.csv", b""))
     manifest = {"created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "run_id": run_dir.name, "tool": tool_version(),
                 "packs": json.loads(files["config/packs.json"]),
+                "calendar": json.loads(files["config/settings.json"])["calendar"],
                 "python": platform.python_version(), "meridian": model_meta.get("meridian"), "seed": (request.get("options") or {}).get("seed"),
                 "sampler": (request.get("options") or {}).get("sampler"), "registry": registry_entry and
                 {k: registry_entry[k] for k in ("line", "version", "status") if k in registry_entry},
@@ -197,8 +198,15 @@ def verify(bundle: Path | bytes, work: Path) -> dict[str, Any]:
 
     old = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
+    run_settings = None
+    if "config/settings.json" in names:              # the run's own packs (copied above) and calendar
+        rs = json.loads(z.read("config/settings.json"))
+        if sorted(rs.get("packs") or []) != sorted(packs):
+            raise ValueError("The bundle's settings name keyword packs it doesn't contain.")
+        run_settings = {"packs": [str(work / "packs" / f"{n}.yaml") for n in rs.get("packs") or []],
+                        "calendar": rs.get("calendar") or "none"}
     try:
-        run = run_pipeline(src, answers)
+        run = run_pipeline(src, answers, settings=run_settings)
     finally:
         for k, v in old.items():
             if v is None:

@@ -192,10 +192,24 @@ def available_packs() -> list[str]:
 
 
 def enabled_packs(user: dict | None = None) -> list[str]:
-    """Packs named in MMM_KEYWORD_PACKS, else in the user's file (`packs: [...]`)."""
+    """The packs of the run being read (mmm_tool.settings); else MMM_KEYWORD_PACKS, else the
+    user's file (`packs: [...]`)."""
+    from ..settings import active
+
+    run = active()
+    if run is not None:
+        return list(run["packs"])
     env = os.environ.get("MMM_KEYWORD_PACKS")
     names = [x.strip() for x in env.split(",")] if env is not None else [str(x) for x in (user or {}).get("packs") or []]
     return [n for n in names if n]
+
+
+def pack_info(name: str) -> dict:
+    """A pack's name, title and the plain-words list of what it changes (its 'title' and
+    'describe' keys), for the settings panel."""
+    data = _read(_pack_path(name))
+    return {"name": Path(name).stem, "title": str(data.get("title") or Path(name).stem.replace("_", " ").title()),
+            "describe": [str(x) for x in data.get("describe") or []]}
 
 
 def _pack_path(name: str) -> Path:

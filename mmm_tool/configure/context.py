@@ -53,6 +53,11 @@ def load_calendars() -> dict:
             cal[k] = list(cal.get(k) or []) + list(mine.get(k) or [])
         for way, words in (mine.get("control_direction_words") or {}).items():
             cal.setdefault("control_direction_words", {}).setdefault(way, []).extend(words or [])
+    from ..settings import active
+
+    run = active()                             # the run's own calendar wins over the project file
+    if run is not None:
+        cal["default_preset"] = run["calendar"]
     if cal["default_preset"] not in cal["presets"]:
         cal["default_preset"] = "none"
     return cal
