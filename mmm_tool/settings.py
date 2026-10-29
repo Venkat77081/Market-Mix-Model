@@ -1,11 +1,11 @@
 """How a run's file is read: its keyword packs and calendar preset.
 
 Every run keeps its own settings in meta.json ("settings": {"packs": [...], "calendar": "..."}),
-chosen on the upload screen, so two runs can be read differently side by side and a bundle or
-refit reads its file the same way again. A new run takes the remembered default
-(runs/settings.json, "Use these for my new runs"); with none, today's machine-wide settings
-(MMM_KEYWORD_PACKS or `packs:` in roles.yaml, MMM_CALENDARS or ./calendars.yaml), which
-for a fresh install is generic: no packs and no calendar.
+so two runs can be read differently side by side and a bundle or refit reads its file the same
+way again. A new run starts with its project's settings (projects.py), which the upload screen
+can change for that file. A run with none recorded (made before runs kept them) reads with its
+project's, else today's machine-wide settings (MMM_KEYWORD_PACKS or `packs:` in roles.yaml,
+MMM_CALENDARS or ./calendars.yaml), which for a fresh install is generic: no packs, no calendar.
 
 While a run is read, use(settings) makes its packs and calendar the ones every step sees.
 """
@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any, Iterator
 
 _ACTIVE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("run_settings", default=None)
-DEFAULT_FILE = "settings.json"
 
 
 class SettingsError(ValueError):
@@ -94,38 +93,19 @@ def machine_wide() -> dict:
         return {"packs": packs, "calendar": load_calendars()["default_preset"]}
 
 
-def remembered(runs_dir: Path) -> dict | None:
-    p = Path(runs_dir) / DEFAULT_FILE
-    if not p.is_file():
-        return None
-    try:
-        return clean(json.loads(p.read_text(encoding="utf-8")))
-    except (ValueError, SettingsError):
-        return None
-
-
-def remember(runs_dir: Path, settings: dict) -> dict:
-    s = clean(settings)
-    p = Path(runs_dir) / DEFAULT_FILE
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(s), encoding="utf-8")
-    tmp.replace(p)
-    return s
-
-
-def for_new_run(runs_dir: Path) -> dict:
-    return remembered(runs_dir) or machine_wide()
-
-
 def for_run(run_dir: Path, meta: dict | None = None) -> tuple[dict, str]:
-    """(settings, where they come from: "run", "default" or "machine") for a run's folder.
-    A run made before runs kept their settings reads with the remembered default."""
+    """(settings, where they come from: "run", "project" or "machine") for a run's folder."""
     meta = meta if meta is not None else json.loads((Path(run_dir) / "meta.json").read_text(encoding="utf-8"))
     if isinstance(meta.get("settings"), dict):
         return clean(meta["settings"]), "run"
-    r = remembered(Path(run_dir).parent)
-    return (r, "default") if r else (machine_wide(), "machine")
+    from .projects import project_of
+
+    slug = project_of(Path(run_dir))
+    if slug:
+        f = Path(run_dir).parent.parent / "project.json"
+        if f.is_file():
+            return clean(json.loads(f.read_text(encoding="utf-8")).get("settings") or {}), "project"
+    return machine_wide(), "machine"
 
 
 def describe(settings: dict) -> str:

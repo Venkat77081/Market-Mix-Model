@@ -16,6 +16,7 @@ from mmm_tool.export import refit as rf
 from mmm_tool.export import registry as reg
 from mmm_tool.export.bundle import verify
 from mmm_tool.fit import job
+from helpers import project_in, run_path  # noqa: F401
 
 ROI = {"tv": (1.0, 0.8, 1.2), "search": (2.0, 1.5, 2.5)}
 
@@ -122,10 +123,10 @@ def client(tmp_path, monkeypatch):
 
 
 def _run(client, fit="accepted"):
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     if fit:
-        fake_fit(client.runs / run_id, fit)
+        fake_fit(run_path(run_id), fit)
     return run_id
 
 
@@ -175,26 +176,26 @@ def test_register_approve_and_refit_through_the_api(client):
     run_id = _run(client)
     e = client.post(f"/api/runs/{run_id}/register", json={"line": "Brand", "note": "v1"}).json()["entry"]
     assert e["version"] == 1 and e["weeks"] and e["data_to"]                  # the period comes from Phase D's table
-    new = (client.runs / run_id / "ins_clean.csv").read_bytes()
+    new = (run_path(run_id) / "ins_clean.csv").read_bytes()
     files = {"file": ("newer.csv", new, "text/csv")}
-    assert client.post("/api/refit", data={"line": "Brand", "version": 1}, files=files).status_code == 400   # not approved yet
-    assert client.post("/api/registry/approve", json={"line": "Brand", "version": 1}).status_code == 200
-    r = client.post("/api/refit", data={"line": "Brand", "version": 1}, files=files).json()
+    assert client.post("/api/refit", data={"line": "Brand", "version": 1, "project": project_in()}, files=files).status_code == 400   # not approved yet
+    assert client.post("/api/registry/approve", json={"line": "Brand", "version": 1, "project": project_in()}).status_code == 200
+    r = client.post("/api/refit", data={"line": "Brand", "version": 1, "project": project_in()}, files=files).json()
     assert r["refit_of"]["run_id"] == run_id and r["answers"]["roles"]          # roles frozen from the approved run
     assert r["phase"] == "D" and r["result_d"]["status"] == "complete"         # same data: nothing new to decide
-    fake_fit(client.runs / r["run_id"], roi={"tv": (5.0, 4.0, 6.0)})
+    fake_fit(run_path(r["run_id"]), roi={"tv": (5.0, 4.0, 6.0)})
     scr = client.get(f"/api/runs/{r['run_id']}/export").json()
     assert scr["comparison"]["refit"]["weeks"] == e["weeks"]
     e2 = client.post(f"/api/runs/{r['run_id']}/register", json={"line": "Brand"}).json()["entry"]
     assert e2["version"] == 2 and e2["refit_of"]["version"] == 1 and e2["refit"]["summary"]
-    rows = client.get("/api/registry").json()["lines"]
+    rows = client.get("/api/registry", params={"project": project_in()}).json()["lines"]
     assert rows[0]["approved"]["version"] == 1 and rows[0]["last_refit_version"] == 2
 
 
 def test_a_rejected_model_registers_as_a_draft_only(client):
     run_id = _run(client, fit="rejected")
     assert client.post(f"/api/runs/{run_id}/register", json={"line": "B"}).json()["entry"]["status"] == "draft"
-    bad = client.post("/api/registry/approve", json={"line": "B", "version": 1})
+    bad = client.post("/api/registry/approve", json={"line": "B", "version": 1, "project": project_in()})
     assert bad.status_code == 400 and "accepted" in bad.json()["detail"]
 
 

@@ -25,6 +25,7 @@ from mmm_tool.fit import steps as fsteps
 from mmm_tool.fit.context import FitOptions, check_custom, sampler_settings, settings
 from mmm_tool.ingest.types import Verdict
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 try:
     import meridian  # noqa: F401
@@ -120,7 +121,7 @@ def client(tmp_path, monkeypatch):
 
 
 def _new_run(client) -> str:
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     return run_id
 

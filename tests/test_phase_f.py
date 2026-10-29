@@ -22,6 +22,7 @@ import pytest
 from mmm_tool import samples
 from mmm_tool.fit import job
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 FIXTURE = Path(__file__).parent / "data" / "phase_f" / "summary.json"
 fit_tests = pytest.mark.skipif(os.environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
@@ -98,7 +99,7 @@ def client(tmp_path, monkeypatch):
 
 
 def _confirmed_run(client) -> str:
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     return run_id
 
@@ -108,8 +109,8 @@ def test_summary_endpoint(client):
     run_id = _confirmed_run(c)
     assert c.get(f"/api/runs/{run_id}/summary").status_code == 404
     assert c.post(f"/api/runs/{run_id}/summary").status_code == 409            # no accepted model to rebuild from
-    run = run_pipeline(app_mod.RUNS_DIR / run_id / "ins_clean.csv", {"roles": {}})
-    accepted(app_mod.RUNS_DIR / run_id, job.inputs_hash(run.d))
+    run = run_pipeline(run_path(run_id) / "ins_clean.csv", {"roles": {}})
+    accepted(run_path(run_id), job.inputs_hash(run.d))
     s = c.get(f"/api/runs/{run_id}/summary").json()
     assert s["stale"] is False and s["version"]["kpi"] == "new_policies"
     assert s["downloads"] == {"meridian_html": False, "model": False}
@@ -145,10 +146,12 @@ def test_summary_screen_in_the_browser(tmp_path):
                 break
             except httpx.HTTPError:
                 time.sleep(0.5)
-        run_id = httpx.post(base + "/api/runs/sample/ins_clean", timeout=120).json()["run_id"]
+        slug = httpx.post(base + "/api/projects", json={"name": "Browser", "packs": ["india", "insurance"], "calendar": "india_insurance"}, timeout=30).json()["slug"]
+        run_id = httpx.post(base + "/api/runs/sample/ins_clean", params={"project": slug}, timeout=120).json()["run_id"]
         httpx.put(f"{base}/api/runs/{run_id}/answers", json={"answers": {"roles": {}}}, timeout=120)
-        run = run_pipeline(runs / run_id / "ins_clean.csv", {"roles": {}})
-        accepted(runs / run_id, job.inputs_hash(run.d))
+        d = runs / "projects" / slug / "runs" / run_id
+        run = run_pipeline(d / "ins_clean.csv", {"roles": {}})
+        accepted(d, job.inputs_hash(run.d))
         out = subprocess.run(["node", str(Path(__file__).parent / "browser" / "phase_f.js"), base, run_id, str(tmp_path)],
                              capture_output=True, text=True, timeout=300)
         assert out.returncode == 0, out.stderr

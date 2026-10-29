@@ -11,6 +11,8 @@ import zipfile
 import pytest
 from test_generic import shop
 
+from helpers import project_in, run_path
+
 from mmm_tool import settings as rs
 from mmm_tool.pipeline import run_pipeline
 
@@ -52,13 +54,16 @@ def test_a_runs_settings_win_over_the_machine_wide_ones(tmp_path):
 
 
 def test_for_run_order(tmp_path):
+    from mmm_tool import projects
+
     runs = tmp_path / "runs"
     (runs / "r1").mkdir(parents=True)
     assert rs.for_run(runs / "r1", {"settings": INDIA}) == (INDIA, "run")
-    assert rs.for_run(runs / "r1", {})[1] == "machine"
-    rs.remember(runs, {"packs": ["india"], "calendar": "none"})
-    assert rs.for_run(runs / "r1", {}) == ({"packs": ["india"], "calendar": "none"}, "default")   # an older run
-    assert rs.for_new_run(runs) == {"packs": ["india"], "calendar": "none"}
+    assert rs.for_run(runs / "r1", {})[1] == "machine"                    # an older run, not in a project
+    p = projects.create(runs, "Shop", settings={"packs": ["india"], "calendar": "none"})
+    d = projects.runs_folder(runs, p["slug"]) / "aaaaaaaaaaaa"
+    d.mkdir()
+    assert rs.for_run(d, {}) == ({"packs": ["india"], "calendar": "none"}, "project")   # moved into a project
 
 
 # API --------------------------------------------------------------------------------------------------
@@ -75,24 +80,23 @@ def client(tmp_path, monkeypatch):
     return c
 
 
-def _upload(client, **form):
+def _upload(client, project=None, **form):
     data = shop(money_sign="").to_csv(index=False).encode()
-    return client.post("/api/runs", files={"file": ("shop.csv", data, "text/csv")}, data=form)
+    return client.post("/api/runs", files={"file": ("shop.csv", data, "text/csv")},
+                       data={"project": project or project_in("Generic", GENERIC), **form})
 
 
-def test_upload_with_settings_and_remember(client):
+def test_uploads_start_with_the_projects_settings(client):
     cat = client.get("/api/settings").json()
     assert {p["name"] for p in cat["packs"]} >= {"india", "insurance"} and all(p["describe"] for p in cat["packs"])
     assert [c["name"] for c in cat["calendars"]][0] == "none" and cat["sample"]["label"].startswith("India")
-    r = _upload(client, packs="", calendar="us_retail").json()
-    assert r["settings"]["packs"] == [] and r["settings"]["calendar"] == "us_retail" and r["settings"]["source"] == "run"
-    assert r["settings"]["label"] == "US retail calendar"
-    r2 = _upload(client, packs="india,insurance", calendar="india_insurance", remember="true").json()
-    assert r2["settings"]["label"] == "India · Insurance · India insurance calendar"
-    assert client.get("/api/settings").json()["default"]["remembered"]
-    r3 = _upload(client).json()                                 # no choice: the remembered default
-    assert r3["settings"]["packs"] == ["india", "insurance"]
-    assert _upload(client, packs="nonesuch").status_code == 400
+    india = project_in("India", INDIA)
+    r = _upload(client, india).json()                           # no choice: the project's settings
+    assert r["settings"]["label"] == "India · Insurance · India insurance calendar" and r["settings"]["source"] == "run"
+    r2 = _upload(client, india, packs="", calendar="us_retail").json()     # changed for this one file
+    assert r2["settings"]["packs"] == [] and r2["settings"]["label"] == "US retail calendar"
+    assert _upload(client, india, packs="nonesuch").status_code == 400
+    assert client.post("/api/runs", files={"file": ("x.csv", b"a,b\n1,2\n", "text/csv")}).status_code == 422   # no project
 
 
 def test_the_chip_rereads_a_run_and_drops_the_old_calendar_pick(client):
@@ -106,18 +110,17 @@ def test_the_chip_rereads_a_run_and_drops_the_old_calendar_pick(client):
     assert client.put(f"/api/runs/{run_id}/settings", json={"packs": ["x"]}).status_code == 400
 
 
-def test_samples_use_their_own_settings_and_old_runs_the_default(client):
+def test_samples_use_their_own_settings_and_old_runs_their_projects(client):
     from mmm_tool import samples
 
-    r = client.post("/api/runs/sample/ins_clean").json()
+    r = client.post("/api/runs/sample/ins_clean", params={"project": project_in("Generic", GENERIC)}).json()
     assert r["settings"]["packs"] == samples.SETTINGS["packs"] and r["settings"]["calendar"] == samples.SETTINGS["calendar"]
-    meta_p = client.runs / r["run_id"] / "meta.json"
+    meta_p = run_path(r["run_id"]) / "meta.json"
     meta = json.loads(meta_p.read_text())
     del meta["settings"]                                        # a run made before runs kept settings
     meta_p.write_text(json.dumps(meta))
-    rs.remember(client.runs, GENERIC)
     again = client.get(f"/api/runs/{r['run_id']}").json()
-    assert again["settings"]["source"] == "default" and again["settings"]["label"] == "Generic"
+    assert again["settings"]["source"] == "project" and again["settings"]["label"] == "Generic"
 
 
 def test_bundle_and_refit_keep_the_runs_settings(client, tmp_path, monkeypatch):
@@ -127,7 +130,7 @@ def test_bundle_and_refit_keep_the_runs_settings(client, tmp_path, monkeypatch):
 
     run_id = _upload(client, packs="india", calendar="us_retail").json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
-    fake_fit(client.runs / run_id)
+    fake_fit(run_path(run_id))
     z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/runs/{run_id}/bundle.zip").content))
     assert json.loads(z.read("config/settings.json")) == {"packs": ["india"], "calendar": "us_retail"}
     assert "--packs" in z.read("REPRODUCE.md").decode() and "--calendar us_retail" in z.read("REPRODUCE.md").decode()
@@ -138,8 +141,8 @@ def test_bundle_and_refit_keep_the_runs_settings(client, tmp_path, monkeypatch):
     from mmm_tool.export import refit as rf
 
     new = tmp_path / "newer.csv"
-    new.write_bytes((client.runs / run_id / "shop.csv").read_bytes())
-    meta = rf.start(client.runs / run_id, client.runs / "refit1", new, "L", 1)
+    new.write_bytes((run_path(run_id) / "shop.csv").read_bytes())
+    meta = rf.start(run_path(run_id), client.runs / "refit1", new, "L", 1)
     assert meta["settings"] == {"packs": ["india"], "calendar": "us_retail"}
 
 

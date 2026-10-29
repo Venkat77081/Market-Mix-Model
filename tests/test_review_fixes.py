@@ -16,6 +16,7 @@ from mmm_tool.ingest.pairing import Channel, propose_pairs
 from mmm_tool.ingest.roles import channel_of
 from mmm_tool.ingest.values import decimal_mark, to_number
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -138,16 +139,16 @@ def client(tmp_path, monkeypatch):
 
 def test_an_upload_named_like_a_tool_file_is_kept(client, tmp_path):
     src = shop().to_csv(index=False).encode()
-    r = client.post("/api/runs", files={"file": ("cleaned.csv", src, "text/csv")}).json()
+    r = client.post("/api/runs", files={"file": ("cleaned.csv", src, "text/csv")}, data={"project": project_in()}).json()
     assert r["file"] == "upload_cleaned.csv"
-    d = client.runs / r["run_id"]
+    d = run_path(r["run_id"])
     client.put(f"/api/runs/{r['run_id']}/answers", json={"answers": {"roles": {}}})
     assert (d / "upload_cleaned.csv").read_bytes() == src and (d / "cleaned.csv").exists()   # both, neither replaced
 
 
 @pytest.mark.parametrize("bad", [{"price_index": "up"}, {"nonesuch": "raises"}, "lowers"])
 def test_an_unknown_direction_asks_again_instead_of_crashing(client, bad):
-    run_id = client.post("/api/runs", files={"file": ("shop.csv", shop().to_csv(index=False).encode(), "text/csv")}).json()["run_id"]
+    run_id = client.post("/api/runs", files={"file": ("shop.csv", shop().to_csv(index=False).encode(), "text/csv")}, data={"project": project_in()}).json()["run_id"]
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}, "control_direction": bad}})
     assert r.status_code == 200
     s21 = next(s for s in r.json()["result_d"]["steps"] if s["step"] == 21)
@@ -156,8 +157,8 @@ def test_an_unknown_direction_asks_again_instead_of_crashing(client, bad):
 
 
 def test_a_slow_request_never_writes_back_older_answers(client, monkeypatch):
-    run_id = client.post("/api/runs", files={"file": ("shop.csv", shop().to_csv(index=False).encode(), "text/csv")}).json()["run_id"]
-    d = client.runs / run_id
+    run_id = client.post("/api/runs", files={"file": ("shop.csv", shop().to_csv(index=False).encode(), "text/csv")}, data={"project": project_in()}).json()["run_id"]
+    d = run_path(run_id)
     real, once = client.app_mod.run_pipeline, []
 
     def slow(path, answers, **kw):            # an answer arrives while this request is running

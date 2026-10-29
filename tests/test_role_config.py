@@ -15,6 +15,7 @@ from mmm_tool.ingest import run_phase_a
 from mmm_tool.ingest.keywords import KeywordError, load_keywords
 from mmm_tool.ingest.memory import RoleMemory
 from mmm_tool.ingest.roles import channel_of, suggest_roles
+from helpers import project_in, run_path  # noqa: F401
 
 REPO = Path(__file__).parent.parent
 
@@ -165,13 +166,13 @@ def test_damaged_memory_file_is_ignored(tmp_path):
 def test_api_remembers_and_forgets(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "RUNS_DIR", tmp_path / "runs")
     c = TestClient(app_module.app)
-    r = c.post("/api/runs/sample/ins_clean").json()
+    r = c.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
     roles = {**r["result"]["steps"][2]["details"]["roles"], "vehicle_registrations": "excluded"}
     c.put(f"/api/runs/{r['run_id']}/answers", json={"answers": {"roles": roles}})
     cols = {e["key"]: e["role"] for e in c.get("/api/role-memory").json()["columns"]}
     assert cols["vehicle registrations"] == "excluded"
 
-    r2 = c.post("/api/runs/sample/ins_clean").json()
+    r2 = c.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
     sugg = {s["column"]: s for s in r2["result"]["steps"][2]["details"]["suggestions"]}
     assert sugg["vehicle_registrations"]["role"] == "excluded"
 

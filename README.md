@@ -16,7 +16,7 @@ Or install it as a package, which also adds the `mmm-ui` and `mmm-ingest` comman
 `pip install -e ".[ui]"` then `mmm-ui`.
 
 `/` is the landing page (what the tool does, the phases, the validation gates, and your recent runs);
-`/app` is the Phase A screen. Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
+`/app` opens on your **projects** (see *Projects* below); a project's **Upload a file** starts a run. Upload a CSV or Excel export (or pick a sample), answer the highlighted decisions, and download the
 ingested table when all six steps pass. Runs and answers are saved under `./runs/` (set `MMM_RUNS_DIR`
 to change it), so a page reload keeps your place. The API is under `/api/` (docs at `/docs`).
 
@@ -209,18 +209,38 @@ step 21 starts with none.
 
 **How a file is read.** Every run keeps its keyword packs and calendar preset in `meta.json`:
 
-- **Upload screen.** "Read this file as" starts generic (no packs, no calendar, currency detected
-  from the file). **Change** shows each pack with what it changes, and the calendar presets.
-  "Use these for my new runs" remembers the choice (`runs/settings.json`). The samples are read
+- **Upload screen.** "Read this file as" starts with the project's settings. **Change** shows each
+  pack with what it changes, and the calendar presets, for that one file. The samples are read
   with the India and Insurance packs and the India insurance calendar.
 - **In a run.** The chip in the top bar shows how the run's file is read. Changing it re-reads the
   file from Phase A; answers stay, except the step 21 calendar pick.
 - **Bundles and refits** keep the run's settings, and `--verify` reads with them.
 - **Command line.** Use `--packs india,insurance --calendar india_insurance` with
   `python -m mmm_tool.ingest` and `python -m mmm_tool.fit`.
-- **No choice anywhere** (and for runs made before runs kept settings): the remembered default,
-  else `MMM_KEYWORD_PACKS` / `packs:` in `roles.yaml` and `MMM_CALENDARS`. The repo's own files
-  turn nothing on. `examples/india_insurance/` has the India insurance setup as files.
+- **A run with no settings recorded** (made before runs kept them) reads with its project's
+  settings once it's moved into a project; until then with `MMM_KEYWORD_PACKS` / `packs:` in
+  `roles.yaml` and `MMM_CALENDARS`. The repo's own files turn nothing on.
+  `examples/india_insurance/` has the India insurance setup as files.
+
+**Projects.** A project holds one business's files, how they're read, every run and its model
+registry, as a folder you can copy or back up whole:
+
+    runs/projects/<project>/project.json     name, description, settings (packs, calendar)
+    runs/projects/<project>/registry.json    its product lines (step 57)
+    runs/projects/<project>/runs/<run>/      each run
+
+- **Projects home** (`/app`): a card per project (how it reads files, its approved models, runs,
+  model versions, last activity), **New project**, and the runs made before projects, each with
+  **Move to**. A registered run moves with every version of its product line; a line the project
+  already has, or a run with a fit or calculation in progress, isn't moved.
+- **A project's page**: its runs newest first (data period, where each is, its registry version),
+  its models (approved version, last refit, **Refit with new data**), its settings, **Edit project**
+  and **Upload a file**. New uploads start with the project's settings; runs already made keep theirs.
+- **Every new run belongs to a project**, refits included (they stay in the source's project). In
+  a run, the top bar shows its project and file; **New run** uploads to the same project.
+- API: `GET/POST /api/projects`, `GET/PUT /api/projects/{project}`, `POST /api/runs` needs the
+  `project` form field and `POST /api/runs/sample/{name}` the `?project=` query,
+  `POST /api/runs/{run}/move` `{"project": ...}`; registry actions and `/api/refit` take `project`.
 
 **Prior choices (steps 21, 23, 25).** Every choice goes into the model configuration, the
 decision log (for example `#23 search fades fast (you)`) and the export; changing one marks a

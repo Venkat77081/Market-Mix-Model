@@ -18,6 +18,7 @@ from mmm_tool import samples
 from mmm_tool.fit import gates, job
 from mmm_tool.fit.context import FitOptions, sampler_settings, settings
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 fit_tests = pytest.mark.skipif(os.environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
 TINY = {"n_chains": 2, "n_adapt": 20, "n_burnin": 20, "n_keep": 20}
@@ -161,7 +162,7 @@ def client(tmp_path, monkeypatch):
 def test_fit_api_refuses_until_phase_d_is_complete(client):
     from mmm_tool.fit.model import meridian_installed
 
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]  # roles not confirmed yet
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]  # roles not confirmed yet
     r = client.post(f"/api/runs/{run_id}/fit", json={"sampler": "quick"})
     assert r.status_code == (409 if meridian_installed() else 503)
     assert client.get(f"/api/runs/{run_id}/fit").status_code == 404
@@ -172,11 +173,11 @@ def test_fit_api_refuses_until_phase_d_is_complete(client):
 
 
 def test_fit_api_marks_a_fit_out_of_date(client):
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     from mmm_tool.api import app as app_mod
 
-    d = app_mod.RUNS_DIR / run_id
+    d = run_path(run_id)
     job._write(job.fit_dir(d) / "status.json", {"state": "done", "status": "accepted", "heartbeat": time.time()})
     job._write(job.fit_dir(d) / "result.json", {"status": "accepted", "inputs": "not-these-inputs"})
     assert client.get(f"/api/runs/{run_id}").json()["fit"]["stale"] is True
@@ -215,7 +216,7 @@ def test_phase_e_end_to_end(tmp_path):
 @fit_tests
 def test_background_job_through_the_api(client):
     pytest.importorskip("meridian")
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     r = client.post(f"/api/runs/{run_id}/fit", json={"sampler": "quick"})
     assert r.status_code == 200 and r.json()["state"] in job.ACTIVE

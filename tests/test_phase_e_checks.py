@@ -22,6 +22,7 @@ from mmm_tool.fit.context import FitOptions, settings
 from mmm_tool.ingest.pairing import Channel
 from mmm_tool.ingest.types import Verdict
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 try:
     import meridian  # noqa: F401
@@ -309,7 +310,7 @@ def client(tmp_path, monkeypatch):
 def test_answer_key_api(client, tmp_path):
     p = write(tmp_path, mix(rare=False))
     with p.open("rb") as f:
-        run_id = client.post("/api/runs", files={"file": ("mix.csv", f, "text/csv")}).json()["run_id"]
+        run_id = client.post("/api/runs", files={"file": ("mix.csv", f, "text/csv")}, data={"project": project_in()}).json()["run_id"]
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}}).json()
     assert r["answer_key"] == {"loaded": False, "file": None} and "truth" not in (r["fit"] or {})     # nothing changes
     bad = client.post(f"/api/runs/{run_id}/answer-key", files={"file": ("k.json", json.dumps(_key(kpi="sales")), "application/json")})

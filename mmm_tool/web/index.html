@@ -293,6 +293,36 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .rolehelp .foot { grid-column: 1 / -1; margin: 6px 0 0; }
 @media (max-width: 560px) { .rolehelp { right: 16px; width: auto; grid-template-columns: 1fr; } }
 
+/* Projects: home, a project's page, the project form, breadcrumbs */
+.page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 22px; }
+.ph1 { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; } .ph1 > div:first-child { flex: 1; min-width: 240px; }
+.projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.proj { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; align-content: start; text-decoration: none; color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
+.proj:hover, .proj:focus-visible { border-color: var(--accent); outline: none; }
+.proj h3 { margin: 0; font-size: 17px; flex: 1; } .proj p { margin: 0; }
+.proj .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.proj .stats b { display: block; font-size: 18px; } .proj .stats span { font-size: 12px; color: var(--muted); }
+.proj.new { border-style: dashed; place-items: center; text-align: center; color: var(--muted); min-height: 190px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.crumb { display: flex; gap: 6px; align-items: center; font-size: 13.5px; color: var(--muted); min-width: 0; overflow: hidden; white-space: nowrap; }
+.crumb:empty { display: none; }
+.crumb a { color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; } .crumb a:hover { color: var(--accent); }
+.crumb .sep { color: var(--line); }
+.crumb span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.topcrumb { margin-left: 6px; }
+@media (max-width: 560px) { .topcrumb { display: none; } }
+.pagecrumb { display: none; }
+@media (max-width: 560px) { .pagecrumb:not(:empty) { display: flex; } }
+.modal-back { position: fixed; inset: 0; background: rgba(10, 15, 25, .45); display: grid; place-items: start center; padding: 60px 16px; overflow: auto; z-index: 9; }
+.modal-back[hidden] { display: none; }
+.modal { width: min(720px, 100%); background: var(--surface); border-radius: var(--r); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0,0,0,.25); min-width: 0; }
+.modal > header { padding: 14px 18px; border-bottom: 1px solid var(--line); } .modal .mb { padding: 16px 18px; display: grid; gap: 14px; min-width: 0; }
+.modal footer { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.field { display: grid; gap: 6px; min-width: 0; } .field input { width: 100%; }
+.modal select { width: 100%; min-width: 0; max-width: 100%; }
+.runs-table td { vertical-align: middle; } .runs-table .nowrap { white-space: nowrap; }
+
 /* Phase I: Export, refit */
 .ex-parts { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
 .ex-parts li { break-inside: avoid; margin-bottom: 2px; }
@@ -313,16 +343,21 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="25" rx="6" fill="var(--accent)"/><path d="M4 19 C8 19 9 7 13 7 C17 7 18 19 22 19" stroke="var(--surface)" stroke-width="2" fill="none"/></svg>
       Meridian MMM Tool
     </a>
+    <div class="crumb topcrumb" id="crumb"></div>
     <div class="right"><button class="setchip" id="run-settings" hidden aria-haspopup="dialog" aria-expanded="false"></button><a class="btn" href="/app" id="new-run" hidden>New run</a></div>
   </div>
   <div class="setpop" id="setpop" role="dialog" aria-label="Read this file as" hidden></div>
   <div class="rolehelp" id="rolehelp" role="tooltip" hidden></div>
 </header>
 
-<section class="start" id="start">
+<section class="page" id="home" hidden></section>
+<div class="modal-back" id="pmodal" hidden></div>
+
+<section class="start" id="start" hidden>
+  <div class="crumb" id="upload-crumb"></div>
   <div>
     <span class="eyebrow">Phase A · Ingest</span>
-    <h1>Upload a spend-and-sales export</h1>
+    <h1 id="upload-title">Upload a spend-and-sales export</h1>
     <p class="lede">The tool reads the file, parses the dates and suggests a role for every column. It stops only where it needs you: confirming column roles, and anything the data leaves ambiguous.</p>
   </div>
   <div class="set" id="read-as"></div>
@@ -340,7 +375,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
 <div class="app" id="app" hidden>
   <nav class="rail" id="rail" aria-label="Phases"></nav>
-  <main class="main"><div class="inner" id="main"></div></main>
+  <main class="main"><div class="crumb pagecrumb" id="crumb-m" style="padding:12px 16px 0"></div><div class="inner" id="main"></div></main>
 </div>
 <div class="busy" id="busy" hidden>Running the pipeline…</div>
 
@@ -436,8 +471,14 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (view === "b" && !data.result_b) view = "a";
     const hash = `#run=${data.run_id}${view === "a" ? "" : "/" + view}`;
     if (location.hash !== hash) history.replaceState(null, "", hash);
+    screen("app");
     render();
     renderChip();
+    const pr = data.project;
+    $("crumb").innerHTML = pr ? `<span class="sep">/</span><a href="#project=${esc(pr.slug)}">${esc(pr.name)}</a><span class="sep">/</span><span>${esc(data.file)}</span>`
+      : `<span class="sep">/</span><a href="#">Not in a project</a><span class="sep">/</span><span>${esc(data.file)}</span>`;
+    $("crumb-m").innerHTML = $("crumb").innerHTML.replace(/^<span class="sep">\/<\/span>/, "");
+    $("new-run").href = pr ? `#upload=${pr.slug}` : "#";
     if (keepScroll) window.scrollTo(0, y);
   }
   async function answer(patch) {
@@ -449,7 +490,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   // ---------- start screen ----------
   // ---------- how a file is read: keyword packs and calendar ----------
-  let SET = null, readAs = null, readAsOpen = false, remember = false;
+  let SET = null, readAs = null, readAsOpen = false, uploadTo = null;     // uploadTo: the project uploads go into
   const setLabel = x => { if (!SET) return "Generic";
     const parts = x.packs.map(n => (SET.packs.find(p => p.name === n) || { title: n }).title);
     const cal = SET.calendars.find(c => c.name === x.calendar);
@@ -457,6 +498,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return parts.join(" · ") || "Generic"; };
   const setSub = x => x.packs.length || x.calendar !== "none" ? "Changes how columns, amounts and festivals are read"
     : "No keyword packs · no calendar preset · currency detected from the file";
+  const sameSet = (a, b) => JSON.stringify([...a.packs].sort()) === JSON.stringify([...b.packs].sort()) && a.calendar === b.calendar;
   // The packs and calendar picker; id prefixes keep the upload panel and the chip's panel apart.
   function setBody(x, pre) {
     return `<div style="display:grid;gap:8px"><span class="eyebrow">Keyword packs</span><div class="packs">${SET.packs.map(p =>
@@ -476,11 +518,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     host.innerHTML = `<header><div class="what"><span class="eyebrow">Read this file as</span><b>${esc(setLabel(readAs))}</b><span class="muted small">${esc(setSub(readAs))}</span></div>
         <button class="btn" id="ra-toggle" aria-expanded="${readAsOpen}">${readAsOpen ? "Done" : "Change"}</button></header>
       ${readAsOpen ? `<div class="setbody">${setBody(readAs, "ra")}
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="small"><input type="checkbox" id="ra-remember" ${remember ? "checked" : ""}> Use these for my new runs</label>
-          <span class="muted small">Saved with each run and in its bundle. A sample file uses the settings it was made for.</span></div></div>` : ""}`;
+        <p class="muted small" style="margin:0">${uploadTo && sameSet(readAs, uploadTo.settings) ? `${esc(uploadTo.name)}'s settings.` : `For this file only; ${esc(uploadTo ? uploadTo.name : "the project")} keeps its own (Edit project changes them).`}
+          Saved with the run and in its bundle. A sample file uses the settings it was made for.</p></div>` : ""}`;
     $("ra-toggle").onclick = () => { readAsOpen = !readAsOpen; renderReadAs(); };
     wireSetBody(readAs, "ra", renderReadAs);
-    const rem = $("ra-remember"); if (rem) rem.onchange = () => { remember = rem.checked; };
   }
 
   // The chip in the top bar: how this run's file is read, and a panel to change it (re-reads from A).
@@ -516,15 +557,149 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("setpop").hidden) { $("setpop").hidden = true; $("run-settings").setAttribute("aria-expanded", "false"); } });
 
-  async function startScreen() {
-    $("start").hidden = false; $("app").hidden = true; $("new-run").hidden = true; renderChip();
-    SET = await api("GET", "/api/settings").catch(() => null);
-    if (SET) { readAs = { packs: [...SET.default.packs], calendar: SET.default.calendar }; renderReadAs(); }
+  // Which page shows: the Projects home, a project's page, its upload screen, or a run's screens.
+  function screen(which) {
+    $("home").hidden = which !== "home"; $("start").hidden = which !== "start"; $("app").hidden = which !== "app";
+    if (which !== "app") { run = null; renderChip(); }
+    $("new-run").hidden = which !== "app";
+    if (which !== "app") $("crumb").innerHTML = "";
+  }
+  async function startScreen(slug) {
+    let P;
+    try { P = await api("GET", `/api/projects/${encodeURIComponent(slug)}`); }
+    catch (e) { return homeScreen(); }
+    screen("start"); uploadTo = P; readAsOpen = false;
+    $("upload-crumb").innerHTML = `<a href="#">Projects</a><span class="sep">/</span><a href="#project=${esc(P.slug)}">${esc(P.name)}</a><span class="sep">/</span><span>Upload</span>`;
+    $("upload-title").textContent = `Upload to ${P.name}`;
+    $("start-error").hidden = true;
+    SET = SET || await api("GET", "/api/settings").catch(() => null);
+    if (SET) { readAs = { packs: [...P.settings.packs], calendar: P.settings.calendar }; renderReadAs(); }
     const list = await api("GET", "/api/samples").catch(() => []);
     if (SET) $("samples-head").textContent = `Or try a sample export · read as ${SET.sample.label}`;
     $("samples").innerHTML = list.map(s => `<button class="sample" data-sample="${esc(s.name)}"><b>${esc(s.name)}</b><span>${esc(s.description)}</span></button>`).join("");
-    $("samples").querySelectorAll("[data-sample]").forEach(b => b.onclick = () => startRun(() => api("POST", `/api/runs/sample/${b.dataset.sample}`)));
+    $("samples").querySelectorAll("[data-sample]").forEach(b => b.onclick = () =>
+      startRun(() => api("POST", `/api/runs/sample/${b.dataset.sample}?project=${encodeURIComponent(P.slug)}`)));
+    window.scrollTo(0, 0);
   }
+  // ---------- Projects: home, a project's page, the project form ----------
+  const ago = t => { if (!t) return "–"; const d = (Date.now() / 1000 - t) / 86400;
+    return d < 1 / 24 ? "now" : d < 1 ? "today" : d < 2 ? "yesterday" : d < 14 ? `${Math.floor(d)} days ago` : d < 60 ? `${Math.floor(d / 7)} weeks ago` : `${Math.floor(d / 30)} months ago`; };
+  function whereIs(r) {            // [pill class, text] for a run row
+    const f = r.fit;
+    if (f && ["queued", "running"].includes(f.state)) return ["warn", `Fitting${f.step ? ` · step ${f.step}` : ""}`];
+    if (f && f.status === "accepted") return ["pass", "Accepted"];
+    if (f && f.status === "rejected") return ["block", "Rejected"];
+    if (f && f.state === "failed") return ["block", "Fit stopped"];
+    if (r.status === "complete" && r.phase === "D") return ["wait", "Ready to fit"];
+    return ["wait", `Phase ${r.phase}${r.decisions ? ` · ${r.decisions} decision${r.decisions === 1 ? "" : "s"}` : ""}`];
+  }
+  const period = r => r.period ? `${esc(String(r.period.data_from).slice(0, 7))}–${esc(String(r.period.data_to).slice(0, 7))} · ${r.period.weeks} wk` : '<span class="muted">–</span>';
+  const regText = g => g ? `${esc(g.line)} v${g.version} · ${esc(g.status)}` : '<span class="muted">–</span>';
+
+  async function homeScreen() {
+    screen("home");
+    let D;
+    try { D = await api("GET", "/api/projects"); } catch (e) { $("home").innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+    const card = p => `<a class="proj" href="#project=${esc(p.slug)}"><div style="display:flex;gap:8px;align-items:start"><h3>${esc(p.name)}</h3>
+        ${p.approved.length ? `<span class="pill pass">${p.approved.map(a => `${esc(a.line)} v${a.version}`).join(", ")} approved</span>` : '<span class="pill wait">no approved model</span>'}</div>
+      ${p.description ? `<p class="small muted">${esc(p.description)}</p>` : ""}<div class="chips"><span class="chip">Read as: ${esc(p.label)}</span></div>
+      <div class="stats"><div><b>${p.runs}</b><span>run${p.runs === 1 ? "" : "s"}</span></div><div><b>${p.versions}</b><span>model version${p.versions === 1 ? "" : "s"}</span></div><div><b>${esc(ago(p.updated))}</b><span>last activity</span></div></div></a>`;
+    const opts = D.projects.map(p => `<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join("");
+    $("home").innerHTML = `<div class="ph1"><div><span class="eyebrow">Your work</span><h1>Projects</h1>
+        <p class="lede" style="margin-top:6px">A project holds one business's files, how they're read, every run and its approved model.</p></div>
+        <button class="btn primary" id="new-project">New project</button></div>
+      ${D.projects.length ? "" : '<p class="muted">No projects yet. Make one for each business or market you model; every upload goes into one.</p>'}
+      <div class="projects">${D.projects.map(card).join("")}<button class="proj new" id="new-project-2"><div><b style="font-size:28px;display:block">+</b>New project</div></button></div>
+      ${D.unfiled.length ? `<article class="card"><header><span class="n">·</span><h3>Runs not in a project</h3><span class="pill wait">${D.unfiled.length}</span>
+        <p class="sum">Made before projects existed. Move each into a project; it keeps everything it has, and reads with the project's settings if it has none of its own.</p></header>
+        <div class="body"><div id="move-msg" class="small" role="status"></div><div class="scroll"><table class="runs-table" style="min-width:640px"><thead><tr><th>File</th><th>Where it is</th><th>Registered</th><th>Updated</th><th>Move to</th></tr></thead><tbody>
+        ${D.unfiled.map(r => { const [c, t] = whereIs(r); return `<tr><td><a href="#run=${r.run_id}"><code>${esc(r.file)}</code></a></td><td><span class="pill ${c}">${esc(t)}</span></td>
+          <td class="small">${regText(r.registered)}</td><td class="small muted nowrap">${esc(ago(r.updated))}</td>
+          <td>${D.projects.length ? `<select data-move="${r.run_id}" data-reg="${r.registered ? esc(`${r.registered.line} v${r.registered.version}`) : ""}" data-line="${r.registered ? esc(r.registered.line) : ""}" aria-label="Move ${esc(r.file)} to a project"><option value="">Choose…</option>${opts}</select>` : '<span class="muted small">make a project first</span>'}</td></tr>`; }).join("")}
+        </tbody></table></div></div></article>` : ""}`;
+    $("new-project").onclick = $("new-project-2").onclick = () => projectForm(null);
+    $("home").querySelectorAll("[data-move]").forEach(sel => sel.onchange = async () => {
+      if (!sel.value) return;
+      const name = sel.selectedOptions[0].textContent;
+      if (sel.dataset.reg && !confirm(`This run is ${sel.dataset.reg}. Every version of '${sel.dataset.line}' moves into ${name} with it. Move them?`)) { sel.value = ""; return; }
+      try { await api("POST", `/api/runs/${sel.dataset.move}/move`, { project: sel.value }); homeScreen(); }
+      catch (e) { $("move-msg").innerHTML = `<p style="color:var(--block)">${esc(e.message)}</p>`; sel.value = ""; }
+    });
+    window.scrollTo(0, 0);
+  }
+
+  let projFilter = "all";
+  async function projectScreen(slug) {
+    let P;
+    try { P = await api("GET", `/api/projects/${encodeURIComponent(slug)}`); } catch (e) { return homeScreen(); }
+    SET = SET || await api("GET", "/api/settings").catch(() => null);      // pack and calendar names
+    screen("home");
+    const keep = r => projFilter === "all" || (projFilter === "fitted" ? r.fit && ["accepted", "rejected"].includes(r.fit.status)
+      : !(r.fit && ["accepted", "rejected"].includes(r.fit.status)));
+    const rows = P.runs.filter(keep).map(r => { const [c, t] = whereIs(r);
+      return `<tr><td><a href="#run=${r.run_id}"><code>${esc(r.file)}</code></a>${r.refit_of ? `<div class="small muted">refit of ${esc(r.refit_of.line)} v${r.refit_of.version}</div>` : ""}</td>
+        <td class="small nowrap">${period(r)}</td><td><span class="pill ${c}">${esc(t)}</span></td><td class="small">${regText(r.registered)}</td><td class="small muted nowrap">${esc(ago(r.updated))}</td></tr>`; }).join("");
+    const cal = SET ? (SET.calendars.find(c => c.name === P.settings.calendar) || {}).label : P.settings.calendar;
+    const packs = SET ? P.settings.packs.map(n => (SET.packs.find(x => x.name === n) || { title: n }).title) : P.settings.packs;
+    const models = P.registry.length ? P.registry.map((l, i) => `<div ${i ? 'style="border-top:1px solid var(--line);padding-top:10px"' : ""}>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(l.line)}</b>${l.approved ? `<span class="pill pass">v${l.approved.version} approved</span>` : '<span class="pill wait">no approved model</span>'}</div>
+        <p class="small muted" style="margin:4px 0 0">${l.approved ? `Data to ${esc(l.approved.data_to || "–")} · ${l.approved.weeks ?? "–"} weeks` : `${l.versions.length} version${l.versions.length === 1 ? "" : "s"}, none approved`}${l.last_refit ? ` · last refit: ${esc(l.last_refit)}` : ""}</p>
+        ${l.approved ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><a class="btn" href="#run=${l.approved.run_id}/i" data-refit="1">Refit with new data</a><a class="btn" href="#run=${l.approved.run_id}/i">Open v${l.approved.version}</a></div>` : ""}</div>`).join("")
+      : '<p class="muted small" style="margin:0">No models registered yet. Register a fitted run in its Export, refit screen (step 57).</p>';
+    $("home").innerHTML = `<div class="crumb"><a href="#">Projects</a><span class="sep">/</span><span>${esc(P.name)}</span></div>
+      <div class="ph1"><div><span class="eyebrow">Project</span><h1>${esc(P.name)}</h1>
+        ${P.description ? `<p class="lede" style="margin-top:6px">${esc(P.description)}</p>` : ""}
+        <div class="chips" style="margin-top:10px"><span class="chip">Read as: ${esc(P.label)}</span><span class="chip">${P.runs.length} run${P.runs.length === 1 ? "" : "s"}</span><span class="chip">created ${esc(new Date(P.created * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }))}</span></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="edit-project">Edit project</button><a class="btn primary" href="#upload=${esc(P.slug)}">Upload a file</a></div></div>
+      <div class="two">
+        <article class="card"><header><span class="n">1</span><h3>Runs</h3><span></span><p class="sum">Every file uploaded to this project and every refit, newest first. Open one to continue it.</p></header>
+          <div class="body">${P.runs.length ? `<div class="chips" style="margin-bottom:10px" role="group" aria-label="Show">${[["all", "All"], ["progress", "In progress"], ["fitted", "Fitted"]].map(([k, t]) => `<button class="btn" data-pfilter="${k}" aria-pressed="${projFilter === k}">${t}</button>`).join("")}</div>
+            <div class="scroll"><table class="runs-table" style="min-width:680px"><thead><tr><th>File</th><th>Data</th><th>Where it is</th><th>Registered</th><th>Updated</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted small">None here.</td></tr>'}</tbody></table></div>`
+            : `<p class="muted small" style="margin:0">No runs yet. <a href="#upload=${esc(P.slug)}">Upload a file</a> to start one.</p>`}</div></article>
+        <div style="display:grid;gap:16px;min-width:0">
+          <article class="card"><header><span class="n">2</span><h3>Models</h3><span></span><p class="sum">The registry for this project's product lines.</p></header><div class="body" style="display:grid;gap:12px">${models}</div></article>
+          <article class="card"><header><span class="n">3</span><h3>Project settings</h3><span></span><p class="sum">New uploads to this project start with these.</p></header>
+            <div class="body"><dl class="kv"><div><dt>Keyword packs</dt><dd>${esc(packs.join(" · ") || "none")}</dd></div><div><dt>Calendar</dt><dd>${esc(cal || "None")}</dd></div>
+              <div><dt>Product lines</dt><dd>${esc(P.registry.map(l => l.line).join(", ") || "none yet")}</dd></div></dl>
+              <p class="small muted" style="margin:10px 0 0">Changing these doesn't change runs already made; each run keeps the settings it was read with.</p></div></article>
+        </div></div>`;
+    $("edit-project").onclick = () => projectForm(P);
+    $("home").querySelectorAll("[data-pfilter]").forEach(b => b.onclick = () => { projFilter = b.dataset.pfilter; projectScreen(slug); });
+    $("home").querySelectorAll("[data-refit]").forEach(a => a.onclick = () => { scrollToRefit = true; });
+  }
+  let scrollToRefit = false;
+
+  async function projectForm(P) {
+    SET = SET || await api("GET", "/api/settings").catch(() => null);
+    const x = { packs: P ? [...P.settings.packs] : [], calendar: P ? P.settings.calendar : "none" };
+    const f = { name: P ? P.name : "", description: P ? P.description : "" };
+    const back = $("pmodal");
+    const draw = () => {
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pm-title"><header><b style="font-size:17px" id="pm-title">${P ? "Edit project" : "New project"}</b></header>
+        <form class="mb" id="pm-form"><label class="field"><span class="small">Name</span><input id="pm-name" maxlength="80" required value="${esc(f.name)}" placeholder="e.g. the brand and market"></label>
+          <label class="field"><span class="small">Description <span class="muted">(optional)</span></span><input id="pm-desc" maxlength="300" value="${esc(f.description)}"></label>
+          ${SET ? `<span class="eyebrow">Read files as</span>${setBody(x, "pm")}` : ""}
+          <p class="small muted" style="margin:0">${P ? "Runs already made keep the settings they were read with." : "Every setting can be changed later; runs already made keep theirs."}</p>
+          <div id="pm-err" class="small" role="alert"></div></form>
+        <footer><button class="btn" type="button" id="pm-cancel">Cancel</button><button class="btn primary" type="submit" form="pm-form">${P ? "Save" : "Create project"}</button></footer></div>`;
+      back.hidden = false;
+      const keep = () => { f.name = $("pm-name").value; f.description = $("pm-desc").value; };
+      wireSetBody(x, "pm", () => { keep(); draw(); });
+      $("pm-cancel").onclick = () => { back.hidden = true; };
+      $("pm-form").onsubmit = async e => { e.preventDefault(); keep();
+        try {
+          const body = { name: f.name, description: f.description, packs: x.packs, calendar: x.calendar };
+          const r = P ? await api("PUT", `/api/projects/${P.slug}`, body) : await api("POST", "/api/projects", body);
+          back.hidden = true;
+          if (location.hash === `#project=${r.slug}`) projectScreen(r.slug); else location.hash = `#project=${r.slug}`;
+        } catch (err) { $("pm-err").innerHTML = `<span style="color:var(--block)">${esc(err.message)}</span>`; } };
+    };
+    draw();
+    $("pm-name").focus();
+  }
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("pmodal").hidden) $("pmodal").hidden = true; });
+  $("pmodal").addEventListener("mousedown", e => { if (e.target === $("pmodal")) $("pmodal").hidden = true; });
+
   async function startRun(fn) {
     $("start-error").hidden = true;
     try { show(await fn(), false); }
@@ -533,7 +708,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   function upload(file) {
     const fd = new FormData();
     fd.append("file", file);
-    if (readAs) { fd.append("packs", readAs.packs.join(",")); fd.append("calendar", readAs.calendar); fd.append("remember", remember ? "true" : "false"); }
+    fd.append("project", uploadTo.slug);
+    if (readAs && !sameSet(readAs, uploadTo.settings)) { fd.append("packs", readAs.packs.join(",")); fd.append("calendar", readAs.calendar); }
     startRun(() => api("POST", "/api/runs", fd));
   }
   $("file").onchange = e => e.target.files[0] && upload(e.target.files[0]);
@@ -2371,18 +2547,20 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           <div class="body" style="display:grid;gap:12px">${cmp}${refitForm}</div></article>
       </div>`;
     wire();
+    if (scrollToRefit) { scrollToRefit = false; $("step-58").scrollIntoView({ block: "start" }); }
     const msg = t => { $("ex-msg").innerHTML = `<p style="color:var(--block)">${esc(t)}</p>`; };
     const reg = $("ex-reg");
     if (reg) reg.onsubmit = async e => { e.preventDefault();
       try { await api("POST", `${base}/register`, { line: $("ex-line").value, note: $("ex-note").value }); renderExport(); } catch (err) { msg(err.message); } };
     $("main").querySelectorAll("[data-exact]").forEach(b => b.onclick = async () => {
       if (b.dataset.exact === "retire" && !confirm(`Retire ${b.dataset.line} v${b.dataset.v}? It stays in the registry but can't be approved again.`)) return;
-      try { await api("POST", `/api/registry/${b.dataset.exact}`, { line: b.dataset.line, version: +b.dataset.v }); renderExport(); } catch (err) { msg(err.message); } });
+      try { await api("POST", `/api/registry/${b.dataset.exact}`, { line: b.dataset.line, version: +b.dataset.v, project: run.project ? run.project.slug : null }); renderExport(); } catch (err) { msg(err.message); } });
     $("main").querySelectorAll("[data-exopen]").forEach(a => a.onclick = e => { e.preventDefault(); openRun(a.dataset.exopen, "i"); });
     const rf = $("ex-refit");
     if (rf) rf.onsubmit = async e => { e.preventDefault();
       const a = approvedVs[+$("ex-rv").value], fd = new FormData();
       fd.append("line", a.line); fd.append("version", a.v.version); fd.append("file", $("ex-file").files[0]);
+      if (run.project) fd.append("project", run.project.slug);
       try { const d = await api("POST", "/api/refit", fd); view = (d.phase || "A").toLowerCase(); show(d, false); window.scrollTo(0, 0); }
       catch (err) { alert(err.message); } };
   }
@@ -2583,11 +2761,21 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   // ---------- boot ----------
-  const m = location.hash.match(/^#run=([0-9a-f]{12})(?:\/([bcdefghi]))?$/);
-  if (m) {
-    view = m[2] || "a";
-    api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(e => { console.error(e); startScreen(); });
-  } else startScreen();
+  function route() {
+    const h = location.hash;
+    const m = h.match(/^#run=([0-9a-f]{12})(?:\/([bcdefghi]))?$/);
+    if (m) {
+      if (run && run.run_id === m[1]) return;              // the run's own view changes use replaceState
+      view = m[2] || "a";
+      return api("GET", `/api/runs/${m[1]}`).then(d => show(d, false)).catch(e => { console.error(e); homeScreen(); });
+    }
+    const pj = h.match(/^#project=([a-z0-9-]{1,60})$/), up = h.match(/^#upload=([a-z0-9-]{1,60})$/);
+    if (pj) return projectScreen(pj[1]);
+    if (up) return startScreen(up[1]);
+    homeScreen();
+  }
+  addEventListener("hashchange", route);
+  route();
 })();
 </script>
 </body>

@@ -17,6 +17,7 @@ import pytest
 from mmm_tool import whatif
 from mmm_tool.fit import job
 from mmm_tool.whatif import scenario
+from helpers import project_in, run_path  # noqa: F401
 
 fit_tests = pytest.mark.skipif(os.environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
 TINY = {"n_chains": 2, "n_adapt": 100, "n_burnin": 100, "n_keep": 100}
@@ -50,7 +51,7 @@ def client(tmp_path, monkeypatch):
 
 
 def _run(client) -> str:
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     return run_id
 
@@ -63,7 +64,7 @@ def test_whatif_needs_an_accepted_model(client):
 
 def test_saved_scenarios_are_kept_and_limited(client):
     run_id = _run(client)
-    fd = job.fit_dir(client.runs / run_id)
+    fd = job.fit_dir(run_path(run_id))
     job._write(fd / "status.json", {"state": "done", "status": "accepted", "heartbeat": time.time()})
     job._write(fd / "result.json", {"status": "accepted", "steps": [], "gates": []})
     (fd / "model.pkl").write_bytes(b"not a model")
@@ -76,13 +77,13 @@ def test_saved_scenarios_are_kept_and_limited(client):
     assert bad.status_code == 400
     neg = client.post(f"/api/runs/{run_id}/whatif/exact", json={"period": "all", "multipliers": {"tv": -0.5}})
     assert neg.status_code == 400 and "below zero" in neg.json()["detail"]
-    stored = json.loads((whatif.folder(client.runs / run_id) / "saved.json").read_text(encoding="utf-8"))
-    assert stored["model_key"] == whatif.model_key(client.runs / run_id) and len(stored["scenarios"]) == 3
+    stored = json.loads((whatif.folder(run_path(run_id)) / "saved.json").read_text(encoding="utf-8"))
+    assert stored["model_key"] == whatif.model_key(run_path(run_id)) and len(stored["scenarios"]) == 3
 
 
 def test_cached_results_belong_to_one_model(client):
     run_id = _run(client)
-    d = client.runs / run_id
+    d = run_path(run_id)
     fd = job.fit_dir(d)
     fd.mkdir(parents=True, exist_ok=True)
     (fd / "model.pkl").write_bytes(b"one")

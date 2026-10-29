@@ -14,6 +14,7 @@ import pytest
 
 from mmm_tool.fit import job
 from mmm_tool.plan.optimize import PlanError, check, defaults
+from helpers import project_in, run_path  # noqa: F401
 
 HIST = {"tv": 600.0, "search": 300.0, "radio": 100.0}
 PERIODS = {"all": ("2023-01-02", "2025-12-22"), "last_52": ("2024-12-30", "2025-12-22")}
@@ -94,9 +95,9 @@ def client(tmp_path, monkeypatch):
 
 
 def _accepted_run(client) -> str:
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
-    fd = job.fit_dir(client.runs / run_id)
+    fd = job.fit_dir(run_path(run_id))
     job._write(fd / "status.json", {"state": "done", "status": "accepted", "heartbeat": time.time()})
     job._write(fd / "result.json", {"status": "accepted", "steps": [], "gates": []})
     (fd / "model.pkl").write_bytes(b"not a model")
@@ -104,7 +105,7 @@ def _accepted_run(client) -> str:
 
 
 def test_plan_needs_an_accepted_model(client):
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}})
     assert client.get(f"/api/runs/{run_id}/plan").status_code == 409
 
@@ -115,7 +116,7 @@ def test_plan_screen_and_check(client):
     assert set(d["periods"]) == {"all", "last_52"} and d["defaults"]["budget_type"] == "fixed"
     from mmm_tool.pipeline import run_pipeline
 
-    run = run_pipeline(client.runs / run_id / "ins_clean.csv", {"roles": {}})
+    run = run_pipeline(run_path(run_id) / "ins_clean.csv", {"roles": {}})
     for ch in run.d.channels:
         assert d["hist"]["all"][ch.name] == pytest.approx(float(run.d.table[ch.spend].sum()))
     ok = client.post(f"/api/runs/{run_id}/plan/check", json={"plan": d["defaults"]}).json()

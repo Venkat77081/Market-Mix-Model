@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mmm_tool.api import app as app_module
+from helpers import project_in, run_path  # noqa: F401
 
 
 @pytest.fixture()
@@ -21,7 +22,7 @@ def test_pages_and_samples(client):
 
 
 def test_sample_run_stops_at_roles_then_completes(client):
-    r = client.post("/api/runs/sample/ins_clean").json()
+    r = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
     run_id = r["run_id"]
     assert r["result"]["status"] == "needs_input"
     assert r["result"]["pending"][0]["id"] == "roles"
@@ -42,31 +43,31 @@ def test_upload_and_date_decision(client):
 
     path = samples.write_ambiguous_monthly(app_module.RUNS_DIR.parent)
     with open(path, "rb") as f:
-        r = client.post("/api/runs", files={"file": ("monthly.csv", f, "text/csv")}).json()
+        r = client.post("/api/runs", files={"file": ("monthly.csv", f, "text/csv")}, data={"project": project_in()}).json()
     assert r["result"]["pending"][0]["id"] == "date_order"
     r = client.put(f"/api/runs/{r['run_id']}/answers", json={"answers": {"date_order": "dayfirst"}}).json()
     assert r["result"]["pending"][0]["id"] == "roles"
 
 
 def test_rejects_bad_input(client):
-    assert client.post("/api/runs", files={"file": ("x.json", b"{}", "application/json")}).status_code == 400
+    assert client.post("/api/runs", files={"file": ("x.json", b"{}", "application/json")}, data={"project": project_in()}).status_code == 400
     assert client.get("/api/runs/../../etc").status_code == 404
     assert client.get("/api/runs/0123456789ab").status_code == 404
-    r = client.post("/api/runs/sample/ins_clean").json()
+    r = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
     assert client.get(f"/api/runs/{r['run_id']}/table.csv").status_code == 409
 
 
 def test_recent_runs_list(client):
     assert client.get("/api/runs").json() == []
-    a = client.post("/api/runs/sample/ins_clean").json()
-    b = client.post("/api/runs/sample/ins_monthly").json()
+    a = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
+    b = client.post("/api/runs/sample/ins_monthly", params={"project": project_in()}).json()
     runs = client.get("/api/runs").json()
     assert [r["run_id"] for r in runs] == [b["run_id"], a["run_id"]]
     assert runs[0]["status"] == "needs_input" and runs[0]["decisions"] == 1
 
 
 def test_phase_b_through_the_api(client):
-    r = client.post("/api/runs/sample/ins_messy").json()
+    r = client.post("/api/runs/sample/ins_messy", params={"project": project_in()}).json()
     run_id = r["run_id"]
     assert r["phase"] == "A" and r["result_b"] is None
     r = client.put(f"/api/runs/{run_id}/answers", json={"answers": {"roles": {}}}).json()
@@ -96,6 +97,6 @@ def test_phase_b_through_the_api(client):
 
 
 def test_decisions_say_whether_they_are_pending(client):
-    r = client.post("/api/runs/sample/ins_clean").json()
+    r = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()
     roles = r["result"]["steps"][2]["decisions"][0]
     assert roles["id"] == "roles" and roles["pending"] is True

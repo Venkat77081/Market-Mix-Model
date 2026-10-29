@@ -19,6 +19,7 @@ import pytest
 import gen
 from mmm_tool.configure import baseline
 from mmm_tool.pipeline import run_pipeline
+from helpers import project_in, run_path  # noqa: F401
 
 SAMPLE = Path(__file__).parent / "data" / "phase_b_tests" / "insurance_mmm_sample.csv"
 needs_meridian = pytest.mark.skipif(not baseline.meridian_installed(), reason="needs google-meridian")
@@ -203,7 +204,7 @@ def client(tmp_path, monkeypatch):
 
 def _upload(client) -> str:
     with SAMPLE.open("rb") as f:
-        run_id = client.post("/api/runs", files={"file": (SAMPLE.name, f, "text/csv")}).json()["run_id"]
+        run_id = client.post("/api/runs", files={"file": (SAMPLE.name, f, "text/csv")}, data={"project": project_in()}).json()["run_id"]
     client.put(f"/api/runs/{run_id}/answers", json={"answers": ANSWERS})
     return run_id
 
@@ -222,7 +223,7 @@ def test_preview_and_suggestion_endpoints(client):
 
 
 def test_preview_refuses_before_phase_d(client):
-    run_id = client.post("/api/runs/sample/ins_clean").json()["run_id"]  # roles not confirmed
+    run_id = client.post("/api/runs/sample/ins_clean", params={"project": project_in()}).json()["run_id"]  # roles not confirmed
     assert client.get(f"/api/runs/{run_id}/baseline-preview").status_code in (409, 503)
 
 
@@ -254,7 +255,9 @@ def test_slider_in_the_browser(tmp_path):
             except httpx.HTTPError:
                 time.sleep(0.5)
         with SAMPLE.open("rb") as f:
-            run_id = httpx.post(base + "/api/runs", files={"file": (SAMPLE.name, f, "text/csv")}, timeout=120).json()["run_id"]
+            slug = httpx.post(base + "/api/projects", json={"name": "Browser", "packs": ["india", "insurance"], "calendar": "india_insurance"}, timeout=30).json()["slug"]
+            run_id = httpx.post(base + "/api/runs", files={"file": (SAMPLE.name, f, "text/csv")}, data={"project": slug},
+                                timeout=120).json()["run_id"]
         httpx.put(f"{base}/api/runs/{run_id}/answers", json={"answers": ANSWERS}, timeout=120)
         out = subprocess.run(["node", str(Path(__file__).parent / "browser" / "step24.js"), base, run_id, str(tmp_path)],
                              capture_output=True, text=True, timeout=300)

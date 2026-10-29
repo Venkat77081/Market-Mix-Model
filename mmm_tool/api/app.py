@@ -72,12 +72,29 @@ def _clean(x: Any) -> Any:
 
 
 def _run_dir(run_id: str) -> Path:
-    if not RUN_ID.match(run_id):
-        raise HTTPException(404, "Run not found.")
-    d = RUNS_DIR / run_id
-    if not (d / "meta.json").exists():
+    """A run's folder, in its project or (for a run made before projects) directly in the runs folder."""
+    from .. import projects
+
+    d = projects.find_run(RUNS_DIR, run_id) if RUN_ID.match(run_id) else None
+    if d is None:
         raise HTTPException(404, "Run not found.")
     return d
+
+
+def _reg_dir(d: Path) -> Path:
+    """The folder whose registry.json holds this run's product lines."""
+    from .. import projects
+
+    return projects.registry_dir(d, RUNS_DIR)
+
+
+def _project(slug: str) -> dict:
+    from .. import projects
+
+    try:
+        return projects.load(RUNS_DIR, slug)
+    except projects.ProjectError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 def _meta(d: Path) -> dict:
@@ -168,6 +185,8 @@ def _evaluate(d: Path) -> dict:
     def status(m: dict) -> None:               # only if the answers are still the ones this run used
         if m.get("answers") == used:
             m.update(phase=run.phase, status=final.status, updated=time.time(), decisions=len(final.pending))
+            if run.d is not None and run.d.status == "complete":
+                m["period"] = _period(run)               # for the project's runs table
     _update_meta(d, status)
     key = _answer_key(d)
     if key and fit and fit.get("result") and run.d is not None and run.d.status == "complete":
@@ -179,7 +198,19 @@ def _evaluate(d: Path) -> dict:
             "fit": _clean(fit), "meridian_installed": meridian_installed(),
             "answer_key": {"loaded": bool(key), "file": (key or {}).get("_file")},
             "refit_of": meta.get("refit_of"), "refit_options": meta.get("refit_options"),
-            "settings": _settings_view(d, meta)}
+            "settings": _settings_view(d, meta), "project": _project_ref(d)}
+
+
+def _project_ref(d: Path) -> dict | None:
+    from .. import projects
+
+    slug = projects.project_of(d)
+    if not slug:
+        return None
+    try:
+        return {"slug": slug, "name": projects.load(RUNS_DIR, slug)["name"]}
+    except projects.ProjectError:
+        return None
 
 
 def _settings_view(d: Path, meta: dict) -> dict:
@@ -196,24 +227,10 @@ class SettingsIn(BaseModel):
 
 @app.get("/api/settings")
 def get_settings() -> dict:
-    """Every keyword pack and calendar preset, and the settings a new run starts with."""
+    """Every keyword pack and calendar preset, and the settings the samples are read with."""
     from .. import settings as rs
 
-    new = rs.for_new_run(RUNS_DIR)
-    return {**rs.catalog(), "default": {**new, "label": rs.describe(new), "remembered": rs.remembered(RUNS_DIR) is not None},
-            "sample": {**samples.SETTINGS, "label": rs.describe(samples.SETTINGS)}}
-
-
-@app.put("/api/settings/default")
-def set_default_settings(body: SettingsIn) -> dict:
-    """"Use these for my new runs"."""
-    from .. import settings as rs
-
-    try:
-        s = rs.remember(RUNS_DIR, body.model_dump())
-    except rs.SettingsError as e:
-        raise HTTPException(400, str(e)) from e
-    return {**s, "label": rs.describe(s), "remembered": True}
+    return {**rs.catalog(), "sample": {**samples.SETTINGS, "label": rs.describe(samples.SETTINGS)}}
 
 
 @app.put("/api/runs/{run_id}/settings")
@@ -266,12 +283,14 @@ def _run_seed(d: Path) -> int:
     return int(_update_meta(d, seed)["seed"])
 
 
-def _new_run(filename: str, settings: dict | None = None) -> Path:
-    """A run folder; its settings are the ones given, else the remembered default, else the machine's."""
+def _new_run(filename: str, project: str, settings: dict | None = None) -> Path:
+    """A run folder in a project; its settings are the ones given, else the project's."""
+    from .. import projects
     from .. import settings as rs
 
-    chosen = rs.clean(settings) if settings is not None else rs.for_new_run(RUNS_DIR)
-    d = RUNS_DIR / uuid.uuid4().hex[:12]
+    p = _project(project)
+    chosen = rs.clean(settings) if settings is not None else rs.clean(p.get("settings") or {})
+    d = projects.runs_folder(RUNS_DIR, p["slug"]) / uuid.uuid4().hex[:12]
     d.mkdir(parents=True)
     (d / "meta.json").write_text(json.dumps({"file": filename, "answers": {}, "seed": _new_seed(), "settings": chosen}))
     return d
@@ -299,18 +318,120 @@ def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
 
 
+def _run_row(d: Path, registry: dict | None = None) -> dict:
+    """One run as the project page and the recent-runs list show it."""
+    from ..export import registry as reg
+
+    meta = _meta(d)
+    st = job.status(d) or {}
+    hit = reg.find_run(registry if registry is not None else reg.load(_reg_dir(d)), d.name)
+    return {"run_id": d.name, "file": meta["file"], "phase": meta.get("phase", "A"), "status": meta.get("status"),
+            "decisions": meta.get("decisions", 0), "updated": meta.get("updated") or d.stat().st_mtime,
+            "period": meta.get("period"), "refit_of": meta.get("refit_of"),
+            "fit": {"state": st.get("state"), "status": (st.get("result") or {}).get("status") or st.get("status"),
+                    "step": st.get("step")} if st else None,
+            "registered": {"line": hit[0], "version": hit[1]["version"], "status": hit[1]["status"]} if hit else None,
+            "project": _project_ref(d)}
+
+
 @app.get("/api/runs")
 def list_runs(limit: int = 10) -> list[dict]:
-    """Most recent runs first, with the status saved at their last evaluation."""
-    if not RUNS_DIR.exists():
-        return []
-    runs = []
-    for d in RUNS_DIR.iterdir():
-        if RUN_ID.match(d.name) and (d / "meta.json").exists():
-            meta = _meta(d)
-            runs.append({"run_id": d.name, "file": meta["file"], "phase": meta.get("phase", "A"), "status": meta.get("status"),
-                         "decisions": meta.get("decisions", 0), "updated": meta.get("updated") or d.stat().st_mtime})
-    return sorted(runs, key=lambda r: r["updated"], reverse=True)[:limit]
+    """Most recent runs first (every project and the runs not in one), with their saved status."""
+    from .. import projects
+
+    dirs = projects.run_dirs(RUNS_DIR, None) + [d for p in projects.list_all(RUNS_DIR) for d in projects.run_dirs(RUNS_DIR, p["slug"])]
+    return _clean(sorted((_run_row(d) for d in dirs), key=lambda r: r["updated"], reverse=True)[:limit])
+
+
+class ProjectIn(BaseModel):
+    name: str
+    description: str = ""
+    packs: list[str] = []
+    calendar: str = "none"
+
+
+@app.get("/api/projects")
+def list_projects() -> dict:
+    """Every project with its counts, approved models and last activity; and the runs not in one."""
+    from .. import projects
+    from .. import settings as rs
+    from ..export import registry as reg
+
+    out = []
+    for p in projects.list_all(RUNS_DIR):
+        dirs = projects.run_dirs(RUNS_DIR, p["slug"])
+        rows = reg.rows(reg.load(projects.folder(RUNS_DIR, p["slug"])))
+        out.append({**p, "label": rs.describe(p["settings"]), "runs": len(dirs),
+                    "versions": sum(len(r["versions"]) for r in rows),
+                    "approved": [{"line": r["line"], "version": r["approved"]["version"]} for r in rows if r["approved"]],
+                    "updated": max([_meta(d).get("updated") or d.stat().st_mtime for d in dirs] + [p["created"]])})
+    legacy = reg.load(RUNS_DIR)
+    unfiled = sorted((_run_row(d, legacy) for d in projects.run_dirs(RUNS_DIR, None)), key=lambda r: r["updated"], reverse=True)
+    return _clean({"projects": sorted(out, key=lambda p: -p["updated"]), "unfiled": unfiled})
+
+
+@app.post("/api/projects")
+def create_project(body: ProjectIn) -> dict:
+    from .. import projects
+    from .. import settings as rs
+
+    try:
+        return projects.create(RUNS_DIR, body.name, body.description, {"packs": body.packs, "calendar": body.calendar})
+    except (projects.ProjectError, rs.SettingsError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/projects/{slug}")
+def get_project(slug: str) -> dict:
+    """A project's page: its settings, every run newest first, and its registry."""
+    from .. import projects
+    from .. import settings as rs
+    from ..export import registry as reg
+
+    p = _project(slug)
+    R = reg.load(projects.folder(RUNS_DIR, slug))
+    runs = sorted((_run_row(d, R) for d in projects.run_dirs(RUNS_DIR, slug)), key=lambda r: r["updated"], reverse=True)
+    return _clean({**p, "label": rs.describe(p["settings"]), "runs": runs, "registry": reg.rows(R)})
+
+
+@app.put("/api/projects/{slug}")
+def edit_project(slug: str, body: ProjectIn) -> dict:
+    """Rename a project or change the settings its new uploads start with; runs already made keep theirs."""
+    from .. import projects
+    from .. import settings as rs
+
+    _project(slug)
+    try:
+        return projects.update(RUNS_DIR, slug, body.name, body.description, {"packs": body.packs, "calendar": body.calendar})
+    except (projects.ProjectError, rs.SettingsError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+class MoveIn(BaseModel):
+    project: str
+
+
+def _busy(d: Path) -> bool:
+    """A fit, summary, What-If or plan job still writing into the run's folder."""
+    st = job.status(d) or {}
+    if st.get("state") in ("queued", "running"):
+        return True
+    procs = list(_summary_jobs.items()) + list(_whatif_jobs.items())
+    return any(proc.poll() is None and key.startswith(d.name) for key, proc in procs)
+
+
+@app.post("/api/runs/{run_id}/move")
+def move_run(run_id: str, body: MoveIn) -> dict:
+    """Put a run (one made before projects, or from another project) into a project. A registered
+    run brings every version of its product line."""
+    from .. import projects
+
+    _run_dir(run_id)
+    try:
+        moved = projects.move(RUNS_DIR, run_id, body.project, busy=_busy)
+    except projects.ProjectError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"moved": moved, "project": body.project}
 
 
 @app.get("/api/samples")
@@ -319,10 +440,11 @@ def list_samples() -> list[dict]:
 
 
 @app.post("/api/runs")
-async def create_run(file: UploadFile = File(...), packs: str | None = Form(None), calendar: str | None = Form(None),
-                     remember: bool = Form(False)) -> dict:
-    from .. import settings as rs
-
+async def create_run(file: UploadFile = File(...), project: str = Form(...), packs: str | None = Form(None),
+                     calendar: str | None = Form(None)) -> dict:
+    """A new run in a project. packs and calendar change how this one file is read; without
+    them it is read with the project's settings."""
+    _project(project)
     chosen = _form_settings(packs, calendar)
     name = _upload_name(file.filename)
     if Path(name).suffix.lower() not in EXCEL_EXT | TEXT_EXT:
@@ -330,18 +452,16 @@ async def create_run(file: UploadFile = File(...), packs: str | None = Form(None
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File is over 50 MB.")
-    if chosen is not None and remember:
-        rs.remember(RUNS_DIR, chosen)
-    d = _new_run(name, chosen)
+    d = _new_run(name, project, chosen)
     (d / name).write_bytes(data)
     return _evaluate(d)
 
 
 @app.post("/api/runs/sample/{name}")
-def create_sample_run(name: str) -> dict:
+def create_sample_run(name: str, project: str) -> dict:
     if name not in samples.SAMPLES:
         raise HTTPException(404, "Unknown sample.")
-    tmp = _new_run("", samples.SETTINGS)
+    tmp = _new_run("", project, samples.SETTINGS)
     path = samples.SAMPLES[name][1](tmp)
     _update_meta(tmp, lambda m: m.update(file=path.name))
     return _evaluate(tmp)
@@ -940,6 +1060,13 @@ class RegisterIn(BaseModel):
 class VersionIn(BaseModel):
     line: str
     version: int
+    project: str | None = None              # whose registry; none for the runs made before projects
+
+
+def _registry_home(project: str | None) -> Path:
+    from .. import projects
+
+    return projects.folder(RUNS_DIR, _project(project)["slug"]) if project else RUNS_DIR
 
 
 def _run_log(d: Path):
@@ -965,7 +1092,7 @@ def _period(run) -> dict | None:
 def _registry_entry(d: Path) -> dict | None:
     from ..export import registry as reg
 
-    hit = reg.find_run(reg.load(RUNS_DIR), d.name)
+    hit = reg.find_run(reg.load(_reg_dir(d)), d.name)
     return {"line": hit[0], **hit[1]} if hit else None
 
 
@@ -983,7 +1110,7 @@ def export_screen(run_id: str) -> dict:
     st = job.status(d) or {}
     res = st.get("result") or {}
     mine = _registry_entry(d)
-    R = reg.load(RUNS_DIR)
+    R = reg.load(_reg_dir(d))
     comparison = mine.get("refit") if mine else None
     base = None
     if meta.get("refit_of"):
@@ -1045,10 +1172,10 @@ def download_csv(run_id: str, name: str) -> Response:
 
 
 @app.get("/api/registry")
-def get_registry() -> dict:
+def get_registry(project: str | None = None) -> dict:
     from ..export import registry as reg
 
-    return _clean({"lines": reg.rows(reg.load(RUNS_DIR))})
+    return _clean({"lines": reg.rows(reg.load(_registry_home(project)))})
 
 
 @app.post("/api/runs/{run_id}/register")
@@ -1058,10 +1185,10 @@ def register_run(run_id: str, body: RegisterIn) -> dict:
 
     d = _run_dir(run_id)
     try:
-        entry = reg.register(RUNS_DIR, d, body.line, body.note, _meta(d).get("refit_of"), _period(_run_log(d)[0]))
+        entry = reg.register(_reg_dir(d), d, body.line, body.note, _meta(d).get("refit_of"), _period(_run_log(d)[0]))
     except reg.RegistryError as e:
         raise HTTPException(400, str(e)) from e
-    return _clean({"entry": entry, "registry": reg.rows(reg.load(RUNS_DIR))})
+    return _clean({"entry": entry, "registry": reg.rows(reg.load(_reg_dir(d)))})
 
 
 @app.post("/api/registry/{action}")
@@ -1071,28 +1198,37 @@ def registry_action(action: str, body: VersionIn) -> dict:
 
     if action not in ("approve", "retire"):
         raise HTTPException(404, "Unknown registry action.")
-    R = reg.load(RUNS_DIR)
+    from .. import projects
+
+    home = _registry_home(body.project)
+    R = reg.load(home)
     v = next((x for x in R["lines"].get(body.line, {}).get("versions", []) if x["version"] == body.version), None)
     stale = False
-    if v is not None and action == "approve" and (RUNS_DIR / v["run_id"]).exists():
-        d = RUNS_DIR / v["run_id"]
+    d = projects.find_run(RUNS_DIR, v["run_id"]) if v is not None else None
+    if d is not None and action == "approve":
         stale = _stale(d, _run_log(d)[0])
     try:
-        entry = reg.set_status(RUNS_DIR, body.line, body.version, action, stale=stale)
+        entry = reg.set_status(home, body.line, body.version, action, stale=stale)
     except reg.RegistryError as e:
         raise HTTPException(400, str(e)) from e
-    return _clean({"entry": entry, "registry": reg.rows(reg.load(RUNS_DIR))})
+    return _clean({"entry": entry, "registry": reg.rows(reg.load(home))})
 
 
 @app.post("/api/refit")
-async def start_refit(line: str = Form(...), version: int = Form(...), file: UploadFile = File(...)) -> dict:
-    """Step 58: a new run on the new export, from Phase A, with the approved run's answers, seed and sampler."""
+async def start_refit(line: str = Form(...), version: int = Form(...), file: UploadFile = File(...),
+                      project: str | None = Form(None)) -> dict:
+    """Step 58: a new run on the new export, from Phase A, with the approved run's answers, seed and
+    sampler, in the same project."""
+    from .. import projects
     from ..export import refit as rf
     from ..export import registry as reg
 
-    R = reg.load(RUNS_DIR)
+    if not project:
+        raise HTTPException(400, f"Move '{line}' into a project first (Projects, runs not in a project): every new run belongs to one.")
+    R = reg.load(_registry_home(project))
     v = next((x for x in R["lines"].get(line, {}).get("versions", []) if x["version"] == version), None)
-    if v is None or not (RUNS_DIR / v["run_id"]).exists():
+    src = projects.find_run(RUNS_DIR, v["run_id"]) if v is not None else None
+    if src is None:
         raise HTTPException(404, f"No version {version} of '{line}' with its run on this machine.")
     if v["status"] != "approved":
         raise HTTPException(400, "Refit from the approved version of a product line.")
@@ -1102,12 +1238,12 @@ async def start_refit(line: str = Form(...), version: int = Form(...), file: Upl
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File is over 50 MB.")
-    d = RUNS_DIR / uuid.uuid4().hex[:12]
+    d = projects.runs_folder(RUNS_DIR, project) / uuid.uuid4().hex[:12]
     d.mkdir(parents=True)
     (d / name).write_bytes(data)
-    src_run = _run_log(RUNS_DIR / v["run_id"])[0]
+    src_run = _run_log(src)[0]
     roles = src_run.a.roles if src_run.a and src_run.a.status == "complete" else None
-    rf.start(RUNS_DIR / v["run_id"], d, d / name, line, version, roles=roles)
+    rf.start(src, d, d / name, line, version, roles=roles)
     return _evaluate(d)
 
 
