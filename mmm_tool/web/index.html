@@ -275,6 +275,24 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .setpop { position: absolute; right: 16px; top: 60px; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 76px); overflow: auto; z-index: 6; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); border-radius: var(--r); }
 .setpop .set { border-color: var(--accent); }
 
+/* Step 3: the role guide behind the i next to "Role" */
+.th-i { display: inline-flex; align-items: center; gap: 6px; }
+.ibtn { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--muted); color: var(--muted); background: var(--surface); font: italic 600 11px/1 Georgia, serif;
+  display: inline-grid; place-items: center; cursor: help; padding: 0; text-transform: none; }
+.ibtn:hover, .ibtn:focus-visible, .ibtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); outline: none; }
+.rolehelp { position: fixed; z-index: 8; width: min(820px, calc(100vw - 32px)); overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; align-content: start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); padding: 12px 14px; color: var(--ink); }
+.rolehelp[hidden] { display: none; }
+.rolehelp h5 { margin: 10px 0 4px; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.rolehelp .grp { margin-bottom: 8px; }
+.rolehelp .grp:first-child h5 { margin-top: 0; }
+.rolehelp dl { margin: 0; display: grid; gap: 6px; }
+.rolehelp dt { font-weight: 600; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.rolehelp dt code { font: 11.5px var(--mono); color: var(--muted); font-weight: 400; }
+.rolehelp dd { margin: 0; font-size: 13px; line-height: 1.45; }
+.rolehelp .foot { grid-column: 1 / -1; margin: 6px 0 0; }
+@media (max-width: 560px) { .rolehelp { right: 16px; width: auto; grid-template-columns: 1fr; } }
+
 /* Phase I: Export, refit */
 .ex-parts { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
 .ex-parts li { break-inside: avoid; margin-bottom: 2px; }
@@ -298,6 +316,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     <div class="right"><button class="setchip" id="run-settings" hidden aria-haspopup="dialog" aria-expanded="false"></button><a class="btn" href="/app" id="new-run" hidden>New run</a></div>
   </div>
   <div class="setpop" id="setpop" role="dialog" aria-label="Read this file as" hidden></div>
+  <div class="rolehelp" id="rolehelp" role="tooltip" hidden></div>
 </header>
 
 <section class="start" id="start">
@@ -344,6 +363,30 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     rf_spend: "Reach & frequency spend", control: "Control", non_media_treatment: "Non-media lever",
     organic_media: "Unpaid media", revenue_for_kpi: "Revenue for KPI", needs_role: "Needs a role", excluded: "Excluded",
   };
+  // What each role means, for the step 3 guide: [group, [[role, Meridian field or "", description, examples]]].
+  const ROLE_HELP = [
+    ["Needed for every model", [
+      ["date", "time", "The week (or day, or month) each row belongs to. One per file.", "week, date"],
+      ["kpi", "kpi", "What the model explains: sales, orders, sign-ups. Exactly one.", "orders, sales, policies"],
+      ["geo", "geo", "The area a row is for, in a regional model; rows repeat for each region.", "state, dma, city"],
+      ["population", "population", "People in each region; Meridian scales a regional model by it.", "population"]]],
+    ["Money for the KPI", [
+      ["revenue_for_kpi", "", "Total money the KPI brought in. Step 5 divides it by the KPI to value each unit.", "revenue, premium"],
+      ["revenue_per_kpi", "revenue_per_kpi", "Money each KPI unit is worth (average order value), so ROI comes out in money.", "aov, value_per_order"]]],
+    ["Other drivers", [
+      ["control", "controls", "Something that moves the KPI but isn't caused by marketing: price, competitors, weather, holidays.", "price_index, holiday_flag"],
+      ["non_media_treatment", "non_media_treatments", "Something you control that isn't media: discounts, promotions, a price change.", "discount_pct, promo_flag"],
+      ["organic_media", "organic_media", "Exposure with no spend, such as organic social, PR or email sends. It gets an effect but no ROI.", "newsletter_sends"]]],
+    ["Paid media", [
+      ["media_spend", "media_spend", "Money spent on a channel each week. Every channel with spend gets an ROI.", "tv_spend, search_cost"],
+      ["media", "media", "Impressions, GRPs or clicks of a paid channel, paired with its spend in step 4.", "tv_grps, search_clicks"],
+      ["rf_spend", "rf_spend", "Spend of a channel modelled by how many people it reached and how often.", "youtube_spend"],
+      ["reach", "reach", "People who saw the channel at least once that week.", "youtube_reach"],
+      ["frequency", "frequency", "Average times each of them saw it.", "youtube_frequency"]]],
+    ["Left out", [
+      ["needs_role", "", "The tool couldn't tell. The run waits until you pick a role.", ""],
+      ["excluded", "", "Not used by the model: ids, notes, totals, a duplicate of another column.", "row_id, notes"]]],
+  ];
   const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
     interpolate: "Interpolate", trim: "Trim the period", merge: "Merge them in Phase B",
     reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, valued per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to whole currency units",
@@ -644,7 +687,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const remembered = s.details.remembered || 0;
     const note = `<div class="note"><span>${remembered ? `${remembered} role${remembered === 1 ? " was" : "s were"} suggested from columns you confirmed before.` : "Roles you confirm are remembered and suggested first next time."} Add your own words in <span class="mono">roles.yaml</span>.</span>${remembered ? `<button class="btn" id="forget-roles">Forget remembered roles</button>` : ""}</div>`;
     return `${note}<div class="checklist">${check(n("date") === 1, "Date set")}${check(n("kpi") === 1, "One KPI")}${check(nSpend > 0, `${nSpend} paid spend column${nSpend === 1 ? "" : "s"}`)}</div>
-      <div class="scroll"><table class="roles"><thead><tr><th>Column</th><th>Role</th><th>Confidence</th><th>From</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="scroll"><table class="roles"><thead><tr><th>Column</th><th><span class="th-i">Role <button type="button" class="ibtn" id="role-i" aria-label="What each role means" aria-describedby="rolehelp" aria-expanded="false">i</button></span></th><th>Confidence</th><th>From</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="decide ${cls}"><p>${msg}</p>${btn}</div>`;
   }
 
@@ -2352,6 +2395,60 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     window.scrollTo(0, 0);
   }
 
+  // Step 3's role guide: opens on hover, focus or tap; Esc, moving away or a second tap closes it.
+  let roleHelpPinned = false, roleHelpTimer = null;
+  function roleHelpHtml() {
+    const grp = ([title, items]) => `<div class="grp"><h5>${esc(title)}</h5><dl>${items.map(([r, field, text, eg]) =>
+      `<div><dt>${esc(ROLE_LABEL[r] || r)}${field ? ` <code>Meridian: ${esc(field)}</code>` : ""}</dt><dd>${esc(text)}${eg ? ` <span class="muted">e.g. ${esc(eg)}</span>` : ""}</dd></div>`).join("")}</dl></div>`;
+    return `<div>${ROLE_HELP.slice(0, 3).map(grp).join("")}</div><div>${ROLE_HELP.slice(3).map(grp).join("")}</div>
+      <p class="small muted foot">A paid channel needs spend; exposure, reach and frequency are paired with it in step 4.</p>`;
+  }
+  function placeRoleHelp() {
+    const b = $("role-i"), pop = $("rolehelp");
+    if (!b || pop.hidden) return;
+    const r = b.getBoundingClientRect(), w = pop.offsetWidth, gap = 8, edge = 16;
+    pop.style.bottom = "auto";
+    if (innerWidth <= 560) {                    // a phone: the width of the screen, below the top bar
+      Object.assign(pop.style, { top: "72px", left: `${edge}px`, maxHeight: `${innerHeight - 72 - edge}px` });
+      return;
+    }
+    pop.style.left = `${Math.max(edge, Math.min(r.left - 12, innerWidth - w - edge))}px`;
+    const below = innerHeight - r.bottom - gap - edge, above = r.top - gap - edge;
+    if (below >= Math.min(pop.scrollHeight, 320) || below >= above) {
+      Object.assign(pop.style, { top: `${r.bottom + gap}px`, maxHeight: `${below}px` });
+    } else {                                    // more room above the icon: open upwards
+      Object.assign(pop.style, { top: "auto", bottom: `${innerHeight - r.top + gap}px`, maxHeight: `${above}px` });
+    }
+  }
+  function openRoleHelp() {
+    clearTimeout(roleHelpTimer);
+    const pop = $("rolehelp"), b = $("role-i");
+    if (!b) return;
+    if (pop.hidden) { pop.innerHTML = roleHelpHtml(); pop.hidden = false; }
+    b.setAttribute("aria-expanded", "true");
+    placeRoleHelp();
+  }
+  function closeRoleHelp(now = false) {
+    clearTimeout(roleHelpTimer);
+    const go = () => { $("rolehelp").hidden = true; roleHelpPinned = false; const b = $("role-i"); if (b) b.setAttribute("aria-expanded", "false"); };
+    if (now) go(); else roleHelpTimer = setTimeout(() => { if (!roleHelpPinned) go(); }, 180);
+  }
+  function wireRoleHelp() {
+    const b = $("role-i"), pop = $("rolehelp");
+    if (!b) { closeRoleHelp(true); return; }
+    b.onmouseenter = openRoleHelp;
+    b.onmouseleave = () => closeRoleHelp();
+    b.onfocus = openRoleHelp;
+    b.onblur = () => closeRoleHelp();
+    b.onclick = e => { e.preventDefault(); if (roleHelpPinned) closeRoleHelp(true); else { roleHelpPinned = true; openRoleHelp(); } };
+    pop.onmouseenter = () => clearTimeout(roleHelpTimer);
+    pop.onmouseleave = () => closeRoleHelp();
+  }
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("rolehelp").hidden) { closeRoleHelp(true); } });
+  document.addEventListener("click", e => { if (!$("rolehelp").hidden && !e.target.closest("#rolehelp, #role-i")) closeRoleHelp(true); });
+  addEventListener("scroll", placeRoleHelp, { passive: true });
+  addEventListener("resize", placeRoleHelp);
+
   function wire() {
     const main = $("main"), app = $("app");
     app.querySelectorAll("[data-view]").forEach(el => el.onclick = e => { e.preventDefault(); switchView(el.dataset.view); });
@@ -2360,6 +2457,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     main.querySelectorAll("[data-select]").forEach(s => s.onchange = () => answer({ [s.dataset.select]: s.value }));
 
     // Phase A
+    wireRoleHelp();
     const s3 = stepOf(3);
     main.querySelectorAll("[data-role]").forEach(sel => sel.onchange = () => {
       const g = decision(s3, "roles").context.suggestions[+sel.dataset.role];
