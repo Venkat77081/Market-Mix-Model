@@ -18,13 +18,19 @@ or missing (a hole in between). A zero is a real zero and is never touched.
                   channels were off. Asked; blocks when weeks were absent.
   Everything else interpolated between known values, carried to the edges;
                   0/1 flags are 0 where missing.
+
+"Real zeros" counts only media columns (paid spend, exposure, reach, organic
+media) and only zeros the export itself has: never a cell this step filled.
+A paid channel that spends in most of its active weeks (always on) but has a
+run of 2+ zero weeks is flagged: a real pause (kept, the default) or a data
+gap (interpolated, with the channel's exposure columns for the same weeks).
 """
 from __future__ import annotations
 
 import pandas as pd
 
 from ..ingest.types import Answers, Decision, StepResult, Verdict
-from .context import MEDIA_ROLES, Ctx, is_binary, settings
+from .context import MEDIA_ROLES, SPEND_ROLES, Ctx, is_binary, settings
 
 STEP = 10
 NAME = "Label every gap"
@@ -90,6 +96,56 @@ def media_holes(df: pd.DataFrame, col: str, label, inserted: pd.Series, share: f
     has_zero = bool((df[col] == 0).any())
     kind = "blank_means_zero" if n_blank and not has_zero and blank_share >= share else "missing"
     return {"blank": blank, "absent": mi & inserted, "kind": kind, "blank_share": blank_share, "has_zero": has_zero}
+
+
+def zero_runs(values: pd.Series, active: pd.Series, min_run: int) -> list[tuple[int, int]]:
+    """(first, last) positions of each run of real zeros at least min_run long, inside the active weeks."""
+    z = ((values == 0) & active).to_numpy()
+    runs, start = [], None
+    for i, v in enumerate(list(z) + [False]):
+        if v and start is None:
+            start = i
+        elif not v and start is not None:
+            if i - start >= min_run:
+                runs.append((start, i - 1))
+            start = None
+    return runs
+
+
+def _span(a: pd.Timestamp, b: pd.Timestamp) -> str:
+    """'2024-04-29 → 06-17', the year left off the end when it's the same."""
+    return f"{a.date()} → {b.strftime('%m-%d') if a.year == b.year else b.date()}"
+
+
+def always_on_zeros(df: pd.DataFrame, ctx: Ctx, labels: dict, inserted: pd.Series, groups) -> dict[str, dict]:
+    """Paid channels that spend in most active weeks but have runs of real zeros: {spend column: details}."""
+    cfg = settings().get("zero_runs") or {}
+    share, min_run = float(cfg.get("always_on_share", 0.8)), int(cfg.get("min_run_weeks", 2))
+    names = {c.spend: c for c in ctx.channels}
+    out = {}
+    for col in [c for c in ctx.value_cols if ctx.roles.get(c) in SPEND_ROLES]:
+        ns, en, mi = labels[col]
+        mask = pd.Series(False, index=df.index)
+        spans, spending, active_n = [], 0, 0
+        for g, idx in groups:
+            vals = df.loc[idx, col]
+            active = ~(ns[idx] | en[idx] | inserted[idx]) & vals.notna()
+            active_n += int(active.sum())
+            spending += int(((vals > 0) & active).sum())
+            for a, b in zero_runs(vals, active, min_run):
+                rows = vals.index[a:b + 1]
+                mask[rows] = True
+                d = df.loc[rows, ctx.date]
+                spans.append((f"{g}: " if ctx.geo else "") + _span(d.iloc[0], d.iloc[-1]))
+        if spans and active_n and spending / active_n >= share:
+            ch = names.get(col)
+            related = [col] + ([c for c in (ch.exposure, ch.reach, ch.frequency) if c and c != col and c in df.columns] if ch else [])
+            n = int(mask.sum())
+            out[col] = {"channel": ch.name if ch else col, "weeks": n, "runs": len(spans), "spans": spans, "mask": mask,
+                        "related": related, "spend_share": spending / active_n,
+                        "note": (f"{ch.name if ch else col}: {n} zero week{'s' if n != 1 else ''} in {len(spans)} run{'s' if len(spans) != 1 else ''} "
+                                 f"({', '.join(spans[:4])}{', …' if len(spans) > 4 else ''}) in a channel that otherwise spends every week")}
+    return out
 
 
 def _dates(df: pd.DataFrame, date: str, mask: pd.Series) -> list[str]:
@@ -248,18 +304,54 @@ def label_gaps(ctx: Ctx, answers: Answers) -> StepResult:
                               f"Unknown column or answer in {bad}; answer zero or interpolate for {sorted(actions)}.", {}, [], decisions)
         actions = {**actions, **chosen}
 
+    # Zero runs in always-on channels: a real pause or a data gap?
+    flagged = always_on_zeros(df, ctx, labels, inserted, groups)
+    gap_zero: dict[str, pd.Series] = {}             # column -> zero cells read as a data gap
+    if flagged:
+        warnings += [f["note"] for f in flagged.values()]
+        d = Decision(
+            id="zero_runs",
+            step=STEP,
+            question=("These channels spend almost every week but have runs of zero weeks. Is each a real pause "
+                      "(keep 0) or a gap in the data (interpolate)?"),
+            options=["pause", "gap"],
+            default={f["channel"]: "pause" for f in flagged.values()},
+            context={"channels": {f["channel"]: {"column": c, "weeks": f["weeks"], "runs": f["runs"], "spans": f["spans"],
+                                                 "spend_share": round(f["spend_share"], 3)} for c, f in flagged.items()}},
+        )
+        decisions.append(d)
+        chosen = answers.ask(d) or {}
+        if isinstance(chosen, str):
+            chosen = {f["channel"]: chosen for f in flagged.values()}
+        bad = {k: v for k, v in chosen.items() if k not in d.default or v not in ("pause", "gap")} if isinstance(chosen, dict) else chosen
+        if bad:
+            d.answered, d.blocking = False, True
+            return StepResult(STEP, NAME, Verdict.NEEDS_INPUT,
+                              f"Unknown channel or answer in {bad}; answer pause or gap for {sorted(d.default)}.", {}, [], decisions)
+        picks = {**d.default, **chosen}
+        lines = []
+        for f in flagged.values():
+            gap = picks[f["channel"]] == "gap"
+            lines.append(f"{f['channel']}: {f['weeks']} zero weeks {'read as a data gap, interpolated' if gap else 'kept as a real pause'}")
+            if gap:
+                for c in f["related"]:
+                    gap_zero[c] = gap_zero.get(c, pd.Series(False, index=df.index)) | (f["mask"] & (df[c] == 0))
+        answers.describe(d, lines)
+
     report = []
     imputed_media: dict[str, int] = {}
     for col in value_cols:
         ns, en, mi = labels[col]
         if col == kpi:
             report.append({"column": col, "role": "kpi", "not_started": 0, "ended": 0,
-                           "missing": int(imputed.sum()), "zeros": int((df[col] == 0).sum()),
+                           "missing": int(imputed.sum()), "zeros": None, "media": False,
                            "fill": "interpolated, flagged" if imputed.any() else "trimmed" if trimmed else "none needed"})
             continue
         role = ctx.roles.get(col)
         n_gaps = int((ns | en | mi).sum())
-        zeros = int((df[col] == 0).sum())
+        gz = gap_zero.get(col)
+        # Real zeros: the export's own zeros in a media column; never a filled cell or a zero read as a gap.
+        zeros = int(((df[col] == 0) & ~(gz if gz is not None else False)).sum()) if role in MEDIA_ROLES else None
         if role in MEDIA_ROLES:
             p = plans[col]
             fill = ["0 outside its active weeks"] if (ns | en).any() else []
@@ -272,11 +364,19 @@ def label_gaps(ctx: Ctx, answers: Answers) -> StepResult:
                 fill.append(f"{int(p['blank'].sum())} blank(s) read as 0" if blank_act == "zero" else f"{int(p['blank'].sum())} blank(s) interpolated")
             if p["absent"].any():
                 fill.append(f"absent weeks {'read as 0' if week_act == 'zero' else 'interpolated'}")
-            to_interp = mi & ~to_zero
+            if gz is not None and gz.any():
+                df.loc[gz, col] = float("nan")
+                fill.append(f"{int(gz.sum())} zero week(s) read as a data gap, interpolated")
+            to_interp = (mi & ~to_zero) | (gz if gz is not None else False)
             if to_interp.any():
                 for _, idx in groups:
                     df.loc[idx, col] = df.loc[idx, col].interpolate(limit_area="inside")
                 imputed_media[col] = int(to_interp.sum())
+            if gz is not None:
+                edge_left = gz & df[col].isna()      # a run at the start or end: nothing to interpolate from
+                if edge_left.any():
+                    df.loc[edge_left, col] = 0.0
+                    fill.append(f"{int(edge_left.sum())} at the edge kept as 0 (nothing on one side to interpolate from)")
             fill = "; ".join(fill)
         elif is_binary(df[col]):
             df[col] = df[col].fillna(0.0)
@@ -290,7 +390,8 @@ def label_gaps(ctx: Ctx, answers: Answers) -> StepResult:
             df[col] = df[col].fillna(0.0 if role in MEDIA_ROLES else df[col].median())
             warnings.append(f"'{col}' is empty for a whole region; filled {n} cell(s) with {'0' if role in MEDIA_ROLES else 'its median'}.")
         report.append({"column": col, "role": role, "not_started": int(ns.sum()), "ended": int(en.sum()),
-                       "missing": int(mi.sum()), "zeros": zeros, "fill": fill if n_gaps else "none needed"})
+                       "missing": int(mi.sum()), "zeros": zeros, "media": role in MEDIA_ROLES,
+                       "fill": fill if (n_gaps or (gz is not None and gz.any())) else "none needed"})
     ctx.df = df
 
     if missing_weeks:
@@ -300,9 +401,12 @@ def label_gaps(ctx: Ctx, answers: Answers) -> StepResult:
     labelled = sum(r["not_started"] + r["ended"] + r["missing"] for r in report)
     parts = [f"{len(missing_weeks)} missing week(s) added" if missing_weeks else "no missing weeks",
              f"{labelled:,} empty cell(s) labelled and filled",
-             f"{sum(r['zeros'] for r in report):,} zeros kept as real zeros"]
+             f"{sum(r['zeros'] or 0 for r in report):,} zeros kept as real zeros in media columns"]
     summary = "; ".join(parts + notes) + "."
     details = {"columns": report, "missing_weeks": missing_weeks, "rows_added": int(inserted.sum()),
                "rows_before": before, "rows_after": len(df), "trimmed_weeks": sorted(set(trimmed)),
-               "imputed_media": imputed_media}
+               "imputed_media": imputed_media,
+               "real_zeros": {r["column"]: r["zeros"] for r in report if r.get("media")},
+               "zero_runs": {f["channel"]: {"column": c, "weeks": f["weeks"], "runs": f["runs"], "spans": f["spans"]}
+                             for c, f in flagged.items()}}
     return StepResult(STEP, NAME, Verdict.WARN if warnings else Verdict.PASS, summary, details, warnings, decisions)

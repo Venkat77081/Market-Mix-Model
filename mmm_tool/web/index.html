@@ -112,7 +112,7 @@ button, select, input { font: inherit; color: inherit; }
 .card .n { font: 600 14px var(--mono); color: var(--muted); }
 .card h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .card .sum { grid-column: 2 / 4; color: var(--muted); font-size: 14px; margin-top: -6px; }
-.card .body { border-top: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 14px; }
+.card .body { border-top: 1px solid var(--line); padding: 14px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
 .kv dt { font-size: 12px; color: var(--muted); }
 .kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
@@ -139,6 +139,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .fmtbar span { display: flex; align-items: center; padding: 0 8px; white-space: nowrap; overflow: hidden; color: var(--surface); min-width: 4px; }
 .decide { background: var(--block-soft); border-radius: var(--r); padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
 .decide.soft { background: var(--sunken); }
+.decide > .scroll { flex: 1 1 100%; min-width: 0; }      /* a table of choices scrolls inside, never widens the card */
 .decide.okay { background: var(--pass-soft); }
 .decide p { font-size: 14px; max-width: 48em; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; flex-wrap: wrap; }
@@ -422,7 +423,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ["needs_role", "", "The tool couldn't tell. The run waits until you pick a role.", ""],
       ["excluded", "", "Not used by the model: ids, notes, totals, a duplicate of another column.", "row_id, notes"]]],
   ];
-  const OPTION_LABEL = { dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
+  const OPTION_LABEL = { pause: "Real pause, keep 0", gap: "Data gap, interpolate", dayfirst: "Day-first (dd/mm)", monthfirst: "Month-first (mm/dd)", regional: "Regional", national: "National", revenue: "Revenue (money)", non_revenue: "Non-revenue (a count)", organic_media: "Model as unpaid media", excluded: "Drop it", drop_rows: "Drop those rows",
     interpolate: "Interpolate", trim: "Trim the period", merge: "Merge them in Phase B",
     reshape: "Reshape: one region column", sum: "Add into one national series", count: "Count as KPI, valued per unit from revenue", zero: "Read as 0", keep: "Keep as is", flag: "Add event flag", convert: "Convert to whole currency units",
     scale: "Scale up to a full week", fill: "Carry the nearest value" };
@@ -1006,18 +1007,26 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   function step10(s) {
     const d = s.details;
-    const gaps = (d.columns || []).filter(c => c.not_started || c.ended || c.missing);
-    const rows = gaps.map(c => `<tr><td class="mono">${esc(c.column)}</td><td class="num">${c.not_started || ""}</td><td class="num">${c.ended || ""}</td>
-        <td class="num">${c.missing || ""}</td><td class="num">${num(c.zeros)}</td><td class="why">${esc(c.fill)}</td></tr>`).join("");
-    const kg = decision(s, "kpi_gaps"), ke = decision(s, "kpi_edge_gaps"), mg = decision(s, "media_gaps");
-    const zeros = (d.columns || []).reduce((a, c) => a + c.zeros, 0);
+    // Every media column gets a row (real zeros are counted only there); other columns only when they had blanks.
+    const isMedia = c => c.media ?? (d.real_zeros ? c.column in d.real_zeros : false);
+    const cols = d.columns || [];
+    const shown = [...cols.filter(isMedia), ...cols.filter(c => !isMedia(c) && (c.not_started || c.ended || c.missing))];
+    const runs = d.zero_runs || {};
+    const runOf = Object.fromEntries(Object.entries(runs).map(([ch, r]) => [r.column, ch]));
+    const rows = shown.map(c => `<tr><td class="mono">${esc(c.column)}${runOf[c.column] ? ' <span class="pill warn" title="zero runs in an always-on channel">zero runs</span>' : ""}</td>
+        <td class="num">${c.not_started || ""}</td><td class="num">${c.ended || ""}</td><td class="num">${c.missing || ""}</td>
+        <td class="num">${isMedia(c) ? num(c.zeros ?? 0) : '<span class="muted">–</span>'}</td><td class="why">${esc(c.fill)}</td></tr>`).join("");
+    const kg = decision(s, "kpi_gaps"), ke = decision(s, "kpi_edge_gaps"), mg = decision(s, "media_gaps"), zr = decision(s, "zero_runs");
+    const zeros = cols.filter(isMedia).reduce((a, c) => a + (c.zeros || 0), 0);
     return `<dl class="kv">
         <div><dt>Weeks absent from the export</dt><dd>${(d.missing_weeks || []).length ? `${d.missing_weeks.length} <span class="muted mono small">${d.missing_weeks.slice(0, 4).map(esc).join(", ")}${d.missing_weeks.length > 4 ? "…" : ""}</span>` : "none"}</dd></div>
         ${d.rows_after ? `<div><dt>Rows</dt><dd>${num(d.rows_before)} → ${num(d.rows_after)}</dd></div>` : ""}
-        <div><dt>Zeros kept as real zeros</dt><dd>${num(zeros)}</dd></div>
+        <div><dt>Zeros kept as real zeros</dt><dd>${num(zeros)} <span class="muted small">in media columns</span></dd></div>
         ${(d.trimmed_weeks || []).length ? `<div><dt>Weeks trimmed</dt><dd>${d.trimmed_weeks.length}</dd></div>` : ""}
       </dl>
-      ${gaps.length ? `<div class="scroll"><table style="min-width:620px"><thead><tr><th>Column</th><th>Not started</th><th>Ended</th><th>Missing</th><th>Zeros</th><th>Filled with</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      ${shown.length ? `<div class="scroll"><table style="min-width:660px"><thead><tr><th>Column</th><th class="r">Not started</th><th class="r">Ended</th><th class="r">Missing</th><th class="r">Real zeros</th><th>Filled with</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="muted small">Real zeros: zeros the export itself has, in media columns only; cells this step filled aren't counted.</p>` : ""}
+      ${zr ? `<div class="decide ${zr.pending ? "" : "soft"}"><p>${esc(zr.question)}</p>${keyChoices(zr, Object.fromEntries(Object.entries(zr.context.channels || {}).map(([ch, c]) => [ch, `${ch} (${c.column})`])))}</div>` : ""}
       ${ke ? `<div class="decide soft"><p>${esc(ke.question)}</p>${seg(ke, null, { trim: "Trim those weeks" })}</div>` : ""}
       ${kg ? `<div class="decide ${kg.pending ? "" : "soft"}"><p>${esc(kg.question)}</p>${seg(kg)}</div>` : ""}
       ${mg ? `<div class="decide ${mg.pending ? "" : "soft"}"><p>${esc(mg.question)}</p>${keyChoices(mg, { missing_weeks: "Weeks absent from the export" })}</div>` : ""}`;

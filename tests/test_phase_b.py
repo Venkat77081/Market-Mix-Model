@@ -48,7 +48,12 @@ def test_clean_file_passes_unchanged(files):
     t, raw = r.b.table, truth()
     assert len(t) == 156 and not t.isna().any().any()
     assert np.allclose(t["tv_spend"], raw["tv_spend"]) and np.allclose(t["new_policies"], raw["new_policies"])
-    assert all(s.verdict.value == "pass" for s in r.b.steps)
+    # Only note: search's 2-week New Year pause in a channel that spends every other week (step 10 asks; kept as 0).
+    others = [s for s in r.b.steps if s.step != 10]
+    s10 = next(s for s in r.b.steps if s.step == 10)
+    assert all(s.verdict.value == "pass" for s in others)
+    assert s10.warnings == ["search: 2 zero weeks in 1 run (2024-01-01 → 01-08) in a channel that otherwise spends every week"]
+    assert (t["search_spend"] == raw["search_spend"]).all()       # kept as real zeros by default
 
 
 def test_phase_b_waits_for_phase_a(files):

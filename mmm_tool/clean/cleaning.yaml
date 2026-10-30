@@ -8,6 +8,14 @@ media_gaps:
   # column are missing values and are interpolated.
   blank_as_zero_share: 0.2
 
+zero_runs:
+  # A paid channel with spend in at least this share of its active weeks
+  # (between its first and last value) is "always on"; a run of real zeros
+  # this many weeks or longer in it is flagged, and the user confirms it
+  # as a real pause (kept as 0, the default) or a data gap (interpolated).
+  always_on_share: 0.8
+  min_run_weeks: 2
+
 jumps:
   # A level (index, price, rate) this many times the week before, or an
   # amount (spend, exposure) this many times both neighbouring weeks.
