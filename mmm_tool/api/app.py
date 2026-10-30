@@ -407,6 +407,22 @@ def edit_project(slug: str, body: ProjectIn) -> dict:
         raise HTTPException(400, str(e)) from e
 
 
+class DeleteIn(BaseModel):
+    confirm: str                             # the project's name, typed
+
+
+@app.delete("/api/projects/{slug}")
+def delete_project(slug: str, body: DeleteIn) -> dict:
+    """Delete a project and everything in it (moved to runs/trash/, where it can be restored)."""
+    from .. import projects
+
+    _project(slug)
+    try:
+        return projects.delete(RUNS_DIR, slug, body.confirm, busy=_busy)
+    except projects.ProjectError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 class MoveIn(BaseModel):
     project: str
 
@@ -1053,7 +1069,10 @@ def plan_report(run_id: str, key: str) -> Response:
     path = job.fit_dir(d) / "plan" / f"report_{key}" / "optimization_summary.html"
     if not path.exists():
         raise HTTPException(404, "No Meridian report for this optimization.")
-    return FileResponse(path, media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_optimization.html")
+    from ..summary.offline import make_offline
+
+    return FileResponse(make_offline(path), media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_optimization.html",
+                        content_disposition_type="inline")            # opens in the browser; Save keeps the name
 
 
 # ---------- Phase I: Export, refit (steps 55-58) ----------
@@ -1260,7 +1279,11 @@ def download_meridian_summary(run_id: str) -> Response:
     path = job.fit_dir(d) / "model_results_summary.html"
     if not path.exists():
         raise HTTPException(404, "No Meridian summary: it is written when a model is accepted.")
-    return FileResponse(path, media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_meridian_summary.html")
+    from ..summary.offline import make_offline
+
+    # Reports written before the tool inlined the chart libraries are fixed on first open.
+    return FileResponse(make_offline(path), media_type="text/html", filename=f"{Path(_meta(d)['file']).stem}_meridian_summary.html",
+                        content_disposition_type="inline")
 
 
 @app.get("/api/role-memory")

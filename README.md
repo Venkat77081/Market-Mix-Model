@@ -238,7 +238,10 @@ registry, as a folder you can copy or back up whole:
   and **Upload a file**. New uploads start with the project's settings; runs already made keep theirs.
 - **Every new run belongs to a project**, refits included (they stay in the source's project). In
   a run, the top bar shows its project and file; **New run** uploads to the same project.
-- API: `GET/POST /api/projects`, `GET/PUT /api/projects/{project}`, `POST /api/runs` needs the
+- **Delete project…** on a project's page: type its name to confirm. The folder (every run, model
+  and the registry) moves to `runs/trash/`, from where it can be restored by moving it back; a
+  project with a fit or calculation in progress isn't deleted.
+- API: `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{project}`, `POST /api/runs` needs the
   `project` form field and `POST /api/runs/sample/{name}` the `?project=` query,
   `POST /api/runs/{run}/move` `{"project": ...}`; registry actions and `/api/refit` take `project`.
 
@@ -440,3 +443,9 @@ the checksums and that the model table and configuration come out identical; ref
 bundle's seed and sampler (the command is in `REPRODUCE.md`) then gives the same posterior on the
 same versions. `tests/test_phase_i.py` covers the bundle and verify (and a tampered file), the
 registry rules, the refit comparison, and the API.
+
+**Meridian's own HTML reports** (the results summary and the optimization report) load their chart
+libraries from www.gstatic.com and are blank where that can't be reached. The tool puts its own
+copies (`mmm_tool/web/vendor/`: vega 6.4.0, vega-lite 6.4.1, vega-embed 7.3.0, BSD-3-Clause) inside
+each report when it is written, when an older one is opened, and in the bundle, so reports open
+offline and as downloaded files.

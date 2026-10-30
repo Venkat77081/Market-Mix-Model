@@ -143,6 +143,27 @@ def registry_dir(run_dir: Path, runs_dir: Path) -> Path:
     return folder(runs_dir, slug) if slug else Path(runs_dir)
 
 
+def trash(runs_dir: Path) -> Path:
+    return Path(runs_dir) / "trash"
+
+
+def delete(runs_dir: Path, slug: str, confirm: str, busy=lambda d: False) -> dict:
+    """Delete a project: its folder (every run, model and its registry) moves to runs/trash/, so a
+    mistake can be undone by moving it back. The project's name must be typed to confirm, and a
+    project with a fit or calculation in progress isn't deleted."""
+    p = load(runs_dir, slug)
+    if (confirm or "").strip() != p["name"]:
+        raise ProjectError(f"Type the project's name, {p['name']}, to delete it.")
+    runs = run_dirs(runs_dir, slug)
+    stuck = [d.name for d in runs if busy(d)]
+    if stuck:
+        raise ProjectError(f"Run(s) {', '.join(stuck)} have a fit or a calculation in progress; delete the project once it finishes.")
+    dest = trash(runs_dir) / f"{slug}-{time.strftime('%Y%m%d-%H%M%S')}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(folder(runs_dir, slug)), str(dest))
+    return {"slug": slug, "name": p["name"], "runs": len(runs), "moved_to": str(dest)}
+
+
 def move(runs_dir: Path, run_id: str, slug: str, busy=lambda d: False) -> list[str]:
     """Move a run into a project. A registered run brings every version of its product line
     (and their runs), so the line stays whole; a line the project already has is refused."""

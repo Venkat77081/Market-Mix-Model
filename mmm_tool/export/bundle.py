@@ -116,6 +116,10 @@ def build(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: di
     def add_file(arc: str, p: Path) -> None:
         if p.exists() and p.is_file():
             files[arc] = p.read_bytes()
+            if arc.endswith(".html"):                       # Meridian's reports: chart libraries inside, works offline
+                from ..summary.offline import inline_charts
+
+                files[arc] = inline_charts(files[arc].decode("utf-8")).encode("utf-8")
 
     add_file(f"input/{meta['file']}", run_dir / meta["file"])
     # The confirmed roles are written out in full: accepted suggestions depend on keywords and

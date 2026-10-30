@@ -162,3 +162,45 @@ def test_slugs_never_escape_the_projects_folder(tmp_path):
     with pytest.raises(projects.ProjectError):
         projects.folder(tmp_path, "../x")
     assert projects.find_run(tmp_path, "../../etc") is None
+
+
+def test_deleting_a_project_needs_its_name_and_keeps_it_in_trash(client):
+    p = _new(client, "Old shop")
+    rid = _upload(client, p["slug"])["run_id"]
+    bad = client.request("DELETE", f"/api/projects/{p['slug']}", json={"confirm": "old shop"})
+    assert bad.status_code == 400 and "Type the project's name, Old shop" in bad.json()["detail"]
+    assert client.get(f"/api/projects/{p['slug']}").status_code == 200          # still there
+    r = client.request("DELETE", f"/api/projects/{p['slug']}", json={"confirm": "Old shop"}).json()
+    assert r["runs"] == 1 and "trash" in r["moved_to"]
+    assert client.get(f"/api/projects/{p['slug']}").status_code == 404
+    assert client.get(f"/api/runs/{rid}").status_code == 404
+    assert [x["slug"] for x in client.get("/api/projects").json()["projects"]] == []
+    from pathlib import Path
+    assert (Path(r["moved_to"]) / "project.json").is_file() and (Path(r["moved_to"]) / "runs" / rid / "meta.json").is_file()
+    assert _new(client, "Old shop")["slug"] == "old-shop"            # the name and folder are free again
+
+
+def test_a_project_with_a_fit_in_progress_isnt_deleted(client):
+    from mmm_tool.fit import job
+
+    p = _new(client, "Busy")
+    rid = _upload(client, p["slug"])["run_id"]
+    job._write(job.fit_dir(run_path(rid)) / "status.json", {"state": "running", "heartbeat": __import__("time").time()})
+    bad = client.request("DELETE", f"/api/projects/{p['slug']}", json={"confirm": "Busy"})
+    assert bad.status_code == 400 and "in progress" in bad.json()["detail"]
+    assert client.get(f"/api/projects/{p['slug']}").status_code == 200
+
+
+def test_meridian_reports_get_their_chart_libraries_inline(tmp_path):
+    from mmm_tool.summary.offline import inline_charts, make_offline
+
+    page = ('<html><head><script src="https://www.gstatic.com/external_hosted/vega/vega.js"></script>'
+            '<script src="https://www.gstatic.com/external_hosted/vega_lite/vega-lite.js"></script>'
+            '<script src="https://www.gstatic.com/external_hosted/vega_embed/vega-embed.js"></script></head>'
+            '<body><img src="https://www.gstatic.com/images/icons/material/system/svg/insights_24px.svg"></body></html>')
+    out = inline_charts(page)
+    assert "gstatic.com" not in out and 'vega.version="6.4.0"' in out.replace("t.version", "vega.version")
+    assert out.count("inlined for offline use") == 3 and inline_charts(out) == out          # running it twice is harmless
+    f = tmp_path / "r.html"
+    f.write_text(page)
+    assert "gstatic.com" not in make_offline(f).read_text()

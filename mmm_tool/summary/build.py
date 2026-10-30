@@ -249,5 +249,7 @@ def meridian_html(mmm, folder, filename: str = "model_results_summary.html") -> 
     """Meridian's own HTML results summary, kept as a download."""
     from meridian.analysis import summarizer
 
+    from .offline import make_offline
+
     summarizer.Summarizer(mmm).output_model_results_summary(filename, str(folder))
-    return str(folder / filename)
+    return str(make_offline(folder / filename))           # charts work without reaching gstatic.com

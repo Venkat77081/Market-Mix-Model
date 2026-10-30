@@ -53,6 +53,8 @@ button, select, input { font: inherit; color: inherit; }
 .btn:hover { border-color: var(--muted); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.danger { color: var(--block); border-color: var(--block); }
+.btn.danger[type=submit]:not(:disabled) { background: var(--block); color: var(--surface); }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill.pass { color: var(--pass); background: var(--pass-soft); }
@@ -211,7 +213,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .fstat b { display: block; font: 500 22px/1.2 var(--display); font-variant-numeric: tabular-nums; }
 .fstat span { font-size: 12px; color: var(--muted); }
 .fchart { position: relative; min-width: 0; }
-.fchart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.fchart svg { width: 100%; height: auto; display: block; overflow: hidden; }
 .ftip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.4; padding: 6px 8px; border-radius: 4px; white-space: nowrap; z-index: 3; transform: translate(-50%, calc(-100% - 10px)); }
 .flegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
 .flegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
@@ -224,8 +226,11 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .froi td.r, .froi th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fsmalls { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
 .fsmalls figure { margin: 0; display: grid; gap: 4px; min-width: 0; }
-.fsmalls figcaption { font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; gap: 6px; }
-.fdecay { display: grid; grid-template-columns: 100px minmax(0, 1fr) max-content; gap: 10px; align-items: center; font-size: 13.5px; }
+.fsmalls figcaption { font-size: 13px; font-weight: 500; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; min-width: 0; }
+.fsmalls figcaption > span:first-child { overflow-wrap: anywhere; min-width: 0; }
+.fsmalls figcaption > span:last-child { white-space: nowrap; }
+.fdecay { display: grid; grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) max-content; gap: 10px; align-items: center; font-size: 13.5px; }
+.fdecay > :first-child { overflow-wrap: anywhere; min-width: 0; }
 .fbanner { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: var(--r); padding: 10px 14px; font-size: 14px; }
 
 /* Phase G: What-If */
@@ -447,6 +452,19 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   const symOr = word => sym() || word;          // "₹", or a word when there is no currency
   const money = (v, d = 0) => (v < 0 ? "-" : "") + (cur().symbol || "") + Math.abs(v).toLocaleString(locale(), { maximumFractionDigits: d, minimumFractionDigits: d });
   const num = x => typeof x === "number" ? x.toLocaleString(locale(), { maximumFractionDigits: 2 }) : esc(x);
+  // Chart helpers. Text width is estimated (about 0.6 of the font size per character), enough to keep
+  // labels inside a chart: a label column as wide as the longest name, up to a cap, and longer names
+  // shortened with "…" (the full name stays in the tooltip).
+  const textW = (t, px) => String(t).length * px * 0.6;
+  const labelCol = (labels, px, cap) => Math.round(Math.min(cap, Math.max(40, ...labels.map(t => textW(t, px))) + 12));
+  const clipText = (t, px, width) => { t = String(t); const n = Math.max(1, Math.floor(width / (px * 0.6)));
+    return t.length <= n ? t : t.slice(0, Math.max(1, n - 1)) + "…"; };
+  // Axis numbers kept short: 200 Cr / 50 L for INR, 2.5M / 40K otherwise; with the currency symbol for money.
+  const fcompact = (v, isMoney = false) => { const a = Math.abs(v), sym = isMoney ? (cur().symbol || "") : "";
+    const steps = cur().grouping === "indian" ? [[1e7, " Cr"], [1e5, " L"]] : [[1e9, "B"], [1e6, "M"], [1e4, "K"]];
+    const hit = steps.find(([size]) => a >= size);
+    const body = hit ? `${+(a / hit[0]).toFixed(a / hit[0] >= 100 ? 0 : 1)}${hit[1]}` : a.toLocaleString(locale(), { maximumFractionDigits: a < 10 ? 2 : 0 });
+    return `${v < 0 ? "−" : ""}${sym}${body}`; };
 
   // ---------- API ----------
   async function api(method, url, body) {
@@ -654,7 +672,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       <div class="ph1"><div><span class="eyebrow">Project</span><h1>${esc(P.name)}</h1>
         ${P.description ? `<p class="lede" style="margin-top:6px">${esc(P.description)}</p>` : ""}
         <div class="chips" style="margin-top:10px"><span class="chip">Read as: ${esc(P.label)}</span><span class="chip">${P.runs.length} run${P.runs.length === 1 ? "" : "s"}</span><span class="chip">created ${esc(new Date(P.created * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }))}</span></div></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="edit-project">Edit project</button><a class="btn primary" href="#upload=${esc(P.slug)}">Upload a file</a></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="edit-project">Edit project</button><button class="btn danger" id="delete-project">Delete project…</button><a class="btn primary" href="#upload=${esc(P.slug)}">Upload a file</a></div></div>
       <div class="two">
         <article class="card"><header><span class="n">1</span><h3>Runs</h3><span></span><p class="sum">Every file uploaded to this project and every refit, newest first. Open one to continue it.</p></header>
           <div class="body">${P.runs.length ? `<div class="chips" style="margin-bottom:10px" role="group" aria-label="Show">${[["all", "All"], ["progress", "In progress"], ["fitted", "Fitted"]].map(([k, t]) => `<button class="btn" data-pfilter="${k}" aria-pressed="${projFilter === k}">${t}</button>`).join("")}</div>
@@ -668,10 +686,31 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
               <p class="small muted" style="margin:10px 0 0">Changing these doesn't change runs already made; each run keeps the settings it was read with.</p></div></article>
         </div></div>`;
     $("edit-project").onclick = () => projectForm(P);
+    $("delete-project").onclick = () => deleteProject(P);
     $("home").querySelectorAll("[data-pfilter]").forEach(b => b.onclick = () => { projFilter = b.dataset.pfilter; projectScreen(slug); });
     $("home").querySelectorAll("[data-refit]").forEach(a => a.onclick = () => { scrollToRefit = true; });
   }
   let scrollToRefit = false;
+
+  // Deleting a project moves its folder (every run, model and its registry) to runs/trash/; the name must be typed.
+  function deleteProject(P) {
+    const back = $("pmodal"), versions = P.registry.reduce((n, l) => n + l.versions.length, 0);
+    back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="dp-title"><header><b style="font-size:17px" id="dp-title">Delete ${esc(P.name)}?</b></header>
+      <form class="mb" id="dp-form"><p style="margin:0">This deletes the project and everything in it: <b>${P.runs.length} run${P.runs.length === 1 ? "" : "s"}</b> with their fitted models,
+        ${versions ? `<b>${versions} registered model version${versions === 1 ? "" : "s"}</b>, ` : ""}saved What-If scenarios and plans.</p>
+        <p class="small muted" style="margin:0">It is moved to the <code>trash</code> folder next to your runs, so it can be restored by moving the folder back; the tool won't show it again.</p>
+        <label class="field"><span class="small">Type <b>${esc(P.name)}</b> to confirm</span><input id="dp-name" autocomplete="off" spellcheck="false"></label>
+        <div id="dp-err" class="small" role="alert"></div></form>
+      <footer><button class="btn" type="button" id="dp-cancel">Cancel</button><button class="btn danger" type="submit" form="dp-form" id="dp-go" disabled>Delete project</button></footer></div>`;
+    back.hidden = false;
+    $("dp-name").oninput = () => { $("dp-go").disabled = $("dp-name").value.trim() !== P.name; };
+    $("dp-cancel").onclick = () => { back.hidden = true; };
+    $("dp-form").onsubmit = async e => { e.preventDefault();
+      try { await api("DELETE", `/api/projects/${P.slug}`, { confirm: $("dp-name").value });
+        back.hidden = true; location.hash = "#"; homeScreen(); }
+      catch (err) { $("dp-err").innerHTML = `<span style="color:var(--block)">${esc(err.message)}</span>`; } };
+    $("dp-name").focus();
+  }
 
   async function projectForm(P) {
     SET = SET || await api("GET", "/api/settings").catch(() => null);
@@ -1043,7 +1082,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const x = i => l + (i / (series.length - 1)) * (W - l - r);
     const y = v => t + (1 - (v - y0) / (y1 - y0)) * (H - t - b);
     const idx = Object.fromEntries(series.map((p, i) => [p.date, i]));
-    const ticks = [y0 + pad, (lo + hi) / 2, hi].map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${num(Math.round(v))}</text>`).join("");
+    const ticks = [y0 + pad, (lo + hi) / 2, hi].map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${fcompact(v)}</text>`).join("");
     const path = series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
     const marks = outliers.filter(o => o.date in idx).map(o => `<circle cx="${x(idx[o.date])}" cy="${y(series[idx[o.date]].value)}" r="5" fill="${o.action === "keep" ? "var(--surface)" : "var(--block)"}" stroke="var(--block)" stroke-width="2"><title>${esc(o.date)}: ${num(o.value)} (z ${o.z})</title></circle>`).join("");
     return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly KPI with unusual weeks marked" style="width:100%;height:auto;display:block">${ticks}
@@ -1455,10 +1494,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   function hbars(rows, max, mark, fmt) {
     // rows: [{label, value, flag}], mark: threshold line
-    const W = 560, rowH = 22, l = 110, r = 70, H = rows.length * rowH + 18;
-    const x = v => l + Math.min(v / max, 1) * (W - l - r);
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Bar chart">
-      ${rows.map((d, i) => `<text x="${l - 8}" y="${i * rowH + 15}" text-anchor="end" fill="var(--ink)" font-size="12">${esc(d.label)}</text>
+    const W = 560, rowH = 22, r = 70, H = rows.length * rowH + 18, l = labelCol(rows.map(d => d.label), 12, W * 0.45);
+    const x = v => l + Math.min(Math.max(v, 0) / max, 1) * (W - l - r);
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;overflow:hidden" role="img" aria-label="Bar chart">
+      ${rows.map((d, i) => `<text x="${l - 8}" y="${i * rowH + 15}" text-anchor="end" fill="var(--ink)" font-size="12"><title>${esc(d.label)}</title>${esc(clipText(d.label, 12, l - 12))}</text>
         <rect x="${l}" y="${i * rowH + 5}" width="${Math.max(2, x(d.value) - l)}" height="13" rx="2" fill="${d.flag ? "var(--warn)" : "var(--accent)"}"/>
         <text x="${x(d.value) + 6}" y="${i * rowH + 15}" fill="var(--muted)" font-size="11" font-family="var(--mono)">${fmt(d.value)}</text>`).join("")}
       ${mark != null ? `<line x1="${x(mark)}" x2="${x(mark)}" y1="0" y2="${H - 14}" stroke="var(--block)" stroke-dasharray="3 3"/><text x="${x(mark)}" y="${H - 2}" text-anchor="middle" fill="var(--block)" font-size="10">${fmt(mark)}</text>` : ""}
@@ -1680,7 +1719,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
     const first = c.test.indexOf(true);
     const shade = first >= 0 ? `<rect x="${x(first)}" y="${t}" width="${x(n - 1) - x(first)}" height="${H - t - b}" fill="var(--accent-soft)"/><text x="${x(first) + 4}" y="${t + 12}" fill="var(--muted)" font-size="11">held back</text>` : "";
-    const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${num(Math.round(v))}</text>`).join("");
+    const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${fcompact(v)}</text>`).join("");
     return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Actual and fitted KPI by week, held-back weeks shaded" style="width:100%;height:auto;display:block">${shade}${ticks}
       <path d="${path(c.actual)}" fill="none" stroke="var(--muted)" stroke-width="1.4"/><path d="${path(c.fitted)}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
       <text x="${l}" y="${H - 6}" fill="var(--muted)" font-size="11">${esc(c.weeks[0])}</text><text x="${W - r}" y="${H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(c.weeks[n - 1])}</text></svg>
@@ -2446,7 +2485,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const band = path(F.expected_hi) + F.expected_lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + "Z";
     const h0 = F.holdout ? F.weeks.indexOf(F.holdout.start) : -1;
     const shade = h0 >= 0 ? `<rect x="${g.x(h0)}" y="${g.t}" width="${g.x(n - 1) - g.x(h0)}" height="${g.H - g.t - g.b}" fill="var(--sunken)"/><text x="${g.W - g.r - 4}" y="${g.t + 12}" text-anchor="end" fill="var(--muted)" font-size="11" paint-order="stroke" stroke="var(--surface)" stroke-width="3">held back in step 31</text>` : "";
-    $("f-fit").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Actual and predicted weekly ${esc(S.version.kpi)}">${shade}${fAxisY(g, ticks, v => fnum(v))}
+    $("f-fit").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Actual and predicted weekly ${esc(S.version.kpi)}">${shade}${fAxisY(g, ticks, v => fcompact(v, S.version.kpi_type === "revenue"))}
       <path d="${band}" fill="var(--accent)" fill-opacity="0.14"/><path d="${path(F.actual)}" fill="none" stroke="var(--kpi)" stroke-width="1.2"/>
       <path d="${path(F.expected)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
       <line class="fx" y1="${g.t}" y2="${g.H - g.b}" stroke="var(--ink)" stroke-dasharray="2 3" style="display:none"/>
@@ -2455,7 +2494,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
   function fRoiChart(S) {
     const rows = (S.roi[fPeriod] || S.roi.all).rows.filter(r => r.channel !== "all paid");
-    const W = fwidth("f-roi"), rowH = 28, l = 110, r = 16, t = 18, H = t + rows.length * rowH + 24;
+    const W = fwidth("f-roi"), rowH = 28, r = 16, t = 18, H = t + rows.length * rowH + 24;
+    const l = labelCol(rows.map(c => c.channel), 12.5, W * 0.38);
     const hi = Math.max(...rows.map(x => x.roi.hi), S.version.money ? 1.5 : 0), ticks = fTicks(0, hi, 5);
     const x = v => l + (v / ticks[ticks.length - 1]) * (W - l - r);
     const breakeven = S.version.money ? `<line x1="${x(1)}" x2="${x(1)}" y1="${t - 8}" y2="${H - 20}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${x(1) + 4}" y="${t - 6}" fill="var(--muted)" font-size="10.5">break-even</text>` : "";
@@ -2464,7 +2504,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       ${ticks.map(v => `<line x1="${x(v)}" x2="${x(v)}" y1="${t - 4}" y2="${H - 20}" stroke="var(--line)"/><text x="${x(v)}" y="${H - 6}" text-anchor="middle" fill="var(--muted)" font-size="11">${v}</text>`).join("")}${breakeven}
       ${rows.map((c, i) => { const y = t + i * rowH + rowH / 2, pd = prior(c.channel);
         return `<g><title>${esc(c.channel)}: ROI ${c.roi.mean.toFixed(2)} (90% ${c.roi.lo.toFixed(2)}–${c.roi.hi.toFixed(2)})${pd ? ", prior-driven" : ""}</title>
-          <text x="${l - 10}" y="${y + 4}" text-anchor="end" fill="var(--ink)" font-size="12.5">${esc(c.channel)}</text>
+          <text x="${l - 10}" y="${y + 4}" text-anchor="end" fill="var(--ink)" font-size="12.5">${esc(clipText(c.channel, 12.5, l - 14))}</text>
           <rect x="${x(c.roi.lo)}" y="${y - 4}" width="${Math.max(2, x(c.roi.hi) - x(c.roi.lo))}" height="8" rx="4" fill="${pd ? "var(--block-soft)" : "var(--accent-soft)"}" stroke="${pd ? "var(--block)" : "var(--accent)"}"/>
           <circle cx="${x(c.roi.mean)}" cy="${y}" r="5" fill="${pd ? "var(--block)" : "var(--accent)"}" stroke="var(--surface)" stroke-width="2"/></g>`; }).join("")}</svg>`;
   }
@@ -2482,7 +2522,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     let x0 = l; const sc = (W - l - r) / Math.max(1, parts.reduce((s, p) => s + Math.max(0, p[1]), 0));
     $("f-total").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of ${esc(S.version.kpi)} by part">${parts.map(([c, v, col]) => {
       const w = Math.max(0, v) * sc, out = `<rect x="${x0.toFixed(1)}" y="4" width="${Math.max(0, w - 2).toFixed(1)}" height="22" rx="3" fill="${col}"><title>${esc(c)}: ${fnum(v)} (${fpct(v / total)})</title></rect>
-        ${w > 70 ? `<text x="${(x0 + 6).toFixed(1)}" y="40" fill="var(--muted)" font-size="11">${esc(c)} ${fpct(v / total)}</text>` : ""}`; x0 += w; return out; }).join("")}</svg>`;
+        ${w > 48 ? `<text x="${(x0 + 2).toFixed(1)}" y="40" fill="var(--muted)" font-size="11"><title>${esc(c)} ${fpct(v / total)}</title>${esc(clipText(`${c} ${fpct(v / total)}`, 11, w - 6))}</text>` : ""}`; x0 += w; return out; }).join("")}</svg>`;
     // Weekly stack: baseline, then each named channel, then other paid; unpaid levers are listed in the table.
     const n = wk.weeks.length, g = fGeom("f-weekly", 210);
     const series = [["baseline", wk.baseline, "var(--base)"], ...named.map(c => [c, wk.channels[c], colour(c)]),
@@ -2493,7 +2533,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     g.x = i => g.l + (i / Math.max(1, n - 1)) * (g.W - g.l - g.r);
     g.y = v => g.t + (1 - v / ticks[ticks.length - 1]) * (g.H - g.t - g.b);
     const area = (lo, top) => top.map((v, i) => `${i ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") + "Z";
-    $("f-weekly").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Weekly ${esc(S.version.kpi)} by part, stacked">${fAxisY(g, ticks, v => fnum(v))}
+    $("f-weekly").innerHTML = `<svg viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Weekly ${esc(S.version.kpi)} by part, stacked">${fAxisY(g, ticks, v => fcompact(v, S.version.kpi_type === "revenue"))}
       ${cum.map(([c, lo, top, col]) => `<path d="${area(lo, top)}" fill="${col}" fill-opacity="${c === "baseline" ? 1 : 0.85}" stroke="var(--surface)" stroke-width="0.6"/>`).join("")}
       <line class="fx" y1="${g.t}" y2="${g.H - g.b}" stroke="var(--ink)" stroke-dasharray="2 3" style="display:none"/>
       <text x="${g.l}" y="${g.H - 6}" fill="var(--muted)" font-size="11">${esc(wk.weeks[0])}</text><text x="${g.W - g.r}" y="${g.H - 6}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(wk.weeks[n - 1])}</text></svg>`;
@@ -2503,14 +2543,15 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
   function fCurve(host, C, S) {
     if (!C) return;
-    const W = Math.max(200, Math.round(host.clientWidth || 220)), H = 130, l = 44, r = 8, t = 8, b = 20;
     const xs = C.spend, ys = C.kpi, hi = Math.max(...C.kpi_hi), xmax = Math.max(...xs), ty = fTicks(0, hi, 3);
+    const yl = v => fcompact(v, S.version.kpi_type === "revenue");
+    const W = Math.max(200, Math.round(host.clientWidth || 220)), H = 130, r = 8, t = 8, b = 20, l = labelCol(ty.map(yl), 10, 80);
     const x = v => l + (v / xmax) * (W - l - r), y = v => t + (1 - v / ty[ty.length - 1]) * (H - t - b);
     const p = arr => arr.map((v, i) => `${i ? "L" : "M"}${x(xs[i]).toFixed(1)} ${y(v).toFixed(1)}`).join("");
     const band = p(C.kpi_hi) + C.kpi_lo.map((v, i) => [i, v]).reverse().map(([i, v]) => `L${x(xs[i]).toFixed(1)} ${y(v).toFixed(1)}`).join("") + "Z";
     const i1 = C.multiplier.indexOf(1);
     host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(S.version.kpi)} driven against spend">
-      ${ty.map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="10">${fnum(v)}</text>`).join("")}
+      ${ty.map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="10">${yl(v)}</text>`).join("")}
       <path d="${band}" fill="var(--accent)" fill-opacity="0.14"/><path d="${p(ys)}" fill="none" stroke="var(--accent)" stroke-width="2"/>
       ${i1 >= 0 ? `<circle cx="${x(xs[i1])}" cy="${y(ys[i1])}" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"><title>Current spend ${fmoney(xs[i1])}: ${fnum(ys[i1])} ${esc(S.version.kpi)} (90% ${fnum(C.kpi_lo[i1])}–${fnum(C.kpi_hi[i1])})</title></circle>` : ""}
       <text x="${l}" y="${H - 5}" fill="var(--muted)" font-size="10">${esc(money(0))}</text><text x="${W - r}" y="${H - 5}" text-anchor="end" fill="var(--muted)" font-size="10">${fmoney(xmax)}</text></svg>`;

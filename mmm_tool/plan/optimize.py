@@ -230,7 +230,10 @@ def optimize(mmm, checked: dict[str, Any], out_dir: Path | None = None) -> dict[
     if out_dir is not None:
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
+            from ..summary.offline import make_offline
+
             res.output_optimization_summary("optimization_summary.html", str(out_dir))
+            make_offline(out_dir / "optimization_summary.html")           # charts work offline
             report = "optimization_summary.html"
         except Exception as e:  # noqa: BLE001 - the report is a download, never a reason to fail
             report = f"error: {type(e).__name__}: {e}"
