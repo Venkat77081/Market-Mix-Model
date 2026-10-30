@@ -931,15 +931,21 @@ def _plan_inputs(d: Path) -> dict[str, Any]:
     periods = {"all": (wk[0], wk[-1])}
     if len(wk) >= 104:
         periods["last_52"] = (wk[-52], wk[-1])
-    hist = {}
+    hist, peaks = {}, {}
+    weekly = run.d.table.groupby(pd.to_datetime(run.d.table[date]))[[c.spend for c in chans]].sum().sort_index()
     for p_, (a, b) in periods.items():
         t = run.d.table[(pd.to_datetime(run.d.table[date]) >= a) & (pd.to_datetime(run.d.table[date]) <= b)]
         hist[p_] = {c.name: float(t[c.spend].sum()) for c in chans}
+        n = int(((weekly.index >= a) & (weekly.index <= b)).sum())       # the highest spend in any window this long
+        peaks[p_] = {c.name: float(weekly[c.spend].rolling(n).sum().max()) for c in chans}
     meta = json.loads((fd / "model_meta.json").read_text(encoding="utf-8")) if (fd / "model_meta.json").exists() else {}
     money = version.get("money")
     if money is None:
         money = bool(run.d.kpi.get("kpi_type") == "revenue" or run.d.kpi.get("revenue_per_kpi_column") or run.d.kpi.get("revenue_per_kpi_value"))
-    return {"channels": names, "periods": periods, "hist": hist, "money": bool(money), "kpi": version.get("kpi") or run.d.kpi.get("kpi"),
+    from ..plan.optimize import display_name
+
+    return {"channels": names, "display": {c: display_name(c) for c in names}, "peaks": peaks,
+            "periods": periods, "hist": hist, "money": bool(money), "kpi": version.get("kpi") or run.d.kpi.get("kpi"),
             "kpi_type": version.get("kpi_type") or run.d.kpi.get("kpi_type"), "currency": version.get("currency") or run.d.kpi.get("currency"),
             "no_saturation": sorted(c for c, v in ((meta.get("config") or {}).get("saturation") or {}).items() if v == "none"),
             "stale": stale, "run": run}
@@ -952,7 +958,7 @@ def _plan_check(inp: dict, plan: dict) -> dict:
     if period not in inp["hist"]:
         raise HTTPException(400, f"Unknown period '{period}'; use {', '.join(inp['hist'])}.")
     try:
-        return check(plan, inp["hist"][period], inp["money"], inp["periods"])
+        return check(plan, inp["hist"][period], inp["money"], inp["periods"], inp["peaks"][period])
     except PlanError as e:
         raise HTTPException(400, str(e)) from e
 

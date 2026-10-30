@@ -180,3 +180,60 @@ def test_less_spend_never_more_sales_and_zero_is_zero(fitted):
         scenario.exact(mmm, {"nonesuch": 1.2}, "all")
     with pytest.raises(ValueError, match="Unknown period"):
         scenario.curves(mmm, "last_9")
+
+
+# Step 45: the change is per draw (the same draw for scenario and current), then summarised ------------------
+
+@fit_tests
+def test_no_change_is_exactly_zero_in_every_draw(fitted):
+    mmm, _ = fitted[False]
+    paid = [str(c) for c in mmm.input_data.get_all_paid_channels()]
+    for mult in ({}, {c: 1.0 for c in paid}):
+        d = scenario.change_draws(mmm, mult)
+        assert d.size > 1 and (d == 0).all()
+
+
+@fit_tests
+def test_more_of_one_channel_is_better_in_every_draw(fitted):
+    mmm, _ = fitted[False]
+    paid = [str(c) for c in mmm.input_data.get_all_paid_channels()]
+    d = scenario.change_draws(mmm, {paid[0]: 1.2})
+    print(f"\n+20% {paid[0]}: change per draw from {d.min():.1f} to {d.max():.1f}")
+    assert (d > 0).all()
+    x = scenario.exact(mmm, {paid[0]: 1.2})
+    assert x["delta_kpi"]["share_better"] == 1.0 and x["delta_kpi"]["favour"] == "very likely better"
+
+
+@fit_tests
+def test_a_resplit_change_is_the_difference_of_the_means(fitted):
+    mmm, _ = fitted[False]
+    paid = [str(c) for c in mmm.input_data.get_all_paid_channels()]
+    x = scenario.exact(mmm, {paid[0]: 1.3, paid[1]: 0.7})
+    dk = x["delta_kpi"]
+    print(f"\nresplit: change {dk['mean']:.1f} (90%: {dk['lo']:.1f} to {dk['hi']:.1f}); {dk['share_better']:.0%} of draws favour: {dk['favour']}")
+    assert dk["mean"] == pytest.approx(x["scenario"]["kpi"]["mean"] - x["current"]["kpi"]["mean"], rel=1e-9, abs=1e-6)
+    assert 0 <= dk["share_better"] <= 1 and dk["favour"] == scenario.favour(dk["share_better"])
+    sp = x["delta_spend"]
+    assert sp["amount"] == pytest.approx(x["scenario"]["spend"] - x["current"]["spend"])
+    assert x["weeks"] == len(mmm.input_data.time.values) and x["first_week"] < x["last_week"]
+
+
+@fit_tests
+@pytest.mark.parametrize("period", ["all", "last_52"])
+def test_current_plan_is_the_model_summarys_paid_total(fitted, period):
+    from mmm_tool.fit import model as m
+    from mmm_tool.summary.build import roi_table
+
+    mmm, _ = fitted[False]
+    x = scenario.exact(mmm, {}, period)
+    sel = scenario.periods(mmm)[period]
+    paid_total = next(r for r in roi_table(m.analyzer(mmm), True, sel)["rows"] if r["channel"] == "all paid")
+    print(f"\n{period}: current {x['current']['kpi']['mean']:,.1f}, Model Summary {paid_total['kpi_driven']['mean']:,.1f}")
+    assert x["current"]["kpi"]["mean"] == pytest.approx(paid_total["kpi_driven"]["mean"], rel=0.005)
+    assert x["weeks"] == (52 if period == "last_52" else len(mmm.input_data.time.values))
+
+
+def test_favour_wording():
+    assert [scenario.favour(s) for s in (1.0, 0.9, 0.75, 0.7, 0.5, 0.3, 0.2, 0.05, 0.0)] == [
+        "very likely better", "very likely better", "probably better", "probably better", "can't tell", "can't tell",
+        "probably worse", "very likely worse", "very likely worse"]

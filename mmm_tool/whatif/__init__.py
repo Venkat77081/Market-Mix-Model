@@ -17,8 +17,13 @@ def model_key(run_dir: Path) -> str:
     return hashlib.sha256(f"{p.stat().st_mtime_ns}:{p.stat().st_size}".encode()).hexdigest()[:12] if p.exists() else ""
 
 
+# Bumped when step 45 starts reporting something new, so results cached before are worked out again.
+EXACT_VERSION = 2
+
+
 def scenario_key(period: str, mult: dict[str, float]) -> str:
-    body = json.dumps([period, sorted((c, round(float(v), 4)) for c, v in mult.items() if round(float(v), 4) != 1.0)])
+    body = json.dumps([period, sorted((c, round(float(v), 4)) for c, v in mult.items() if round(float(v), 4) != 1.0),
+                       EXACT_VERSION])
     return hashlib.sha256(body.encode()).hexdigest()[:12]
 
 

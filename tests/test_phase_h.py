@@ -28,7 +28,7 @@ def test_defaults_map_to_meridians_fixed_budget_call():
     c = check(plan(), HIST, True, PERIODS)
     a = c["args"]
     assert a["fixed_budget"] and a["budget"] == 1000 and (a["start_date"], a["end_date"]) == PERIODS["all"]
-    assert a["spend_constraint_lower"] == [0.3, 0.3, 0.3] and a["spend_constraint_upper"] == [0.3, 0.3, 0.3]
+    assert a["spend_constraint_lower"] == [0.3, 0.3, 0.3] and a["spend_constraint_upper"] == [0.5, 0.5, 0.5]   # −30% / +50%
     assert a["use_kpi"] is False and a["confidence_level"] == 0.9
     assert [r["planned"] for r in c["channels"]] == [600, 300, 100]
 
@@ -63,7 +63,7 @@ def test_limits_locks_and_floors():
 
 
 @pytest.mark.parametrize("bad, msg", [
-    ({"floors": {"radio": 150}}, "above its planned spend"),
+    ({"floors": {"radio": 150}}, "A floor can only limit cuts"),
     ({"locks": ["nonesuch"]}, "not a channel"),
     ({"limits": {"tv": {"down": 120, "up": 30}}}, "may go down 0-100%"),
     ({"limits": {"tv": {"down": 30, "up": 900}}}, "up 0-200%"),
@@ -123,7 +123,7 @@ def test_plan_screen_and_check(client):
     assert ok["ok"] and ok["args"]["budget"] == pytest.approx(sum(d["hist"]["all"].values()))
     first = d["channels"][0]
     bad = client.post(f"/api/runs/{run_id}/plan/check", json={"plan": {**d["defaults"], "floors": {first: 1e15}}}).json()
-    assert bad["ok"] is False and "above its planned spend" in bad["problems"]
+    assert bad["ok"] is False and "A floor can only limit cuts" in bad["problems"]
 
 
 # A real optimization (opt-in) ------------------------------------------------------------------------
@@ -172,3 +172,47 @@ def test_optimize_keeps_the_budget_limits_and_locks(fitted, tmp_path):
     t = res["totals"]
     assert t["scenario"]["kpi"]["mean"] - t["current"]["kpi"]["mean"] == pytest.approx(t["delta_kpi"]["mean"], rel=1e-6)
     assert res["report"] == "optimization_summary.html" and (tmp_path / "report" / "optimization_summary.html").exists()
+
+
+@pytest.mark.skipif(os.environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
+def test_no_room_to_grow_keeps_historical_spend_exactly(fitted, tmp_path, capsys):
+    from mmm_tool.plan.optimize import optimize
+    from mmm_tool.whatif.scenario import spend_in
+
+    mmm, _ = fitted
+    hist = spend_in(mmm, None)
+    weeks = [str(t)[:10] for t in mmm.input_data.time.values]
+    chans = list(hist)
+    p = {**defaults(chans, True), "limits": {c: {"down": 30, "up": 0} for c in chans}}       # may only cut
+    checked = check(p, hist, True, {"all": (weeks[0], weeks[-1])})
+    res = optimize(mmm, checked)
+    log = capsys.readouterr().out
+    print(log)
+    assert "spend_constraint_upper=[0.0, 0.0, 0.0]," in log and "spend_constraint_lower=[0.3, 0.3, 0.3]," in log
+    step = checked["grid_step"]                           # Meridian rounds each channel's spend to this step
+    print(f"grid step {step:,.0f}: " + ", ".join(f"{c} {res['after']['channels'][c]['spend']:,.0f} vs {hist[c]:,.0f}" for c in chans))
+    for c in chans:                                       # a fixed budget of the historical total, nothing may grow
+        assert abs(res["after"]["channels"][c]["spend"] - hist[c]) <= step / 2
+
+
+@pytest.mark.skipif(os.environ.get("MMM_FIT_TESTS") != "1", reason="set MMM_FIT_TESTS=1 to run Meridian fits")
+def test_a_floor_holds_and_a_lock_keeps_planned(fitted, tmp_path):
+    from mmm_tool.plan.optimize import optimize
+    from mmm_tool.whatif.scenario import spend_in
+
+    mmm, _ = fitted
+    hist = spend_in(mmm, None)
+    weeks = [str(t)[:10] for t in mmm.input_data.time.values]
+    chans = list(hist)
+    first, last = chans[0], chans[-1]
+    floor = hist[first] * 0.9                              # above its -30% limit: the floor is what binds
+    checked = check({**defaults(chans, True), "floors": {first: floor}, "locks": [last]}, hist, True,
+                    {"all": (weeks[0], weeks[-1])})
+    rows = {r["channel"]: r for r in checked["channels"]}
+    assert rows[first]["lowest_source"] == "floor" and rows[last]["lowest_source"] == "locked"
+    res = optimize(mmm, checked)
+    after = {c: res["after"]["channels"][c]["spend"] for c in chans}
+    print(f"\nfloor {floor:,.0f}: {first} {after[first]:,.0f}; locked {last} {after[last]:,.0f} (planned {hist[last]:,.0f})")
+    step = checked["grid_step"]                           # Meridian rounds each channel's spend to this step
+    assert after[first] >= floor - step / 2
+    assert abs(after[last] - hist[last]) <= step / 2

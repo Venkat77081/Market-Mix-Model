@@ -248,6 +248,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .pl-col > .card, .pl-col .body > * { min-width: 0; }
 .pl-full { grid-column: 1 / -1; min-width: 0; }
 .pl input[type=number] { width: 64px; }
+.pltable { width: 100%; table-layout: auto; }
+.pltable .plname { white-space: normal; overflow-wrap: anywhere; min-width: 90px; max-width: 220px; }
+.pltable td.lim input { width: 56px; margin: 0 2px; }
 .pl td.lim { white-space: nowrap; }
 .pl-call { font: 12.5px/1.55 var(--mono); background: var(--sunken); border-radius: var(--r); padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pl-bar { position: relative; height: 10px; background: var(--line); border-radius: 5px; min-width: 80px; }
@@ -1930,6 +1933,12 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const hit = steps.find(([size]) => a >= size);
     return hit ? `${s}${(v / hit[0]).toFixed(hit[1])}${hit[2]}` : `${s}${fnum(v)}`; };
   const fpct = v => v == null ? "–" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+  // Money ranges and changes: crore and lakh for INR ("₹54.6–103.7 Cr", "+₹6.7 lakh"), millions and thousands otherwise.
+  const bigUnit = a => cur().grouping === "indian" ? (a >= 1e7 ? [1e7, " Cr"] : [1e5, " lakh"]) : (a >= 1e6 ? [1e6, "M"] : [1e3, "K"]);
+  const fmoneyRange = (lo, hi) => { if (lo == null || hi == null) return "–"; const [u, w] = bigUnit(Math.max(Math.abs(lo), Math.abs(hi)));
+    return `${cur().symbol || ""}${(lo / u).toFixed(1)}–${(hi / u).toFixed(1)}${w}`; };
+  const fmoneyChange = v => { if (v == null) return "–"; const a = Math.abs(v), [u, w] = bigUnit(a);
+    return `${v < 0 ? "−" : "+"}${cur().symbol || ""}${(a / u).toFixed(u >= 1e6 ? 2 : 1)}${w}`; };
   const fpanel = (n, title, sub, body) => `<article class="card" id="step-${n}"><header><span class="n">${n}</span><h3>${esc(title)}</h3><span></span>
       ${sub ? `<p class="sum">${sub}</p>` : ""}</header><div class="body">${body}</div></article>`;
   const fwidth = id => Math.max(300, Math.round(($(id) || {}).clientWidth || 680));
@@ -2144,12 +2153,19 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (x.building) return '<p><span class="pill warn">Working</span> Running the scenario on the saved model…</p>';
     if (x.error) return `<p style="color:var(--block)">${esc(x.error)}</p>`;
     const r = x.result, rng = (s, f) => `${f(s.mean)} <span class="muted small">(90%: ${f(s.lo)}–${f(s.hi)})</span>`;
+    const mrng = s => `${fmoney(s.mean)} <span class="muted small">(90%: ${fmoneyRange(s.lo, s.hi)})</span>`;
     const sg = v => (v >= 0 ? "+" : "−"), dr = (s, f) => `${sg(s.mean)}${f(Math.abs(s.mean))} <span class="muted small">(90%: ${sg(s.lo)}${f(Math.abs(s.lo))} to ${sg(s.hi)}${f(Math.abs(s.hi))})</span>`;
+    const mdr = s => `${fmoneyChange(s.mean)} <span class="muted small">(90%: ${fmoneyChange(s.lo)} to ${fmoneyChange(s.hi)})</span>`;
+    const odds = s => s && s.share_better != null ? `<br><span class="small"><b>${Math.round(s.share_better * 100)}% of draws</b> favour this scenario: ${esc(s.favour)}</span>` : "";
+    const sp = r.delta_spend;
     const quick = wiQuick(r.multipliers).kpi;
-    return `<dl class="kv"><div><dt>${esc(kpi)} from paid media</dt><dd>${rng(r.scenario.kpi, fnum)}</dd></div>
-        <div><dt>Change vs current</dt><dd>${dr(r.delta_kpi, fnum)}</dd></div>
-        ${r.scenario.revenue && wiData.kpi_type !== "revenue" ? `<div><dt>Revenue from paid media</dt><dd>${rng(r.scenario.revenue, fmoney)}</dd></div><div><dt>Revenue change</dt><dd>${dr(r.delta_revenue, fmoney)}</dd></div>` : ""}
-        <div><dt>Current plan</dt><dd>${rng(r.current.kpi, fnum)}</dd></div></dl>
+    const showRev = r.scenario.revenue && wiData.kpi_type !== "revenue";
+    return `${r.first_week ? `<p class="small" style="margin:0 0 8px"><b>Period:</b> ${esc(r.first_week)} → ${esc(r.last_week)}, ${r.weeks} weeks</p>` : ""}
+      <dl class="kv"><div><dt>${esc(kpi)} from paid media</dt><dd>${rng(r.scenario.kpi, fnum)}</dd></div>
+        <div><dt>Change vs current</dt><dd>${dr(r.delta_kpi, fnum)}${showRev ? "" : odds(r.delta_kpi)}</dd></div>
+        ${showRev ? `<div><dt>Revenue from paid media</dt><dd>${mrng(r.scenario.revenue)}</dd></div><div><dt>Revenue change</dt><dd>${mdr(r.delta_revenue)}${odds(r.delta_revenue)}</dd></div>` : ""}
+        ${sp ? `<div><dt>Spend change</dt><dd>${Math.abs(sp.amount) < 0.5 ? "none" : `${fmoneyChange(sp.amount)}${sp.pct != null ? ` (${sp.pct >= 0 ? "+" : "−"}${(Math.abs(sp.pct) * 100).toFixed(1)}%)` : ""}`}<br><span class="muted small">${fmoney(r.scenario.spend)} against ${fmoney(r.current.spend)}</span></dd></div>` : ""}
+        <div><dt>Current plan</dt><dd>${rng(r.current.kpi, fnum)}${showRev && r.current.revenue ? `<br><span class="muted small">${mrng(r.current.revenue)}</span>` : ""}</dd></div></dl>
       <p class="muted small">The quick result was ${fnum(quick)}; ${(r.delta_kpi.lo > 0 || r.delta_kpi.hi < 0) ? "the change is clear of zero across the 90% range." : "the 90% range of the change includes zero: the model can't tell this scenario from the current plan."}</p>`;
   }
 
@@ -2202,14 +2218,33 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const planned = c => (budget ?? total) * (total ? hist[c] / total : 0);
     const segBtn = (attr, val, cur, label, dis = false) => `<button data-${attr}="${esc(val)}" aria-pressed="${cur === val}" ${dis ? "disabled" : ""}>${esc(label)}</button>`;
     const periodLbl = k => k === "all" ? `All weeks (${esc(D.periods.all[0])} to ${esc(D.periods.all[1])})` : `Last 52 weeks (from ${esc(D.periods.last_52[0])})`;
-    const limRows = D.channels.map(c => { const L = P.limits[c], locked = P.locks.includes(c), zero = !(hist[c] > 0);
-      return `<tr><td><b>${esc(c)}</b>${D.no_saturation.includes(c) ? ' <span class="badge model_only" title="No diminishing returns (step 23)">straight line</span>' : ""}</td>
+    // Steps 51-52: what each channel may spend (the same rule as the server's check: planned if locked,
+    // else the higher of planned x (1 - down) and the floor; highest planned x (1 + up)).
+    const nm = c => (D.display && D.display[c]) || c;
+    const bnd = c => { const ps = planned(c), L = P.limits[c], f = P.floors[c];
+      if (!(hist[c] > 0)) return { lowest: 0, highest: 0, src: "no spend", fromPct: 0, notNeeded: false };
+      if (P.locks.includes(c)) return { lowest: ps, highest: ps, src: "locked", fromPct: ps, notNeeded: false };
+      const fromPct = ps * (1 - L.down / 100), highest = ps * (1 + L.up / 100);
+      return f != null && f >= fromPct ? { lowest: f, highest, src: "floor", fromPct, notNeeded: false }
+        : { lowest: fromPct, highest, src: `−${L.down}%`, fromPct, notNeeded: f != null }; };
+    const peak = c => (D.peaks && D.peaks[P.period] || {})[c];
+    const beyond = c => { const pk = peak(c); return pk > 0 && bnd(c).highest > (D.settings.limits.seen_peak_ratio || 2) * pk; };
+    const lowCell = c => { const b = bnd(c);
+      return `${fmoney(b.lowest)} <span class="muted small">(${esc(b.src)})</span>${b.notNeeded ? `<br><span class="muted small">floor not needed: −${P.limits[c].down}% already stops at ${fmoney(b.fromPct)}</span>` : ""}`; };
+    const highCell = c => { const b = bnd(c); return `${fmoney(b.highest)}${b.src === "locked" ? ' <span class="muted small">(locked)</span>' : ` <span class="muted small">(+${P.limits[c].up}%)</span>`}`; };
+    const rangeCell = c => { const b = bnd(c); return b.src === "no spend" ? '<span class="muted">no spend in the period</span>'
+      : `${fmoney(b.lowest)}–${fmoney(b.highest)}${beyond(c) ? '<br><span class="small" style="color:var(--warn)">outside what the model has seen</span>' : ""}`; };
+    const limRows = D.channels.map(c => { const L = P.limits[c], locked = P.locks.includes(c), zero = !(hist[c] > 0), dis = locked || zero ? "disabled" : "";
+      return `<tr><td class="plname"><b>${esc(nm(c))}</b>${D.no_saturation.includes(c) ? ' <span class="badge model_only" title="No diminishing returns (step 23)">straight line</span>' : ""}</td>
         <td class="num">${fmoney(hist[c])}</td><td class="num">${fmoney(planned(c))}</td>
-        <td class="lim"><input type="number" min="0" max="100" step="5" data-pllim="${esc(c)}" data-way="down" value="${L.down}" ${locked || zero ? "disabled" : ""} aria-label="${esc(c)} may go down, %"> %</td>
-        <td class="lim"><input type="number" min="0" max="${D.settings.limits.max_up}" step="5" data-pllim="${esc(c)}" data-way="up" value="${L.up}" ${locked || zero ? "disabled" : ""} aria-label="${esc(c)} may go up, %"> %</td>
-        <td class="num small">${zero ? "no spend in the period" : locked ? "locked" : `${fmoney(planned(c) * (1 - L.down / 100))}–${fmoney(planned(c) * (1 + L.up / 100))}`}</td></tr>`; }).join("");
-    const lockRows = D.channels.map(c => `<tr><td><b>${esc(c)}</b></td><td><label class="small"><input type="checkbox" data-pllock="${esc(c)}" ${P.locks.includes(c) ? "checked" : ""}> keep at ${fmoney(planned(c))}</label></td>
-        <td><input type="number" min="0" step="any" data-plfloor="${esc(c)}" value="${P.floors[c] ?? ""}" placeholder="none" ${P.locks.includes(c) ? "disabled" : ""} style="width:120px" aria-label="${esc(c)} floor"></td></tr>`).join("");
+        <td class="lim">−<input type="number" min="0" max="100" step="5" data-pllim="${esc(c)}" data-way="down" value="${locked ? 0 : L.down}" ${dis} aria-label="${esc(nm(c))} may go down, %">% / +<input type="number" min="0" max="${D.settings.limits.max_up}" step="5" data-pllim="${esc(c)}" data-way="up" value="${locked ? 0 : L.up}" ${dis} aria-label="${esc(nm(c))} may go up, %">%</td>
+        <td><label class="small"><input type="checkbox" data-pllock="${esc(c)}" ${locked ? "checked" : ""} ${zero ? "disabled" : ""}> Lock</label></td>
+        <td class="num small" id="pl-range-${esc(c)}">${rangeCell(c)}</td></tr>`; }).join("");
+    const floorRows = D.channels.map(c => { const locked = P.locks.includes(c), zero = !(hist[c] > 0), b = bnd(c);
+      return `<tr><td class="plname"><b>${esc(nm(c))}</b></td><td class="num">${fmoney(planned(c))}</td>
+        <td><input type="number" min="0" step="any" data-plfloor="${esc(c)}" value="${P.floors[c] ?? ""}" placeholder="${locked ? "locked" : "none"}" ${locked || zero ? "disabled" : ""}
+          style="width:130px${b.notNeeded ? ";color:var(--muted)" : ""}" aria-label="${esc(nm(c))} floor" aria-describedby="pl-floor-err-${esc(c)}"><div class="small" id="pl-floor-err-${esc(c)}" role="alert" style="color:var(--block)"></div></td>
+        <td class="num" id="pl-low-${esc(c)}">${lowCell(c)}</td><td class="num" id="pl-high-${esc(c)}">${highCell(c)}</td></tr>`; }).join("");
     const straight = D.no_saturation.filter(c => !P.locks.includes(c) && P.limits[c] && P.limits[c].up > 0);
     $("main").innerHTML = `${head}
         <div class="chips"><button class="btn" data-view="g">What-If (G)</button><span class="chip">${esc(kpi)}${money ? " and revenue" : ""}</span></div></div>
@@ -2221,6 +2256,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           <article class="card" id="step-49"><header><span class="n">49</span><h3>Budget</h3><span></span><p class="sum">Total paid spend over the period. ${P.budget_type === "fixed" ? `Historical: ${fmoney(total)}.` : "A flexible budget sets its own total (step 50)."}</p></header>
             <div class="body">${P.budget_type === "fixed" ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${esc(sym())}</span><input type="number" id="pl-budget" min="0" step="any" value="${Math.round(budget)}" style="width:150px" aria-label="Budget">
               ${[-10, 0, 10, 20].map(p => `<button class="btn" data-plbudgetpct="${p}">${p === 0 ? "Historical" : (p > 0 ? "+" : "") + p + "%"}</button>`).join("")}</div>` : '<p class="muted small">Not used for a flexible budget.</p>'}</div></article>
+        </div>
+        <div class="pl-col">
           <article class="card" id="step-50"><header><span class="n">50</span><h3>Budget type</h3><span></span><p class="sum">Fixed: split this budget for the most ${money && P.objective === "revenue" ? "revenue" : esc(kpi)}. Flexible: spend until the plan's return falls to a target.</p></header>
             <div class="body" style="display:grid;gap:10px">
               <div class="seg" role="group" aria-label="Budget type">${segBtn("pltype", "fixed", P.budget_type, "Fixed budget")}${segBtn("pltype", "flexible", P.budget_type, "Flexible budget")}</div>
@@ -2229,13 +2266,12 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
               <div><span class="small muted">Maximise</span> <div class="seg" role="group" aria-label="Objective">${segBtn("plobj", "revenue", P.objective, "Revenue", !money)}${segBtn("plobj", "kpi", P.objective, kpi)}</div>
                 ${money ? "" : `<p class="muted small">No money value per ${esc(kpi)} (step 5), so the plan maximises ${esc(kpi)}.</p>`}</div></div></article>
         </div>
-        <div class="pl-col">
-          <article class="card" id="step-51"><header><span class="n">51</span><h3>Channel limits</h3><span></span><p class="sum">How far each channel may move from its planned spend (the budget split as in the period).</p></header>
-            <div class="body"><div class="scroll"><table style="min-width:560px"><thead><tr><th>Channel</th><th class="r">Historical</th><th class="r">Planned</th><th>May go down</th><th>May go up</th><th>Range</th></tr></thead><tbody>${limRows}</tbody></table></div>
-              ${straight.length ? `<p class="small" style="color:var(--warn)"><b>${straight.map(esc).join(", ")}</b>: no diminishing returns (step 23), so the optimizer will keep adding budget there up to its upper limit. Set a sensible limit.</p>` : ""}</div></article>
-          <article class="card" id="step-52"><header><span class="n">52</span><h3>Locks and floors</h3><span></span><p class="sum">Keep a channel at its planned spend, or give it a minimum (${esc(symOr("in money"))}, up to its planned spend).</p></header>
-            <div class="body"><div class="scroll"><table style="min-width:420px"><thead><tr><th>Channel</th><th>Lock</th><th>Floor</th></tr></thead><tbody>${lockRows}</tbody></table></div></div></article>
-        </div>
+        <article class="card pl-full" id="step-51"><header><span class="n">51</span><h3>Channel limits</h3><span></span><p class="sum">How far each channel may move from its planned spend (the budget split as in the period). Lock keeps it there (both limits 0).</p></header>
+          <div class="body"><div class="scroll"><table class="pltable"><thead><tr><th>Channel</th><th class="r">Historical</th><th class="r">Planned</th><th>May go down / up</th><th></th><th class="r">Allowed range</th></tr></thead><tbody>${limRows}</tbody></table></div>
+            ${straight.length ? `<p class="small" style="color:var(--warn)"><b>${straight.map(c => esc(nm(c))).join(", ")}</b>: no diminishing returns (step 23), so the optimizer will keep adding budget there up to its upper limit. Set a sensible limit.</p>` : ""}
+            <p class="muted small" id="pl-seen">${D.channels.some(beyond) ? `<span style="color:var(--warn)">Outside what the model has seen:</span> the highest allowed is above ${D.settings.limits.seen_peak_ratio || 2}x the channel's highest spend in any past period this long.` : ""}</p></div></article>
+        <article class="card pl-full" id="step-52"><header><span class="n">52</span><h3>Locks and floors</h3><span></span><p class="sum">A floor (${esc(symOr("in money"))}) holds back cuts: a channel never goes below the higher of its floor and its "may go down" limit. Lowest and highest allowed show which limit is active.</p></header>
+          <div class="body"><div class="scroll"><table class="pltable"><thead><tr><th>Channel</th><th class="r">Planned</th><th>Floor</th><th class="r">Lowest allowed</th><th class="r">Highest allowed</th></tr></thead><tbody>${floorRows}</tbody></table></div></div></article>
         <article class="card pl-full" id="step-53"><header><span class="n">53</span><h3>Review</h3><span></span><p class="sum">What will run: the plan as Meridian's BudgetOptimizer.optimize() arguments, checked first.</p></header>
           <div class="body" id="pl-review"><p class="muted small">Checking…</p></div></article>
         <article class="card pl-full" id="step-54"><header><span class="n">54</span><h3>Optimize</h3><span></span><p class="sum">Current against optimized spend, with 90% ranges. About a minute on the saved model.</p></header>
@@ -2251,11 +2287,25 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     $("main").querySelectorAll("[data-plbudgetpct]").forEach(b => b.onclick = () => set({ budget: Math.round(total * (1 + Number(b.dataset.plbudgetpct) / 100)) }, true));
     const bud = $("pl-budget"); if (bud) bud.onchange = () => set({ budget: Number(bud.value) || null }, true);
     const tgt = $("pl-target"); if (tgt) tgt.onchange = () => set({ target_value: Number(tgt.value) });
-    $("main").querySelectorAll("[data-pllim]").forEach(x => x.onchange = () => { plPlan.limits[x.dataset.pllim][x.dataset.way] = Number(x.value); renderPlan(false); });
+    // Typing updates that channel's cells at once, without redrawing (the cursor stays in the box).
+    const refresh = c => { const q = id => document.getElementById(id);
+      if (q(`pl-range-${c}`)) q(`pl-range-${c}`).innerHTML = rangeCell(c);
+      if (q(`pl-low-${c}`)) q(`pl-low-${c}`).innerHTML = lowCell(c);
+      if (q(`pl-high-${c}`)) q(`pl-high-${c}`).innerHTML = highCell(c);
+      const fl = document.querySelector(`[data-plfloor="${CSS.escape(c)}"]`); if (fl) fl.style.color = bnd(c).notNeeded ? "var(--muted)" : "";
+      $("pl-seen").innerHTML = D.channels.some(beyond) ? `<span style="color:var(--warn)">Outside what the model has seen:</span> the highest allowed is above ${D.settings.limits.seen_peak_ratio || 2}x the channel's highest spend in any past period this long.` : ""; };
+    $("main").querySelectorAll("[data-pllim]").forEach(x => x.oninput = () => { const v = Number(x.value);
+      if (x.value === "" || !(v >= 0)) return;
+      plPlan.limits[x.dataset.pllim][x.dataset.way] = v; refresh(x.dataset.pllim); plReview(); });
     $("main").querySelectorAll("[data-pllock]").forEach(x => x.onchange = () => { const c = x.dataset.pllock;
       plPlan.locks = x.checked ? [...new Set([...plPlan.locks, c])] : plPlan.locks.filter(v => v !== c); renderPlan(false); });
-    $("main").querySelectorAll("[data-plfloor]").forEach(x => x.onchange = () => { const c = x.dataset.plfloor;
-      if (x.value === "") delete plPlan.floors[c]; else plPlan.floors[c] = Number(x.value); plReview(); });
+    $("main").querySelectorAll("[data-plfloor]").forEach(x => x.oninput = () => { const c = x.dataset.plfloor, err = $(`pl-floor-err-${c}`);
+      if (x.value === "") { delete plPlan.floors[c]; err.textContent = ""; x.removeAttribute("aria-invalid"); }
+      else if (Number(x.value) > planned(c) * (1 + 1e-9)) {        // refused: a floor only limits cuts
+        delete plPlan.floors[c]; x.setAttribute("aria-invalid", "true");
+        err.textContent = "A floor can only limit cuts. To raise a channel, change its planned spend or its 'may go up' limit."; }
+      else if (Number(x.value) >= 0) { plPlan.floors[c] = Number(x.value); err.textContent = ""; x.removeAttribute("aria-invalid"); }
+      refresh(c); plReview(); });
     plReview();
     plShowResult();
   }
@@ -2280,7 +2330,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         host.innerHTML = `<dl class="kv"><div><dt>Period</dt><dd>${esc(a.start_date)} to ${esc(a.end_date)}</dd></div>
             <div><dt>Budget</dt><dd>${a.fixed_budget ? fmoney(a.budget) : `flexible, until ${a.target_roi != null ? `ROI ${a.target_roi}` : `marginal ROI ${a.target_mroi}`}`}</dd></div>
             <div><dt>Maximise</dt><dd>${a.use_kpi ? esc(kpi) : "revenue"}</dd></div>
-            <div><dt>Channels</dt><dd>${plCheck.channels.map(r => `${esc(r.channel)} ${r.note === "locked" ? "locked" : `${fmoney(r.min)}–${fmoney(r.max)}`}${r.note === "floor" ? " (floor)" : ""}`).join("; ")}</dd></div></dl>
+            <div><dt>Channels</dt><dd>${plCheck.channels.map(r => `${esc(r.display || r.channel)} ${r.note === "locked" ? "locked" : `${fmoney(r.min)}–${fmoney(r.max)}`}${r.note === "floor" ? " (floor)" : ""}`).join("; ")}</dd></div></dl>
+          <p class="muted small">Meridian rounds each channel's optimized spend to the nearest ${fmoney(plCheck.grid_step)} (its budget tolerance, gtol), so a locked or capped channel can differ from its planned spend by up to half that.</p>
+          ${(plCheck.warnings || []).length ? `<ul class="warnlist">${plCheck.warnings.map(w => `<li><span class="sn">!</span><span>${esc(w)}</span></li>`).join("")}</ul>` : ""}
           <div class="pl-call">${esc(call)}</div>
           <div><button class="btn primary" id="pl-go">Optimize</button></div>`;
         $("pl-go").onclick = plOptimize;
@@ -2324,7 +2376,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <div class="fstat"><b>${X.after.attrs.total_roi.toFixed(hasRev ? 2 : 4)}</b><span>ROI (${esc(outW)} per ${esc(symOr("unit of spend"))})</span><br><small class="muted">current ${X.before.attrs.total_roi.toFixed(hasRev ? 2 : 4)}</small></div></div>
       <div class="scroll"><table style="min-width:720px"><thead><tr><th>Channel</th><th class="r">Current</th><th class="r">Optimized</th><th class="r">Change</th><th style="width:22%"></th><th class="r">${esc(outW)} (90%)</th><th class="r">ROI</th><th class="r">Next-${esc(symOr("unit"))} ROI</th>${truth ? `<th class="r">True next-${esc(symOr("unit"))} ROI</th>` : ""}<th></th></tr></thead><tbody>
         ${X.channels.map(c => { const a = X.before.channels[c], b = X.after.channels[c], ch = a.spend ? b.spend / a.spend - 1 : 0, lim = atLimit(c);
-          return `<tr><td><b>${esc(c)}</b></td><td class="num">${fmoney(a.spend)}</td><td class="num">${fmoney(b.spend)}</td>
+          return `<tr><td><b>${esc((D.display || {})[c] || c)}</b></td><td class="num">${fmoney(a.spend)}</td><td class="num">${fmoney(b.spend)}</td>
             <td class="num ${Math.abs(ch) < 0.005 ? "" : ch > 0 ? "delta up" : "delta down"}">${Math.abs(ch) < 0.005 ? "–" : (ch > 0 ? "+" : "−") + Math.round(Math.abs(ch) * 100) + "%"}</td><td>${bar(a.spend, b.spend)}</td>
             <td class="num">${(outW === "revenue" ? fmoney : fnum)(b.outcome.mean)} <span class="muted small">(${(outW === "revenue" ? fmoney : fnum)(b.outcome.lo)}–${(outW === "revenue" ? fmoney : fnum)(b.outcome.hi)})</span></td>
             <td class="num">${b.roi.mean.toFixed(hasRev ? 2 : 4)}</td><td class="num">${b.mroi.mean.toFixed(hasRev ? 2 : 4)}</td>

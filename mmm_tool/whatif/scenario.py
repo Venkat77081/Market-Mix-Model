@@ -105,6 +105,21 @@ def _draws(mmm, mult: dict[str, float], sel, use_kpi: bool) -> np.ndarray:
     return x.reshape(-1, x.shape[-1])
 
 
+def favour(share: float) -> str:
+    """Words for the share of posterior draws in which the scenario beats the current plan."""
+    for cut, words in ((0.9, "very likely better"), (0.7, "probably better"), (0.3, "can't tell"),
+                       (0.1, "probably worse")):
+        if share >= cut:
+            return words
+    return "very likely worse"
+
+
+def change_draws(mmm, mult: dict[str, float], period: str = "all", use_kpi: bool = True) -> np.ndarray:
+    """The scenario minus the current plan, per posterior draw (the same draw for both), summed over channels."""
+    sel = _selected(mmm, period)
+    return _draws(mmm, mult, sel, use_kpi).sum(axis=1) - _draws(mmm, {}, sel, use_kpi).sum(axis=1)
+
+
 def _summary(draws: np.ndarray) -> dict[str, float]:
     lo, hi = np.quantile(draws, [(1 - CONFIDENCE) / 2, (1 + CONFIDENCE) / 2])
     return {"mean": float(draws.mean()), "lo": float(lo), "hi": float(hi)}
@@ -121,7 +136,9 @@ def exact(mmm, mult: dict[str, float], period: str = "all") -> dict[str, Any]:
         raise ValueError(f"Not channels of this model: {unknown}.")
     base_spend = spend_in(mmm, sel)
     money = m.uses_revenue(mmm)
-    out: dict[str, Any] = {"period": period, "multipliers": {c: float(mult.get(c, 1.0)) for c in paid}}
+    weeks = sel or [str(t)[:10] for t in mmm.input_data.time.values]
+    out: dict[str, Any] = {"period": period, "first_week": weeks[0], "last_week": weeks[-1], "weeks": len(weeks),
+                           "multipliers": {c: float(mult.get(c, 1.0)) for c in paid}}
     kpi = {"scenario": _draws(mmm, mult, sel, True), "current": _draws(mmm, {}, sel, True)}
     rev = {"scenario": _draws(mmm, mult, sel, False), "current": _draws(mmm, {}, sel, False)} if money else None
     for label, scen in (("scenario", mult), ("current", {})):
@@ -130,10 +147,17 @@ def exact(mmm, mult: dict[str, float], period: str = "all") -> dict[str, Any]:
                       "spend": float(sum(base_spend[c] * float(scen.get(c, 1.0)) for c in paid))}
         if rev is not None:
             out[label]["revenue"] = _summary(rev[label].sum(axis=1))
-    # The change, draw by draw (the same draws for both), so its range is the range of the difference.
-    out["delta_kpi"] = _summary(kpi["scenario"].sum(axis=1) - kpi["current"].sum(axis=1))
+    # The change, draw by draw (the same draws for both), so its range is the range of the difference,
+    # and the share of draws in which the scenario comes out ahead.
+    dk = kpi["scenario"].sum(axis=1) - kpi["current"].sum(axis=1)
+    out["delta_kpi"] = {**_summary(dk), "share_better": float((dk > 0).mean()), "draws": int(dk.size)}
+    out["delta_kpi"]["favour"] = favour(out["delta_kpi"]["share_better"])
     if rev is not None:
-        out["delta_revenue"] = _summary(rev["scenario"].sum(axis=1) - rev["current"].sum(axis=1))
+        dr = rev["scenario"].sum(axis=1) - rev["current"].sum(axis=1)
+        out["delta_revenue"] = {**_summary(dr), "share_better": float((dr > 0).mean()), "draws": int(dr.size),
+                                "favour": favour(float((dr > 0).mean()))}
+    ds = out["scenario"]["spend"] - out["current"]["spend"]
+    out["delta_spend"] = {"amount": ds, "pct": ds / out["current"]["spend"] if out["current"]["spend"] else None}
     return out
 
 
