@@ -2710,6 +2710,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     };
   }
 
+  // Money: the plan's KPI at the setup's value per KPI unit (each region's own), when the KPI isn't money already.
+  const revTile = R => !R ? "" : `<div class="tile"><span>${R.total ? "Total revenue expected" : "Revenue change"}</span><b>${R.total ? fmoney(R.total.mean) : fmoneyChange(R.change.mean)}</b>
+      <span>${R.total ? `90%: ${fmoney(R.total.lo)} – ${fmoney(R.total.hi)} · change ${fmoneyChange(R.change.mean)}` : `90%: ${fmoneyChange(R.change.lo)} to ${fmoneyChange(R.change.hi)}`}${R.roi != null ? ` · media ROI ${R.roi.toFixed(2)}` : ""}</span></div>`;
+
   // Saved plans (shared by G and H in Future mode).
   function plansHtml(D) {
     const plans = D.plans || [], kpi = D.kpi || "KPI";
@@ -2717,17 +2721,19 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (!plans.length && !pending.length) return "";
     const src = p => p.source.kind === "reference" ? "auto (reference)" : p.source.kind === "optimizer" ? `Optimizer · ${esc(p.source.settings && p.source.settings.budget_type || "")}` : p.source.kind === "upload" ? "uploaded" : "What-If";
     const sg = v => v == null ? "–" : `${v >= 0 ? "+" : "−"}${fnum(Math.abs(v))}`;
+    const money = plans.some(p => p.revenue);
     const rows = plans.map(p => `<tr class="${p.status === "archived" ? "muted" : ""}"><td><b>${esc(p.id)}</b> ${esc(p.name)} ${p.status === "tracked" ? '<span class="pill pass">tracked</span>' : p.status === "archived" ? '<span class="pill wait">archived</span>' : ""}
         ${p.stale.length ? `<span class="chip warn" style="font-size:11.5px">made with an older ${p.stale.map(x => esc(x === "setup" ? "period setup" : x)).join(" / ")} — recompute</span>` : ""}</td>
       <td class="small">${src(p)}<div class="muted">${esc(p.by)} · ${esc(String(p.at).slice(0, 10))}</div></td><td class="num">${fmoney(p.spend)}</td>
       <td class="num">${p.total ? `${fnum(p.total.mean)} <span class="muted small">(${fnum(p.total.lo)}–${fnum(p.total.hi)})</span>` : `<span class="muted small">media ${fnum(p.media.mean)}</span>`}</td>
+      ${money ? `<td class="num">${p.revenue ? (p.revenue.total ? fmoney(p.revenue.total.mean) : `<span class="muted small">media ${fmoney(p.revenue.media.mean)}</span>`) : "–"}</td>` : ""}
       <td class="num">${p.is_reference ? "–" : sg(p.vs_a.outcome)}</td><td class="num">${p.is_reference ? "–" : p.vs_a.spend == null ? "–" : fmoneyChange(p.vs_a.spend)}</td>
       <td class="small" style="min-width:200px">${[["show", "Show on sliders"], ["rename", "Rename"], ["duplicate", "Duplicate"],
         [p.status === "archived" ? "restore" : "archive", p.status === "archived" ? "Restore" : "Archive"], ...(p.status === "draft" ? [["track", "<b>Choose for tracking</b>"]] : []),
         ...(p.stale.length ? [["recompute", "Recompute"]] : [])].filter(([a]) => !(a === "archive" && p.status === "tracked")).map(([a, t]) => `<a href="#" data-planact="${a}" data-plan="${esc(p.id)}">${t}</a>`).join(" · ")}</td></tr>`).join("");
     return `<article class="card" id="fut-plans"><header><span class="n">★</span><h3>Saved plans</h3><span></span><p class="sum">For ${esc(fp(D).plan[0])} → ${esc(fp(D).plan[fp(D).plan.length - 1])}. Saved plans are read-only: Show on sliders, change, save as a new plan.</p></header>
       <div class="body">${pending.map(p => `<p class="small">${p.error ? `<span style="color:var(--block)">${esc(p.name)}: ${esc(p.error)}</span>` : `<span class="pill warn">Working</span> ${esc(p.name)} is being worked out on the model…`}</p>`).join("")}
-        <div class="scroll"><table style="min-width:900px"><thead><tr><th>Plan</th><th>Made in</th><th class="r">Spend</th><th class="r">Total ${esc(kpi)} expected</th><th class="r">vs A, outcome</th><th class="r">vs A, spend</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="scroll"><table style="min-width:900px"><thead><tr><th>Plan</th><th>Made in</th><th class="r">Spend</th><th class="r">Total ${esc(kpi)} expected</th>${money ? '<th class="r">Revenue expected</th>' : ""}<th class="r">vs A, outcome</th><th class="r">vs A, spend</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
         <p class="small muted" style="margin:10px 0 0">Choose for tracking buys nothing. It saves this plan's period-by-period predictions as the target, so the Tracking screen can compare real periods against them.</p></div></article>`;
   }
   function logHtml(entries) {
@@ -2784,6 +2790,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           <button class="ibtn tileinfo" aria-label="How the total is made" title="total[t] = forecast[t] + (media_plan[t] − media_reference[t]). The forecast already includes last year's media pattern, so only the change from it is added. Reference = plan A, the template at 100%.">i</button></div>` : "";
       body += `<div class="tiles">${totalTile}
           <div class="tile"><span>Change from this plan</span><b>${(tot ? tot.change.mean : quick || 0) >= 0 ? "+" : "−"}${fnum(Math.abs(tot ? tot.change.mean : quick || 0))}</b><span>${tot ? `90%: ${fnum(tot.change.lo)} to ${fnum(tot.change.hi)} · ${Math.round(tot.share_better * 100)}% of draws favour it` : "quick result · Work out exactly for its range"}</span></div>
+          ${tot ? revTile(tot.revenue) : ""}
           <div class="tile"><span>Spend</span><b>${fmoney(spend)}</b><span>plan A ${fmoney(tsum)} · ${fmoneyChange(spend - tsum)} (${tsum ? ((spend / tsum - 1) * 100).toFixed(1) : 0}%)</span></div></div>
         <article class="card" id="step-43"><header><span class="n">43</span><h3>Enter a scenario</h3><span></span><p class="sum">Each channel's spend over ${esc(P.plan[0])} → ${esc(P.plan[P.plan.length - 1])}, as a share of the template. Every week scales by the same %.</p></header>
           <div class="body">${curvesReady ? rows : D.curves && D.curves.error ? `<p style="color:var(--block)">${esc(D.curves.error)}</p>` : '<p><span class="pill warn">Working</span> Working out each channel\'s response over the plan weeks (usually under a minute). The sliders open when it\'s done.</p>'}
@@ -2817,17 +2824,18 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 
   // Plan, Optimize in Future mode: the optimizer's result, saved as a plan or opened on the sliders.
   function futPlanResultHtml(X, key) {
-    const D = plData, kpi = D.kpi || "KPI", E = X.evaluation, T = E.totals, fc = D.future && D.future.forecast;
+    const D = plData, kpi = D.kpi || "KPI", E = X.evaluation, T = E.totals, fc = D.future && D.future.forecast, up = D.future && D.future.upload;
     const atLimit = c => { const r = X.plan.channels.find(x => x.channel === c), s = X.after.channels[c].spend;
       return r && r.note !== "locked" && (Math.abs(s - r.max) <= Math.max(1, r.max * 0.002) ? "at upper limit" : Math.abs(s - r.min) <= Math.max(1, r.min * 0.002) && r.min < r.planned ? "at lower limit" : r.note === "locked" ? "locked" : ""); };
     return `<div class="tiles" style="margin-bottom:12px">${T.total ? `<div class="tile"><span>Total ${esc(kpi)} expected</span><b>${fnum(T.total.mean)}</b><span>90%: ${fnum(T.total.lo)} – ${fnum(T.total.hi)} · forecast ${fnum(fc.total)} + change</span></div>` : ""}
         <div class="tile"><span>Change vs plan A</span><b>${T.change.mean >= 0 ? "+" : "−"}${fnum(Math.abs(T.change.mean))}</b><span>90%: ${fnum(T.change.lo)} to ${fnum(T.change.hi)}</span></div>
-        <div class="tile"><span>Spend</span><b>${fmoney(T.spend)}</b><span>template ${fmoney(T.template_spend)}</span></div></div>
-      <div class="scroll"><table style="min-width:760px"><thead><tr><th>Channel</th><th class="r">Template</th><th class="r">Optimized</th><th class="r">Change</th><th class="r">${esc(kpi)} from it</th><th class="r">ROI</th><th class="r">Next ${esc(symOr("unit"))} returns</th><th></th></tr></thead><tbody>
+        ${revTile(T.revenue)}
+        <div class="tile"><span>Spend</span><b>${fmoney(T.spend)}</b><span>${up ? "uploaded plan" : "template"} ${fmoney(X.channels.reduce((s, c) => s + X.before.channels[c].spend, 0))}</span></div></div>
+      <div class="scroll"><table style="min-width:760px"><thead><tr><th>Channel</th><th class="r">${up ? "Uploaded plan" : "Template"}</th><th class="r">Optimized</th><th class="r">Change</th><th class="r">${esc(kpi)} from it</th><th class="r">ROI</th><th class="r">Next ${esc(symOr("unit"))} returns</th><th></th></tr></thead><tbody>
         ${X.channels.map(c => { const a = X.before.channels[c], b = X.after.channels[c], ch = a.spend ? b.spend / a.spend - 1 : 0;
           return `<tr><td><b>${esc(futName(c))}</b></td><td class="num">${fmoney(a.spend)}</td><td class="num">${fmoney(b.spend)}</td><td class="num ${Math.abs(ch) < 0.005 ? "" : ch > 0 ? "delta up" : "delta down"}">${Math.abs(ch) < 0.005 ? "–" : (ch > 0 ? "+" : "−") + Math.round(Math.abs(ch) * 100) + "%"}</td>
             <td class="num">${fnum((E.by_channel[c] || {}).media)}</td><td class="num">${b.roi.mean.toFixed(2)}</td><td class="num">${b.mroi.mean.toFixed(2)}</td><td class="small muted">${atLimit(c)}</td></tr>`; }).join("")}
-        ${T.total ? `<tr style="font-weight:600"><td>Total with forecast</td><td class="num">${fmoney(T.template_spend)}</td><td class="num">${fmoney(T.spend)}</td><td></td><td class="num">${fnum(T.total.mean)} <span class="muted small">(${fnum(T.total.lo)}–${fnum(T.total.hi)})</span></td><td></td><td></td><td class="small muted">forecast ${fnum(fc.total)} + change</td></tr>` : ""}</tbody></table></div>
+        ${T.total ? `<tr style="font-weight:600"><td>Total with forecast</td><td class="num">${fmoney(X.channels.reduce((s, c) => s + X.before.channels[c].spend, 0))}</td><td class="num">${fmoney(T.spend)}</td><td></td><td class="num">${fnum(T.total.mean)} <span class="muted small">(${fnum(T.total.lo)}–${fnum(T.total.hi)})</span></td><td></td><td></td><td class="small muted">forecast ${fnum(fc.total)} + change</td></tr>` : ""}</tbody></table></div>
       <p class="muted small">Next ${esc(symOr("unit"))} returns: the return on one more ${esc(symOr("unit"))} at the optimized spend (marginal ROI). At a limit, the channel would move further if the limit allowed.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="fut-opt-save" data-key="${esc(key)}">Save as plan</button><button class="btn" id="fut-opt-open">Open in what-if to adjust</button></div>`;
   }

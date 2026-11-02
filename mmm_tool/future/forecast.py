@@ -112,6 +112,11 @@ def from_csv(text: str, plan: list[str]) -> dict[str, Any]:
         raise ForecastError("Some plan weeks have no number in the forecast file.")
     if (lo is None) != (hi is None):
         lo = hi = None                         # one bound alone isn't a range
+    if lo is not None:
+        bad = [w for w, m, a, b in zip(plan, mean, lo, hi) if not a <= m <= b]
+        if bad:
+            raise ForecastError(f"The lower bound must be at or below the forecast and the upper at or above it; "
+                                f"not so in {len(bad)} week(s), e.g. {bad[0]}.")
     return _out("csv", plan, mean, lo, hi, f"uploaded forecast ('{fc}'{', with bounds' if lo else ''})")
 
 

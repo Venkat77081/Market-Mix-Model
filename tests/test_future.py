@@ -86,6 +86,22 @@ def test_csv_total_and_none():
     assert f["hash"] != forecast.from_csv(text.replace(",100,", ",99,"), plan)["hash"]
 
 
+
+def test_lopsided_forecast_bounds_give_a_lopsided_range():
+    from mmm_tool.future.engine import forecast_draws
+
+    f = {"mean": [100.0, 200.0], "lower": [90.0, 180.0], "upper": [130.0, 260.0]}      # -10% / +30%
+    d = forecast_draws(20000, f)
+    lo, hi = np.quantile(d, [0.05, 0.95], axis=0)
+    assert lo == pytest.approx([90.0, 180.0], rel=0.01) and hi == pytest.approx([130.0, 260.0], rel=0.01)
+    even = forecast_draws(500, {"mean": [100.0], "lower": [90.0], "upper": [110.0]})
+    assert even.mean() == pytest.approx(100.0, rel=1e-12)                               # even bounds: centred exactly
+    assert np.allclose(forecast_draws(3, {"mean": [5.0, 6.0], "lower": None, "upper": None}), [[5.0, 6.0]] * 3)
+    plan = ["2026-01-05", "2026-01-12"]
+    bad = "date,forecast,lower,upper\n2026-01-05,100,110,120\n2026-01-12,100,90,110\n"
+    with pytest.raises(forecast.ForecastError, match="lower bound must be at or below"):
+        forecast.from_csv(bad, plan)
+
 # Plans store ------------------------------------------------------------------------------------------------
 
 def _eval(weeks, spend_per_week, media, total=None):
@@ -463,6 +479,21 @@ def test_plan_a_is_the_forecast_and_more_spend_adds(fitted, rf):
     c0 = channels(mmm)[0]
     b = engine.evaluate(mmm, R, f, mult={c0: 1.2})
     assert b["totals"]["change"]["lo"] > 0 and b["totals"]["share_better"] == 1.0
+    # Money: the same as Meridian's own revenue outcome, and the setup's value per KPI unit applies
+    from mmm_tool.fit import model as m
+
+    nd, _ = build_future_data(mmm, R, mult={c0: 1.2})
+    mer = np.asarray(m.analyzer(mmm).incremental_outcome(new_data=nd, selected_times=R["plan"], aggregate_times=False,
+                                                        use_kpi=False, include_non_paid_channels=False))
+    mer_total = float(mer.reshape(-1, len(R["plan"]), mer.shape[-1]).sum(axis=(1, 2)).mean())
+    rev = b["revenue"]
+    print(f"\nrevenue from media: tool {rev['totals']['media']['mean']:,.0f}, Meridian {mer_total:,.0f}")
+    assert rev["totals"]["media"]["mean"] == pytest.approx(mer_total, rel=1e-6)
+    assert rev["totals"]["total"]["mean"] == pytest.approx(f["total"] * 40 + rev["totals"]["change"]["mean"], rel=1e-6)
+    geo = str(mmm.input_data.geo.values[0])
+    b50 = engine.evaluate(mmm, R, f, mult={c0: 1.2}, rpk={geo: 50.0})
+    assert b50["revenue"]["totals"]["media"]["mean"] == pytest.approx(rev["totals"]["media"]["mean"] * 50 / 40, rel=1e-6)
+    assert b50["totals"]["media"]["mean"] == pytest.approx(b["totals"]["media"]["mean"], rel=1e-9)   # the KPI doesn't move
     if rf:                                                             # reach scales, frequency stays
         rfc = [str(c) for c in mmm.input_data.reach.rf_channel.values][0]
         base, _ = build_future_data(mmm, R)
@@ -492,6 +523,16 @@ def test_future_optimizer_keeps_budget_and_locks_and_opens_in_what_if(fitted):
     # "Open in what-if": the optimized split on the sliders gives the optimizer's own media outcome
     again = engine.evaluate(mmm, R, None, mult=res["multipliers"])
     assert again["totals"]["media"]["mean"] == pytest.approx(res["optimizer_outcome"], rel=0.01)
+    # From an uploaded plan: the optimizer starts there, and the optimized plan keeps its weekly shape
+    up = {c: [hist[c] / len(R["plan"]) * (0.5 + k % 2) for k in range(len(R["plan"]))] for c in chans}   # alternating weeks
+    budget_up = sum(sum(v) for v in up.values())
+    checked_up = check({**plan, "locks": []}, {c: sum(v) for c, v in up.items()}, True, {"future": (R["plan"][0], R["plan"][-1])})
+    ru = engine.optimize(mmm, R, None, None, None, checked_up, spend=up)
+    assert sum(ru["before"]["channels"][c]["spend"] for c in chans) == pytest.approx(budget_up, rel=1e-3)
+    assert ru["evaluation"]["totals"]["spend"] == pytest.approx(checked_up["budget"], rel=1e-3)
+    for c in chans:
+        sp = ru["evaluation"]["spend"][c]
+        assert sp[1] / sp[0] == pytest.approx(1.5 / 0.5, rel=1e-3)                    # the upload's week-to-week shape
 
 
 @fit_tests

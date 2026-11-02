@@ -451,8 +451,13 @@ media effect), on every posterior draw. The media effects come from Meridian's
 Spend scales by each channel's multiplier (or comes from the upload, split across regions by the
 template's shares); media units are spend ÷ (1 + cost change); a reach-and-frequency channel scales
 reach. The forecast's range is added with one shared draw per posterior draw, centred, so plan A's
-total equals the forecast. **Optimize** in future mode is `BudgetOptimizer.optimize(new_data=…)`
-over the plan weeks.
+total equals the forecast; lopsided bounds (an uploaded forecast's low and high) give a lopsided
+range (a split normal), and a bound on the wrong side of the forecast is refused. **Revenue**
+(when the KPI isn't money already): each region's KPI at its value per KPI unit from the setup,
+as Meridian's own revenue outcome, plus the forecast at the regions' KPI-weighted value; shown with
+its 90% range and media ROI next to the KPI. **Optimize** in future mode is
+`BudgetOptimizer.optimize(new_data=…)` over the plan weeks, starting from the template at 100% or,
+with an uploaded spend plan, from that plan (the optimized plan keeps each channel's weekly shape).
 
 **Plans** are saved per project (A, B, …) with who made them; rename, duplicate, archive,
 recompute (a plan is marked stale when the model or forecast changes) and **Choose for tracking**,

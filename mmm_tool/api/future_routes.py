@@ -158,7 +158,7 @@ def _plans_view(c: dict, setup: dict | None) -> list[dict]:
     for p in store.plans(c["pdir"], setup["id"]):
         t = p["totals"]
         out.append({k: p[k] for k in ("id", "name", "source", "by", "at", "status", "run_id", "model_key", "forecast_source", "multipliers")}
-                   | {"spend": t["spend"], "total": t.get("total"), "media": t["media"], "change": t["change"],
+                   | {"spend": t["spend"], "total": t.get("total"), "media": t["media"], "change": t["change"], "revenue": t.get("revenue"),
                       "vs_a": {"outcome": (t["media"]["mean"] - a_plan["totals"]["media"]["mean"]) if a_plan else None,
                                "spend": (t["spend"] - a_plan["totals"]["spend"]) if a_plan else None},
                       "is_reference": bool(a_plan and p["id"] == a_plan["id"]),
@@ -384,19 +384,20 @@ def future_plan_inputs(run_id: str, inp: dict) -> dict:
     setup = _setup_here(c)
     plan = setup["plan"]
     P = len(plan)
-    hist = {ch: float(sum(setup["template_spend"][ch])) for ch in c["channels"]}
+    up = setup.get("upload") or {}                                # an uploaded plan is where the optimizer starts
+    hist = {ch: float(sum(up.get(ch) or setup["template_spend"][ch])) for ch in c["channels"]}
     peaks = {}
     for ch in c["channels"]:
         s = pd.Series([c["spend"][ch][w] for w in c["weeks"]])
         peaks[ch] = float(s.rolling(P).sum().max()) if len(s) >= P else float(s.sum())
     return {**inp, "periods": {"future": (plan[0], plan[-1])}, "hist": {"future": hist}, "peaks": {"future": peaks},
-            "future": {"setup_id": setup["id"], "plan": plan, "forecast": setup.get("forecast"), "tracked": (store.tracked(c["pdir"], setup["id"]) or {}).get("id")}}
+            "future": {"setup_id": setup["id"], "plan": plan, "upload": bool(setup.get("upload")), "forecast": setup.get("forecast"), "tracked": (store.tracked(c["pdir"], setup["id"]) or {}).get("id")}}
 
 
 def future_optimize(run_id: str, checked: dict) -> dict:
     c = _ctx(run_id)
     setup = _setup_here(c)
-    key, done = _job(c["d"], _payload(setup, "optimize", checked=checked))
+    key, done = _job(c["d"], _payload(setup, "optimize", checked=checked, **({"spend": setup["upload"]} if setup.get("upload") else {})))
     return A()._clean({"key": key, "result": done, "future": True} if done else {"key": key, "building": True, "future": True})
 
 

@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
             res = engine.evaluate(mmm, R, req.get("forecast"), mult=req.get("mult"), spend=req.get("spend"),
                                   cost=req.get("cost"), rpk=req.get("rpk"), units=req.get("units"))
         elif kind == "optimize":
-            res = engine.optimize(mmm, R, req.get("forecast"), req.get("cost"), req.get("rpk"), req["checked"])
+            res = engine.optimize(mmm, R, req.get("forecast"), req.get("cost"), req.get("rpk"), req["checked"], spend=req.get("spend"))
         else:
             raise ValueError(f"Unknown job '{kind}'.")
         write(out, {**res, "kind": kind, "model_key": mk, "key": a.key})
