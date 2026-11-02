@@ -138,6 +138,51 @@ def test_plans_and_choosing_one_for_tracking(tmp_path):
     assert store.stale(c, {**s, "forecast": {"hash": "f2"}}, "m") == ["forecast"]
 
 
+
+def test_setting_up_the_same_dates_again_keeps_plans_and_flags_what_changed(tmp_path):
+    plan, _ = period.plan_weeks("2025-12-29", 4, WEEKS)
+    R = {"plan": plan, "template": plan, "lead_dates": [], "lead_src": []}
+    s1 = store.save_period(tmp_path, {"plan": plan, "template": plan, "resolved": R, "cost": {}, "forecast": {"hash": "f1"}, "run_id": "r"})
+    a = store.add(tmp_path, store.record(_eval(plan, {"tv": 10}, 50, 400), "Same as last year", {"kind": "reference"}, s1, "r", "m"))
+    store.choose(tmp_path, s1["id"], "A")
+    s2 = store.save_period(tmp_path, {"plan": plan, "template": plan, "resolved": R, "cost": {"tv": 0.2}, "forecast": {"hash": "f1"}, "run_id": "r"})
+    assert s2["id"] == s1["id"] and store.tracked(tmp_path, s2["id"])["id"] == "A"          # same period, still tracked
+    assert store.stale(a, s2, "m") == ["setup"]                                             # the cost change differs
+    assert store.snapshot(s2, a)["cost"] == {} and store.snapshot(s2, None)["cost"] == {"tv": 0.2}   # tracked on its own setup
+    assert store.reference(tmp_path, s2)["id"] == "A"                                       # the only plan A so far
+    a2 = store.add(tmp_path, store.record(_eval(plan, {"tv": 10}, 48, 398), "Same as last year", {"kind": "reference"}, s2, "r", "m"))
+    assert store.reference(tmp_path, s2)["id"] == a2["id"] == "B"
+
+
+def test_tracking_starts_clean_for_a_new_period_and_needs_a_week_left(tmp_path):
+    plan, _ = period.plan_weeks("2025-12-29", 4, WEEKS)
+    s = _setup(tmp_path, plan)
+    store.add(tmp_path, store.record(_eval(plan, {"tv": 10}, 50, 400), "A", {"kind": "reference"}, s, "r", "m"))
+    store.add(tmp_path, store.record(_eval(plan, {"tv": 11}, 51, 401), "B", {"kind": "what-if"}, s, "r", "m"))
+    t = store.tracking(tmp_path, s["id"])
+    t["actual_weeks"], t["renames"] = list(plan), {"tv_inr": "tv_spend"}
+    store.save_tracking(tmp_path, t)
+    with pytest.raises(store.PlanStoreError, match="no week left"):
+        store.choose(tmp_path, s["id"], "A")                                     # every week already has actuals
+    later, _ = period.plan_weeks("2026-03-30", 4, WEEKS)
+    s2 = _setup(tmp_path, later)
+    store.add(tmp_path, store.record(_eval(later, {"tv": 10}, 50, 400), "A", {"kind": "reference"}, s2, "r", "m"))
+    r = store.choose(tmp_path, s2["id"], "A")
+    t = store.tracking(tmp_path, s2["id"])
+    assert r["from_week"] == later[0] and set(t["targets"]) == set(later) and t["actual_weeks"] == []
+    assert t["earlier"][0]["period_id"] == s["id"] and t["earlier"][0]["actual_weeks"] == plan
+    assert t["renames"] == {"tv_inr": "tv_spend"}                                # kept with the project
+
+
+def test_actuals_uploaded_a_few_weeks_at_a_time_add_up():
+    plan = ["2026-01-05", "2026-01-12", "2026-01-19"]
+    first = {"weeks": plan[:2], "kpi": [10.0, 11.0], "spend": {"tv": [1.0, 2.0]}, "units": {"tv": [5.0, 6.0]}}
+    second = {"weeks": plan[1:], "kpi": [12.0, 13.0], "spend": {"tv": [3.0, 4.0]}, "units": {}}
+    m = tracking.merge(first, second, plan)
+    assert m["weeks"] == plan and m["kpi"] == [10.0, 12.0, 13.0] and m["spend"]["tv"] == [1.0, 3.0, 4.0]
+    assert m["units"]["tv"] == [5.0, None, None]                                # a later upload without units: the plan's
+    assert tracking.merge(None, second, plan) is second
+
 # Tracking ---------------------------------------------------------------------------------------------------
 
 def test_a_renamed_column_is_offered_by_similarity_and_remembered():
@@ -268,6 +313,10 @@ def test_build_future_data_shapes_scaling_and_cost():
         build_future_data(mmm, R, spend={"radio": [1.0] * 8})
     with pytest.raises(FutureDataError, match="is negative"):
         build_future_data(mmm, R, spend={"tv": [-1.0] + [1.0] * 7})
+    # Actual media units (Tracking): known weeks replace the plan's, unknown weeks (None) keep them
+    au, _ = build_future_data(mmm, R, cost={"tv": 0.25}, units={"tv": [None] * 7 + [500.0]})
+    a_m = np.asarray(au.media)
+    assert np.allclose(a_m[:, 4:11, 0], b_m[:, 4:11, 0] / 1.25) and a_m[:, 11, 0].sum() == pytest.approx(500.0)
     r2, _ = build_future_data(mmm, R, rpk={"south": 55.0})
     assert np.allclose(np.asarray(r2.revenue_per_kpi)[1, 4:], 55.0) and np.allclose(np.asarray(r2.revenue_per_kpi)[0, 4:], 40.0)
 
@@ -342,6 +391,9 @@ def test_tracking_upload_asks_about_a_renamed_column_once(client):
     assert r["processed"] and r["weeks"] == plan
     again = client.post(f"/api/runs/{rid}/tracking/upload", files={"file": ("new2.csv", path.read_bytes(), "text/csv")}).json()
     assert again.get("processed") and not again.get("needs_confirm")                      # remembered
+    path.write_text(new.tail(2).to_csv(index=False))                                          # only the latest weeks
+    part = client.post(f"/api/runs/{rid}/tracking/upload", files={"file": ("new3.csv", path.read_bytes(), "text/csv")}).json()
+    assert part["weeks"] == plan                                                              # the earlier weeks stay
     assert "columns matched" in [e["what"] for e in store.entries(pdir)]
 
 

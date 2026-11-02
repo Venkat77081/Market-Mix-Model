@@ -84,6 +84,24 @@ def on_plan(actual: dict, plan_weeks: list[str]) -> dict[str, Any]:
             "units": {c: pick(v) for c, v in actual["units"].items()}}
 
 
+def merge(earlier: dict | None, new: dict, plan_weeks: list[str]) -> dict[str, Any]:
+    """Add a new upload's plan weeks to the earlier uploads' (a week in both: the new upload's), so
+    actuals can come a few weeks at a time."""
+    if not earlier or not earlier.get("weeks"):
+        return new
+    rows: dict[str, dict] = {}
+    for src in (earlier, new):
+        for i, w in enumerate(src["weeks"]):
+            rows[w] = {"kpi": src["kpi"][i], "spend": {c: v[i] for c, v in src["spend"].items()},
+                       "units": {c: v[i] for c, v in (src.get("units") or {}).items()}}
+    weeks = [w for w in plan_weeks if w in rows]
+    chans = sorted({c for r in rows.values() for c in r["spend"]})
+    uchans = sorted({c for r in rows.values() for c in r["units"]})
+    return {"weeks": weeks, "kpi": [rows[w]["kpi"] for w in weeks],
+            "spend": {c: [rows[w]["spend"].get(c, 0.0) for w in weeks] for c in chans},
+            "units": {c: [rows[w]["units"].get(c) for w in weeks] for c in uchans}}
+
+
 def spend_for_model(on: dict, targets: dict, plan_weeks: list[str], channels: list[str]) -> dict[str, list[float]]:
     """Spend for every plan week: actual where there is one, the tracked plan's elsewhere."""
     pos = {w: i for i, w in enumerate(on["weeks"])}

@@ -132,8 +132,10 @@ def _settle_pending(c: dict, setup: dict) -> dict:
         if res is None and not _running(c["d"], p["key"]) and p.get("tries", 0) < 1:
             _job(c["d"], p["payload"])                 # restart a job lost to a server restart
             p["tries"] = p.get("tries", 0) + 1
-        if res is None:
-            left.append(p)
+        if res is None and not _running(c["d"], p["key"]) and p.get("tries", 0) >= 1 and p.get("restarted"):
+            left.append({**p, "error": "The calculation stopped before it finished; set the period up again to retry."})
+        elif res is None:
+            left.append({**p, "restarted": p.get("tries", 0) >= 1})
         elif res.get("error"):
             left.append({**p, "error": res["error"]})
         else:
@@ -152,13 +154,14 @@ def _plans_view(c: dict, setup: dict | None) -> list[dict]:
     if not setup:
         return []
     out = []
-    a_plan = next((p for p in store.plans(c["pdir"], setup["id"]) if p["source"].get("kind") == "reference"), None)
+    a_plan = store.reference(c["pdir"], setup)
     for p in store.plans(c["pdir"], setup["id"]):
         t = p["totals"]
         out.append({k: p[k] for k in ("id", "name", "source", "by", "at", "status", "run_id", "model_key", "forecast_source", "multipliers")}
                    | {"spend": t["spend"], "total": t.get("total"), "media": t["media"], "change": t["change"],
                       "vs_a": {"outcome": (t["media"]["mean"] - a_plan["totals"]["media"]["mean"]) if a_plan else None,
                                "spend": (t["spend"] - a_plan["totals"]["spend"]) if a_plan else None},
+                      "is_reference": bool(a_plan and p["id"] == a_plan["id"]),
                       "stale": store.stale(p, setup, c["model_key"] if p["run_id"] == c["d"].name else None)
                       + (["model"] if p["run_id"] != setup.get("run_id") else [])})
     return out
@@ -246,9 +249,14 @@ def future_setup(run_id: str, body: SetupIn) -> dict:
                                                 "template": f"{setup['template_kind']}: {R['template'][0]} → {R['template'][-1]}",
                                                 "cost_change": s["cost"], "forecast": f.get("note"), "run": c["d"].name, "model": c["model_key"]})
     ref_payload = _payload(setup, "evaluate", **({"spend": setup["upload"]} if setup.get("upload") else {}))
-    key_a, _ = _job(c["d"], ref_payload)
-    setup["pending_plans"] = [{"key": key_a, "payload": ref_payload,
-                               "name": "Uploaded plan" if setup.get("upload") else "Same as last year",
+    have = store.reference(c["pdir"], setup)
+    same_a = have and have["run_id"] == c["d"].name and not store.stale(have, setup, c["model_key"]) \
+        and not setup.get("upload") and have["source"].get("kind") == "reference"
+    key_a, _ = _job(c["d"], ref_payload) if not same_a else (None, None)
+    setup["pending_plans"] = [] if same_a else [{"key": key_a, "payload": ref_payload,
+                               "name": "Uploaded plan" if setup.get("upload") else {
+                                   "last_year": "Same as last year", "recent": "Same as the latest weeks"}.get(
+                                   setup["template_kind"], f"Same as from {R['template'][0]}"),
                                "source": {"kind": "upload" if setup.get("upload") else "reference"}}]
     setup["curves_key"], _ = _job(c["d"], _payload(setup, "curves", grid=_grid()))
     from ..future.store import _write, folder
@@ -418,7 +426,7 @@ def tracking_screen(run_id: str) -> dict:
     c, setup, tp = _tracking_ctx(run_id)
     if setup is None or tp is None:
         return A()._clean({"tracked": None, "period": setup, "project": c["slug"]})
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     result = None
     if t.get("pending_key"):
         res = _result(c["d"], t["pending_key"])
@@ -473,14 +481,15 @@ def _process_actuals(c: dict, setup: dict, tp: dict, path: Path, renames: dict[s
     if not on["weeks"]:
         raise HTTPException(400, f"None of the uploaded weeks ({act['weeks'][0]} → {act['weeks'][-1]}) are in the plan "
                                  f"({tp['plan_weeks'][0]} → {tp['plan_weeks'][-1]}).")
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
+    on = tracking.merge(t.get("actuals"), on, tp["plan_weeks"])     # earlier uploads keep their weeks
     spend = tracking.spend_for_model(on, t["targets"], tp["plan_weeks"], c["channels"])
     units = {ch: [on["units"][ch][on["weeks"].index(w)] if w in on["weeks"] else None for w in tp["plan_weeks"]]
              for ch in on["units"]}
-    units = {ch: v for ch, v in units.items() if all(x is not None for x in v)} or None
-    payload = _payload(setup, "evaluate", spend=spend, units=units)
+    units = {ch: v for ch, v in units.items() if any(x is not None for x in v)} or None
+    payload = _payload(store.snapshot(setup, tp), "evaluate", spend=spend, units=units)
     key, _ = _job(c["d"], payload)
-    t.update(actuals=on, actual_weeks=on["weeks"], all_weeks=act["weeks"], pending_key=key, pending_payload=payload,
+    t.update(actuals=on, actual_weeks=on["weeks"], all_weeks=sorted(set(t.get("all_weeks") or []) | set(act["weeks"])), pending_key=key, pending_payload=payload,
              actuals_file=path.name, pending_upload=None)
     store.save_tracking(c["pdir"], t)
     store.log(c["pdir"], "actuals uploaded", {"file": path.name, "plan_weeks": len(on["weeks"]),
@@ -506,7 +515,7 @@ async def tracking_upload(run_id: str, file: UploadFile = File(...)) -> dict:
     df, _ = load_file(path, Answers(A()._meta(c["d"])["answers"]))
     if df is None:
         raise HTTPException(400, "The file couldn't be read.")
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     m = tracking.match_columns(list(df.columns), _training_columns(c), t["renames"], float(t["settings"]["similarity"]))
     if m["offered"]:
         t["pending_upload"] = {"file": name, "match": m}
@@ -532,7 +541,7 @@ def tracking_confirm(run_id: str, body: ConfirmIn) -> dict:
     path = store.folder(c["pdir"]) / "actuals" / Path(body.file).name
     if not path.exists():
         raise HTTPException(404, "Upload the actuals again.")
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     train = set(_training_columns(c))
     for new, old in body.renames.items():
         if old is not None and old not in train:
@@ -556,7 +565,7 @@ def tracking_settings(run_id: str, body: TrackSettingsIn) -> dict:
     from ..future import store
 
     c, setup, tp = _tracking_ctx(run_id)
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     bad = [k for k in body.settings if k not in t["settings"]]
     if bad:
         raise HTTPException(400, f"Unknown tracking settings: {bad}.")
@@ -587,7 +596,7 @@ def tracking_event(run_id: str, body: EventIn) -> dict:
         raise HTTPException(400, "Give the event a date (YYYY-MM-DD).") from e
     if not body.note.strip() or end < start:
         raise HTTPException(400, "An event needs a note, and an end on or after its start.")
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     ev = {"date": str(start.date()), "end": str(end.date()), "note": body.note.strip()[:200], "by": store.who(), "at": store.now()}
     t["events"].append(ev)
     store.save_tracking(c["pdir"], t)
@@ -623,7 +632,7 @@ def tracking_refit(run_id: str) -> dict:
     from ..ingest.types import Answers
 
     c, setup, tp = _tracking_ctx(run_id)
-    t = store.tracking(c["pdir"])
+    t = store.tracking(c["pdir"], setup and setup["id"])
     if not t.get("actuals_file"):
         raise HTTPException(409, "Upload actuals first.")
     a = A()

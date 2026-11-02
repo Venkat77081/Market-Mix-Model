@@ -68,6 +68,8 @@ def builtin(plan: list[str], template: list[str], weeks: list[str], kpi: dict[st
     if err is not None:
         lower, upper = [m * (1 - err) for m in mean], [m * (1 + err) for m in mean]
         note += f"; range ±{err:.1%} ({why})"
+    if src is last_year and list(template) != last_year:
+        note += ". It includes last year's media, while plans change the template's: copy the same weeks last year to match them"
     return _out("builtin", plan, mean, lower, upper, note, growth=g, source_weeks=src,
                 bounds_from=why if err is not None else None, error=err)
 

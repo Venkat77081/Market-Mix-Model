@@ -81,7 +81,8 @@ def build_future_data(mmm, resolved: dict[str, Any], mult: dict[str, float] | No
                       rpk: dict[str, float] | None = None, units: dict[str, list[float]] | None = None):
     """DataTensors for resolved = period.resolve(...): lead-in + plan weeks. Give multipliers (per
     channel, 1.0 = the template) or spend (per channel, one amount per plan week); not both.
-    units: actual media units per plan week (Tracking), used instead of the scaled template's."""
+    units: actual media units per plan week (Tracking; None for a week without actuals), used
+    instead of the scaled template's."""
     from meridian.analysis import tensors
 
     d, ws = mmm.input_data, weeks(mmm)
@@ -152,15 +153,17 @@ def build_future_data(mmm, resolved: dict[str, Any], mult: dict[str, float] | No
                 continue
             if only.get(c, False):
                 u1 = s1                                           # its units are its spend
-            elif units and c in units:                            # actual units: split like the spend
-                uu = np.asarray(units[c], float)
-                if uu.shape != (P,):
-                    raise FutureDataError(f"'{c}': media units need {P} weekly amounts; got {uu.size}.")
-                tot = s1.sum(axis=0, keepdims=True)
-                geo = np.where(tot > 0, s1 / np.where(tot > 0, tot, 1), 1 / s1.shape[0])
-                u1 = geo * uu[None, :]
-            elif unit_cost:
-                u1 = u1 / (1 + cost[c])
+            else:
+                if unit_cost:
+                    u1 = u1 / (1 + cost[c])
+                if units and c in units:                          # actual units where known (None: the plan's)
+                    uu = np.asarray([np.nan if x is None else x for x in units[c]], float)
+                    if uu.shape != (P,):
+                        raise FutureDataError(f"'{c}': media units need {P} weekly amounts; got {uu.size}.")
+                    tot = s1.sum(axis=0, keepdims=True)
+                    geo = np.where(tot > 0, s1 / np.where(tot > 0, tot, 1), 1 / s1.shape[0])
+                    known = ~np.isnan(uu)
+                    u1 = np.where(known[None, :], geo * np.nan_to_num(uu)[None, :], u1)
             kw[units_key][:, plan_sl, i] = u1
 
     if d.media is not None:

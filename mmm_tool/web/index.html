@@ -2718,10 +2718,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const src = p => p.source.kind === "reference" ? "auto (reference)" : p.source.kind === "optimizer" ? `Optimizer · ${esc(p.source.settings && p.source.settings.budget_type || "")}` : p.source.kind === "upload" ? "uploaded" : "What-If";
     const sg = v => v == null ? "–" : `${v >= 0 ? "+" : "−"}${fnum(Math.abs(v))}`;
     const rows = plans.map(p => `<tr class="${p.status === "archived" ? "muted" : ""}"><td><b>${esc(p.id)}</b> ${esc(p.name)} ${p.status === "tracked" ? '<span class="pill pass">tracked</span>' : p.status === "archived" ? '<span class="pill wait">archived</span>' : ""}
-        ${p.stale.length ? `<span class="chip warn" style="font-size:11.5px">made with an older ${p.stale.map(esc).join(" / ")} — recompute</span>` : ""}</td>
+        ${p.stale.length ? `<span class="chip warn" style="font-size:11.5px">made with an older ${p.stale.map(x => esc(x === "setup" ? "period setup" : x)).join(" / ")} — recompute</span>` : ""}</td>
       <td class="small">${src(p)}<div class="muted">${esc(p.by)} · ${esc(String(p.at).slice(0, 10))}</div></td><td class="num">${fmoney(p.spend)}</td>
       <td class="num">${p.total ? `${fnum(p.total.mean)} <span class="muted small">(${fnum(p.total.lo)}–${fnum(p.total.hi)})</span>` : `<span class="muted small">media ${fnum(p.media.mean)}</span>`}</td>
-      <td class="num">${p.id === "A" ? "–" : sg(p.vs_a.outcome)}</td><td class="num">${p.id === "A" ? "–" : p.vs_a.spend == null ? "–" : fmoneyChange(p.vs_a.spend)}</td>
+      <td class="num">${p.is_reference ? "–" : sg(p.vs_a.outcome)}</td><td class="num">${p.is_reference ? "–" : p.vs_a.spend == null ? "–" : fmoneyChange(p.vs_a.spend)}</td>
       <td class="small" style="min-width:200px">${[["show", "Show on sliders"], ["rename", "Rename"], ["duplicate", "Duplicate"],
         [p.status === "archived" ? "restore" : "archive", p.status === "archived" ? "Restore" : "Archive"], ...(p.status === "draft" ? [["track", "<b>Choose for tracking</b>"]] : []),
         ...(p.stale.length ? [["recompute", "Recompute"]] : [])].filter(([a]) => !(a === "archive" && p.status === "tracked")).map(([a, t]) => `<a href="#" data-planact="${a}" data-plan="${esc(p.id)}">${t}</a>`).join(" · ")}</td></tr>`).join("");
