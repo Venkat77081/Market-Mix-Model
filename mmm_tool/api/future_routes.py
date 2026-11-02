@@ -78,13 +78,31 @@ def _resolve(c: dict, setup: dict) -> dict:
 
 # Background jobs ------------------------------------------------------------------------------------------
 
+def _job_key(d: Path, payload: dict) -> str:
+    """A job's key: its request and the model it runs on (a refit gives a new key)."""
+    from .. import whatif
+
+    return hashlib.sha256(json.dumps([payload, whatif.model_key(d)], sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def _job_state(d: Path, payload: dict) -> dict:
+    """{"result": ...} | {"error": ...} | {"building": True}: a job on the current model, started when
+    it has neither a result nor a process (an error is shown, not retried on every look)."""
+    key = _job_key(d, payload)
+    res = _result(d, key)
+    if res is not None:
+        return {"error": res["error"]} if res.get("error") else {"result": res}
+    if not _running(d, key):
+        _job(d, payload)
+    return {"building": True}
+
+
 def _job(d: Path, payload: dict) -> tuple[str, dict | None]:
     """Start (or find) a future job: (key, its result if already computed on this model)."""
     from .. import whatif
     from ..future.__main__ import folder
 
-    mk = whatif.model_key(d)
-    key = hashlib.sha256(json.dumps([payload, mk], sort_keys=True, default=str).encode()).hexdigest()[:12]
+    key = _job_key(d, payload)
     fd = folder(d)
     done = _result(d, key)
     if done is not None and not done.get("error"):           # an error is never cached: asking again retries
@@ -128,18 +146,13 @@ def _settle_pending(c: dict, setup: dict) -> dict:
 
     left = []
     for p in setup.get("pending_plans") or []:
-        res = _result(c["d"], p["key"])
-        if res is None and not _running(c["d"], p["key"]) and p.get("tries", 0) < 1:
-            _job(c["d"], p["payload"])                 # restart a job lost to a server restart
-            p["tries"] = p.get("tries", 0) + 1
-        if res is None and not _running(c["d"], p["key"]) and p.get("tries", 0) >= 1 and p.get("restarted"):
-            left.append({**p, "error": "The calculation stopped before it finished; set the period up again to retry."})
-        elif res is None:
-            left.append({**p, "restarted": p.get("tries", 0) >= 1})
-        elif res.get("error"):
-            left.append({**p, "error": res["error"]})
+        st = _job_state(c["d"], p["payload"])        # on the current model; a lost job starts again
+        if "building" in st:
+            left.append({k: v for k, v in p.items() if k != "error"})
+        elif "error" in st:
+            left.append({**p, "error": st["error"]})
         else:
-            store.add(c["pdir"], store.record(res, p["name"], p["source"], setup, c["d"].name, c["model_key"]))
+            store.add(c["pdir"], store.record(st["result"], p["name"], p["source"], setup, c["d"].name, c["model_key"]))
     if left != (setup.get("pending_plans") or []):
         setup["pending_plans"] = left
         from ..future.store import _write, folder
@@ -422,6 +435,30 @@ def _tracking_ctx(run_id: str) -> tuple[dict, dict, dict | None]:
     return c, setup, tp
 
 
+def _model_changed(c: dict, t: dict) -> bool:
+    """Were any of the frozen targets predicted on a model other than the one now in the run?"""
+    from ..future import store
+
+    ids = {v.get("plan_id") for v in t["targets"].values()}
+    setup = store.period(c["pdir"]) or {}
+    keys = set()
+    for pid in ids:
+        try:
+            keys.add(store.get(c["pdir"], setup.get("id"), pid)["model_key"])
+        except store.PlanStoreError:
+            pass
+    return any(k != c["model_key"] for k in keys)
+
+
+def _plan_payload(c: dict, setup: dict, tp: dict, t: dict) -> dict:
+    """The tracked plan's spend (the frozen targets', week by week) to work out on the current model."""
+    from ..future import store
+
+    spend = {ch: [float(t["targets"][w]["spend"].get(ch, 0.0)) if w in t["targets"] else 0.0 for w in tp["plan_weeks"]]
+             for ch in c["channels"]}
+    return _payload(store.snapshot(setup, tp), "evaluate", spend=spend)
+
+
 @router.get("/api/runs/{run_id}/tracking")
 def tracking_screen(run_id: str) -> dict:
     from ..future import store, tracking
@@ -431,18 +468,18 @@ def tracking_screen(run_id: str) -> dict:
         return A()._clean({"tracked": None, "period": setup, "project": c["slug"]})
     t = store.tracking(c["pdir"], setup and setup["id"])
     result = None
-    if t.get("pending_key"):
-        res = _result(c["d"], t["pending_key"])
-        if res is None and not _running(c["d"], t["pending_key"]) and t.get("pending_payload"):
-            _job(c["d"], t["pending_payload"])
-        if res is not None and not res.get("error"):
+    if t.get("pending_payload"):
+        main = _job_state(c["d"], t["pending_payload"])          # predicted at actual spend, on the current model
+        plan = _job_state(c["d"], _plan_payload(c, setup, tp, t)) if ("result" in main and _model_changed(c, t)) else None
+        if "error" in main or (plan and "error" in plan):
+            result = {"error": main.get("error") or plan["error"]}
+        elif "building" in main or (plan and "building" in plan):
+            result = {"building": True}
+        else:
             act = t.get("actuals") or {}
             holdout = (((c["step31"] or {}).get("accuracy") or {}).get("Test") or {}).get("MAPE")
-            result = tracking.compare(act, t["targets"], res, t["settings"], holdout, tp.get("by_channel"))
-        elif res is not None:
-            result = {"error": res["error"]}
-        else:
-            result = {"building": True}
+            result = tracking.compare(act, t["targets"], main["result"], t["settings"], holdout, tp.get("by_channel"),
+                                      at_plan=plan and plan["result"])
     return A()._clean({"tracked": {k: tp[k] for k in ("id", "name", "plan_weeks", "model_key", "run_id", "totals", "by_channel")},
                        "targets": t["targets"], "history": t["history"], "settings": t["settings"], "events": t["events"],
                        "renames": t["renames"], "actual_weeks": t["actual_weeks"], "result": result, "period": setup,
@@ -617,7 +654,7 @@ def tracking_csv(run_id: str) -> Response:
     out = [{"week": r["week"], "plan": r["plan_id"], "planned_spend": r["planned_spend"], "actual_spend": r["actual_spend"],
             "plan_predicted": r.get("plan_predicted"), "predicted_at_actual_spend": r.get("predicted"), "range_low": r.get("lo"),
             "range_high": r.get("hi"), "actual": r["actual"], "gap_pct": r.get("gap_pct"), "execution_gap": r.get("execution_gap"),
-            "model_gap": r.get("model_gap"), "status": r["status"],
+            "model_update_gap": r.get("model_update"), "model_gap": r.get("model_gap"), "status": r["status"],
             **{f"spend_{ch}_planned": v["planned"] for ch, v in r["channels"].items()},
             **{f"spend_{ch}_actual": v["actual"] for ch, v in r["channels"].items()}} for r in rows]
     return Response(pd.DataFrame(out).to_csv(index=False), media_type="text/csv",

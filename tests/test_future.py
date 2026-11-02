@@ -258,6 +258,27 @@ def test_kpi_below_range_with_spend_on_plan_says_check_outside_causes():
     assert [row["status"] for row in r["rows"]][-4:] == ["below"] * 4 and not any(a["kind"] == "execution" for a in r["alerts"])
 
 
+def test_after_a_refit_the_gap_splits_into_execution_model_update_and_outside():
+    plan, _ = period.plan_weeks("2025-12-29", 6, WEEKS)
+    tg = _targets(plan, {"tv": 100, "search": 50}, 1000.0)                  # frozen on the old model
+    on = {"weeks": plan, "kpi": [930.0] * 6, "spend": {"tv": [60] * 6, "search": [50] * 6}, "units": {}}
+    at_plan = _at_actual(plan, [970.0] * 6, {"tv": 280, "search": 190})     # the refit model sees the same plan 30 lower
+    at = _at_actual(plan, [950.0] * 6, {"tv": 250, "search": 190})          # and the TV cut costs it 20 more
+    r = tracking.compare(on, tg, at, SET, None, {"tv": {"media": 300}, "search": {"media": 200}}, at_plan=at_plan)
+    row = r["rows"][0]
+    assert (row["execution_gap"], row["model_update"], row["model_gap"]) == (-20.0, -30.0, -20.0)
+    assert row["execution_gap"] + row["model_update"] + row["model_gap"] == row["actual"] - tg[plan[0]]["total"]
+    assert r["model_changed"] and r["tiles"]["model_update"] == -180.0
+    assert any(a["kind"] == "model" for a in r["alerts"])
+    assert not any(a["kind"] == "execution" for a in r["alerts"])           # execution is 120 of a 420 gap
+    r2 = tracking.compare(on, tg, at, {**SET, "execution_share": 0.2}, None, {"tv": {"media": 300}, "search": {"media": 200}}, at_plan=at_plan)
+    ex = next(a for a in r2["alerts"] if a["kind"] == "execution")
+    assert [d["channel"] for d in ex["channels"]] == ["tv"] and ex["channels"][0]["effect"] == -30    # measured on the refit model
+    same = tracking.compare(on, tg, at, SET, None, {"tv": {"media": 300}, "search": {"media": 200}})
+    assert same["rows"][0]["model_update"] == 0.0 and not same["model_changed"] and same["tiles"]["model_update"] is None
+    assert same["rows"][0]["execution_gap"] == -50.0                        # without the refit plan: all of it is execution
+
+
 def test_without_forecast_bounds_the_range_is_the_holdout_error():
     plan, _ = period.plan_weeks("2025-12-29", 2, WEEKS)
     at = _at_actual(plan, [1000.0, 1000.0], {"tv": 1})
@@ -564,3 +585,9 @@ def test_tracking_with_actuals_on_plan_has_no_execution_gap(fitted):
     on = {"weeks": R["plan"][:6], "kpi": a["per_week"]["total"]["mean"][:6], "spend": {c: v[:6] for c, v in a["spend"].items()}, "units": {}}
     r = tracking.compare(on, targets, at, SET, None, a["by_channel"])
     assert all(abs(row["execution_gap"]) < 1e-6 * max(1, abs(row["plan_predicted"])) for row in r["rows"])
+    # The plan's spend worked out again (what Tracking does after a refit): on the same model the
+    # model update is nil and the execution gap unchanged
+    again = engine.evaluate(mmm, R, f, spend={c: [targets[w]["spend"][c] for w in R["plan"]] for c in a["spend"]})
+    r2 = tracking.compare(on, targets, at, SET, None, a["by_channel"], at_plan=again)
+    assert all(abs(row["model_update"]) < 1e-6 * abs(row["plan_predicted"]) for row in r2["rows"])
+    assert all(abs(x["execution_gap"] - y["execution_gap"]) < 1e-6 * abs(x["plan_predicted"]) for x, y in zip(r["rows"], r2["rows"]))

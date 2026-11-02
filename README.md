@@ -467,7 +467,11 @@ from the first week without actuals. Every action is in the project's planning l
 **Tracking.** Upload actuals (the same export format as training; renamed columns are offered for
 confirmation by name similarity). Per week: actual KPI against the expected range, actual spend
 against plan, and the gap split into **execution** (spend differed from plan; the model's effect of
-the actual spend against the planned spend) and **model** (the rest). Alerts:
+the actual spend against the planned spend) and **model** (the rest). If the model is refit after a
+plan was chosen, the targets stay frozen and the plan's own spend is worked out again on the refit
+model: the gap then splits three ways, execution (actual against planned spend, both on the refit
+model), **model update** (the refit model's prediction of the same plan against the frozen
+target) and outside (the rest), with an amber note; choosing a recomputed plan sets new targets. Alerts:
 
 | Alert | When |
 |---|---|

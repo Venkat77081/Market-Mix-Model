@@ -118,8 +118,14 @@ def _streak(flags: list[bool]) -> int:
 
 
 def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_error: float | None,
-            plan_by_channel: dict | None = None) -> dict[str, Any]:
-    """The Tracking screen's numbers: rows per week, tiles, alerts."""
+            plan_by_channel: dict | None = None, at_plan: dict | None = None) -> dict[str, Any]:
+    """The Tracking screen's numbers: rows per week, tiles, alerts.
+
+    at_plan: the tracked plan's spend worked out on the current model, given when the model was
+    refit after the targets were frozen. The gap to the frozen target then splits three ways:
+    execution (actual vs planned spend, both on the current model), model update (the current
+    model's prediction of the plan against the frozen one) and model / outside (actual against the
+    prediction at actual spend). Without it the model update is zero."""
     tol = float(settings["spend_tolerance_pct"]) / 100
     pw = at_actual["per_week"]
     plan_weeks = at_actual["weeks"]
@@ -149,8 +155,11 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
                 bounds_from = "the model's posterior range combined with the forecast's bounds"
             else:
                 bounds_from = "the model's posterior range"
+            plan_now = at_plan["per_week"]["total"]["mean"][i] if at_plan else tgt.get("total")
             row.update(predicted=pred, lo=lo, hi=hi, gap=row["actual"] - pred, gap_pct=(row["actual"] - pred) / pred if pred else None,
-                       execution_gap=pred - tgt["total"] if tgt.get("total") is not None else None, model_gap=row["actual"] - pred)
+                       plan_now=plan_now, execution_gap=pred - plan_now if plan_now is not None else None,
+                       model_update=(plan_now - tgt["total"]) if (at_plan and tgt.get("total") is not None) else 0.0,
+                       model_gap=row["actual"] - pred)
             row["range"] = "below" if row["actual"] < lo else "above" if row["actual"] > hi else "inside"
             row["status"] = row["range"] if row["range"] != "inside" else ("spend off plan" if row["spend_off_plan"] else "inside")
         else:
@@ -194,8 +203,9 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
         tot = sum((r["actual"] - r["plan_predicted"]) for r in rows if r["plan_predicted"] is not None)
         if tot and abs(exe) >= float(settings["execution_share"]) * abs(tot) and abs(exe) > 0:
             drivers = []
-            if plan_by_channel and at_actual.get("by_channel"):
-                contrib = {c: at_actual["by_channel"][c]["media"] - plan_by_channel[c]["media"] for c in at_actual["by_channel"] if c in plan_by_channel}
+            base = (at_plan or {}).get("by_channel") or plan_by_channel   # the plan on the same model as the actual spend
+            if base and at_actual.get("by_channel"):
+                contrib = {c: at_actual["by_channel"][c]["media"] - base[c]["media"] for c in at_actual["by_channel"] if c in base}
                 drivers = [{"channel": c, "effect": v} for c, v in sorted(contrib.items(), key=lambda kv: kv[1]) if abs(v) >= 0.1 * abs(exe)]
             alerts.append({"level": "amber", "kind": "execution", "title": "The gap comes mostly from spending differently from the plan",
                            "execution_gap": exe, "total_gap": tot, "channels": drivers})
@@ -206,4 +216,13 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
         if off_ch:
             alerts.append({"level": "amber", "kind": "spend", "title": "Spend off plan", "channels": off_ch,
                            "text": f"{', '.join(off_ch)}: outside ±{tol:.0%} of the plan for {need}+ weeks in a row."})
-    return {"rows": rows, "tiles": tiles, "alerts": alerts, "bounds_from": bounds_from, "has_forecast": has_total}
+    upd = float(sum(r.get("model_update") or 0.0 for r in rows))
+    tiles["model_update"] = upd if at_plan else None
+    if at_plan and rows and has_total:
+        alerts.append({"level": "amber", "kind": "model", "title": "The model was refit after this plan was chosen",
+                       "model_update": upd,
+                       "text": "The targets stay as they were frozen. The gap is split three ways: spending differently "
+                               "from the plan (execution), the refit model's different prediction of the same plan (model "
+                               "update), and the rest (outside). Choose a recomputed plan for tracking to set new targets."})
+    return {"rows": rows, "tiles": tiles, "alerts": alerts, "bounds_from": bounds_from, "has_forecast": has_total,
+            "model_changed": bool(at_plan)}
