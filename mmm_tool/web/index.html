@@ -332,6 +332,33 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .modal select { width: 100%; min-width: 0; max-width: 100%; }
 .runs-table td { vertical-align: middle; } .runs-table .nowrap { white-space: nowrap; }
 
+/* Future planning and Tracking */
+:root { --gx: #eb6834; --gm: #5b3fd1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --gx: #d95926; --gm: #8a6cf0; } }
+:root[data-theme="dark"] { --gx: #d95926; --gm: #8a6cf0; }
+.modeswitch { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.modeswitch button { border: 0; background: transparent; padding: 7px 12px; font: 500 13.5px var(--sans, inherit); color: var(--ink); cursor: pointer; text-align: left; }
+.modeswitch button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.modeswitch small { display: block; font-weight: 400; opacity: .8; font-size: 11.5px; }
+.fsetup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .fsetup { grid-template-columns: minmax(0, 1fr); } }
+.fsetup .part { border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.fsetup .part h4 { margin: 0; font-size: 14.5px; display: flex; gap: 8px; align-items: baseline; } .fsetup .part h4 .n { color: var(--muted); font-weight: 500; }
+.fsetup .radio { display: grid; gap: 6px; font-size: 14px; } .fsetup .radio label { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.fsetup .row2, .row2 { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.fsetup input[type=file] { max-width: 210px; font-size: 12.5px; }
+.ctable td { padding: 5px 8px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 4px; position: relative; min-width: 0; }
+.tile b { font-size: 22px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; } .tile span { font-size: 12.5px; color: var(--muted); }
+.tile .tileinfo { position: absolute; top: 10px; right: 10px; }
+.alert { border: 1px solid var(--block); background: var(--block-soft); border-radius: var(--r); padding: 12px 16px; display: grid; gap: 8px; }
+.alert.amber { border-color: var(--warn); background: var(--warn-soft); }
+.alert h3 { margin: 0; font-size: 15.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.alert h3 .pill { white-space: normal; }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.trtable tr.sub td { background: var(--sunken); font-size: 12.5px; }
+
 /* Phase I: Export, refit */
 .ex-parts { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
 .ex-parts li { break-inside: avoid; margin-bottom: 2px; }
@@ -399,8 +426,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     "Enter a scenario", "Quick result", "Exact result", "Extrapolation warning", "Save and compare",
     "Period", "Budget", "Budget type", "Channel limits", "Locks and floors", "Review", "Optimize",
     "Model bundle", "Reports", "Model registry", "Refit"];
-  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42], g: [43, 44, 46, 45, 47], h: [48, 49, 50, 51, 52, 53, 54], i: [55, 56, 57, 58] };
-  const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["I", "Export, refit"]];
+  const PHASE_STEPS = { a: [1, 2, 3, 4, 5, 6], b: [7, 8, 9, 10, 11, 12, 13], c: [14, 15, 16, 17, 18, 19, 20], d: [21, 22, 23, 24, 25, 26, 27], e: [28, 29, 30, 31, 32, 33, 34, 35, 36], f: [37, 40, 39, 38, 41, 42], g: [43, 44, 46, 45, 47], h: [48, 49, 50, 51, 52, 53, 54], t: [], i: [55, 56, 57, 58] };
+  const PHASES = [["A", "Ingest"], ["B", "Clean"], ["C", "Profile"], ["D", "Configure"], ["E", "Validate"], ["F", "Model Summary"], ["G", "What-If"], ["H", "Plan, Optimize"], ["T", "Tracking"], ["I", "Export, refit"]];
   const ROLE_LABEL = {
     date: "Date", geo: "Region", population: "Population", kpi: "KPI", revenue_per_kpi: "Revenue per KPI",
     media: "Paid media exposure", media_spend: "Paid media spend", reach: "Reach", frequency: "Frequency",
@@ -485,7 +512,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     answers = structuredClone(data.answers || {});
     draftRoles = null;
     if (!view) view = (data.phase || "A").toLowerCase();
-    if (["f", "g", "h"].includes(view) && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
+    if (["f", "g", "h", "t"].includes(view) && !(data.fit && data.fit.result && data.fit.result.status === "accepted")) view = "e";
     if (view === "i" && !(data.fit && data.fit.result && ["accepted", "rejected"].includes(data.fit.result.status))) view = "e";
     if (view === "e" && !(data.result_d && data.result_d.status === "complete")) view = "d";
     if (view === "d" && !data.result_d) view = "c";
@@ -1607,7 +1634,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       note: r => `${num(r.rows)} rows with calendar flags added. The model configuration is a separate download.`,
       done: "The model is configured. Phase E fits and validates it.", next: "e", nextLabel: "Continue to E · Validate" },
   };
-  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail(), g: () => summaryRail(), h: () => summaryRail(), i: () => exportRail() };
+  const RESULT_OF = { a: () => run.result, b: () => run.result_b, c: () => run.result_c, d: () => run.result_d, e: () => fitRail(), f: () => summaryRail(), g: () => summaryRail(), h: () => summaryRail(), t: () => summaryRail(), i: () => exportRail() };
   // Phase F opens once a model is accepted; its dot is amber when the model is out of date.
   function summaryRail() {
     const f = run.fit, res = fitResult();
@@ -1646,6 +1673,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (view === "g") return renderWhatIf();
     if (view === "h") return renderPlan();
     if (view === "i") return renderExport();
+    if (view === "t") return renderTracking();
     const r = phaseResult(view);
     const info = PHASE_INFO[view];
     const nums = PHASE_STEPS[view];
@@ -2079,6 +2107,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   const wiOutside = (c, m) => { const e = wiSettings().extrapolation; return wiBase(c) > 0 && m !== 1 && (m < e.low || m > e.high); };
 
   async function renderWhatIf(fetchAgain = true) {
+    futLoadMode();
+    if (futMode === "future") return renderWhatIfFuture(fetchAgain);
     $("rail").innerHTML = railHtml();
     const head = `<div class="runhead"><div><span class="eyebrow">Screen G · steps 43–47</span><h1>What-If</h1></div>`;
     if (fetchAgain || !wiData || wiData.run !== run.run_id || wiData.period !== wiPeriod) {
@@ -2106,7 +2136,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const live = chans.filter(c => wiBase(c) > 0);
     const opts = sel => live.map(c => `<option ${c === sel ? "selected" : ""}>${esc(c)}</option>`).join("");
     $("main").innerHTML = `${head}
-        <div class="chips"><button class="btn" data-view="h">Plan, optimize (H)</button><span class="chip">${esc(D.curves.first_week)} to ${esc(D.curves.last_week)}</span><span class="chip">${D.curves.weeks} weeks</span>
+        <div class="chips">${modeSwitch()}<button class="btn" data-view="h">Plan, optimize (H)</button><span class="chip">${esc(D.curves.first_week)} to ${esc(D.curves.last_week)}</span><span class="chip">${D.curves.weeks} weeks</span>
           <span class="chip">${esc(kpi)} from paid media</span></div></div>
       ${D.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so these scenarios use the earlier model. Refit in Phase E to update them.</div>` : ""}
       ${per}
@@ -2135,6 +2165,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         </div>
       </div>`;
     wire();
+    wireModeSwitch(() => renderWhatIf());
     wiUpdate();
     $("main").querySelectorAll("[data-wiperiod]").forEach(b => b.onclick = () => { wiPeriod = b.dataset.wiperiod; wiExact = null; renderWhatIf(); });
     $("main").querySelectorAll("[data-wi]").forEach(r => r.oninput = () => { wiMult[r.dataset.wi] = 1 + Number(r.value) / 100; wiExact = null; wiUpdate(); });
@@ -2245,10 +2276,19 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   let plData = null, plPlan = null, plCheck = null, plResult = null, plTimer = null;
   async function renderPlan(fetchAgain = true) {
     $("rail").innerHTML = railHtml();
-    const head = `<div class="runhead"><div><span class="eyebrow">Screen H · steps 48–54</span><h1>Plan, Optimize</h1></div>`;
-    if (fetchAgain || !plData || plData.run !== run.run_id) {
-      try { plData = { ...(await api("GET", `/api/runs/${run.run_id}/plan`)), run: run.run_id }; }
-      catch (e) { $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); return; }
+    futLoadMode();
+    const fut = futMode === "future";
+    const head = `<div class="runhead"><div><span class="eyebrow">Screen H · steps 48–54${fut ? " · Future" : ""}</span><h1>Plan, Optimize</h1></div>`;
+    const switched = !plData || plData.run !== run.run_id || (plData.mode || "past") !== futMode;
+    if (fetchAgain || switched) {
+      try { plData = { ...(await api("GET", `/api/runs/${run.run_id}/plan${fut ? "?mode=future" : ""}`)), run: run.run_id }; if (switched) { plPlan = null; plResult = null; } }
+      catch (e) {
+        if (fut) {                                   // no future period here yet: the shared setup card
+          try { await futFetch(); } catch (e2) { futData = null; }
+          $("main").innerHTML = `${head}<div class="chips">${modeSwitch()}</div></div><div style="display:grid;gap:14px">${futData ? futSetupHtml(futData) : `<div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`}</div>`;
+          wire(); wireModeSwitch(() => renderPlan()); if (futData) wireSetup(futData, () => renderPlan()); return;
+        }
+        $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); return; }
       if (!plPlan || plPlan.__run !== run.run_id) plPlan = { ...structuredClone(plData.defaults), __run: run.run_id };
       if (plData.last && !plResult) plResult = plData.last.building ? { building: true, key: plData.last.key } : { result: plData.last, key: plData.last.key };
     }
@@ -2256,7 +2296,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     const total = Object.values(hist).reduce((a, b) => a + b, 0), budget = P.budget_type === "fixed" ? (P.budget ?? total) : null;
     const planned = c => (budget ?? total) * (total ? hist[c] / total : 0);
     const segBtn = (attr, val, cur, label, dis = false) => `<button data-${attr}="${esc(val)}" aria-pressed="${cur === val}" ${dis ? "disabled" : ""}>${esc(label)}</button>`;
-    const periodLbl = k => k === "all" ? `All weeks (${esc(D.periods.all[0])} to ${esc(D.periods.all[1])})` : `Last 52 weeks (from ${esc(D.periods.last_52[0])})`;
+    const periodLbl = k => k === "future" ? `The future period (${esc(D.periods.future[0])} to ${esc(D.periods.future[1])})` : k === "all" ? `All weeks (${esc(D.periods.all[0])} to ${esc(D.periods.all[1])})` : `Last 52 weeks (from ${esc(D.periods.last_52[0])})`;
     // Steps 51-52: what each channel may spend (the same rule as the server's check: planned if locked,
     // else the higher of planned x (1 - down) and the floor; highest planned x (1 + up)).
     const nm = c => (D.display && D.display[c]) || c;
@@ -2286,15 +2326,15 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <td class="num" id="pl-low-${esc(c)}">${lowCell(c)}</td><td class="num" id="pl-high-${esc(c)}">${highCell(c)}</td></tr>`; }).join("");
     const straight = D.no_saturation.filter(c => !P.locks.includes(c) && P.limits[c] && P.limits[c].up > 0);
     $("main").innerHTML = `${head}
-        <div class="chips"><button class="btn" data-view="g">What-If (G)</button><span class="chip">${esc(kpi)}${money ? " and revenue" : ""}</span></div></div>
+        <div class="chips">${modeSwitch()}<button class="btn" data-view="g">What-If (G)</button><span class="chip">${esc(kpi)}${money ? " and revenue" : ""}</span></div></div>
       ${D.stale ? `<div class="fbanner">The data or the model settings changed after this model was fitted, so the plan uses the earlier model. Refit in Phase E to update it.</div>` : ""}
       <div class="pl">
         <div class="pl-col">
           <article class="card" id="step-48"><header><span class="n">48</span><h3>Period</h3><span></span><p class="sum">The weeks whose spend pattern is planned. Each channel keeps its week-by-week pattern; only its level changes.</p></header>
             <div class="body"><div class="seg" role="group" aria-label="Period">${Object.keys(D.periods).map(k => segBtn("plperiod", k, P.period, periodLbl(k))).join("")}</div></div></article>
-          <article class="card" id="step-49"><header><span class="n">49</span><h3>Budget</h3><span></span><p class="sum">Total paid spend over the period. ${P.budget_type === "fixed" ? `Historical: ${fmoney(total)}.` : "A flexible budget sets its own total (step 50)."}</p></header>
+          <article class="card" id="step-49"><header><span class="n">49</span><h3>Budget</h3><span></span><p class="sum">Total paid spend over the period. ${P.budget_type === "fixed" ? `${fut ? "The template's" : "Historical"}: ${fmoney(total)}.` : "A flexible budget sets its own total (step 50)."}</p></header>
             <div class="body">${P.budget_type === "fixed" ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${esc(sym())}</span><input type="number" id="pl-budget" min="0" step="any" value="${Math.round(budget)}" style="width:150px" aria-label="Budget">
-              ${[-10, 0, 10, 20].map(p => `<button class="btn" data-plbudgetpct="${p}">${p === 0 ? "Historical" : (p > 0 ? "+" : "") + p + "%"}</button>`).join("")}</div>` : '<p class="muted small">Not used for a flexible budget.</p>'}</div></article>
+              ${[-10, 0, 10, 20].map(p => `<button class="btn" data-plbudgetpct="${p}">${p === 0 ? (fut ? "Template" : "Historical") : (p > 0 ? "+" : "") + p + "%"}</button>`).join("")}</div>` : '<p class="muted small">Not used for a flexible budget.</p>'}</div></article>
         </div>
         <div class="pl-col">
           <article class="card" id="step-50"><header><span class="n">50</span><h3>Budget type</h3><span></span><p class="sum">Fixed: split this budget for the most ${money && P.objective === "revenue" ? "revenue" : esc(kpi)}. Flexible: spend until the plan's return falls to a target.</p></header>
@@ -2306,17 +2346,20 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
                 ${money ? "" : `<p class="muted small">No money value per ${esc(kpi)} (step 5), so the plan maximises ${esc(kpi)}.</p>`}</div></div></article>
         </div>
         <article class="card pl-full" id="step-51"><header><span class="n">51</span><h3>Channel limits</h3><span></span><p class="sum">How far each channel may move from its planned spend (the budget split as in the period). Lock keeps it there (both limits 0).</p></header>
-          <div class="body"><div class="scroll"><table class="pltable"><thead><tr><th>Channel</th><th class="r">Historical</th><th class="r">Planned</th><th>May go down / up</th><th></th><th class="r">Allowed range</th></tr></thead><tbody>${limRows}</tbody></table></div>
+          <div class="body"><div class="scroll"><table class="pltable"><thead><tr><th>Channel</th><th class="r">${fut ? "Template" : "Historical"}</th><th class="r">Planned</th><th>May go down / up</th><th></th><th class="r">Allowed range</th></tr></thead><tbody>${limRows}</tbody></table></div>
             ${straight.length ? `<p class="small" style="color:var(--warn)"><b>${straight.map(c => esc(nm(c))).join(", ")}</b>: no diminishing returns (step 23), so the optimizer will keep adding budget there up to its upper limit. Set a sensible limit.</p>` : ""}
             <p class="muted small" id="pl-seen">${D.channels.some(beyond) ? `<span style="color:var(--warn)">Outside what the model has seen:</span> the highest allowed is above ${D.settings.limits.seen_peak_ratio || 2}x the channel's highest spend in any past period this long.` : ""}</p></div></article>
         <article class="card pl-full" id="step-52"><header><span class="n">52</span><h3>Locks and floors</h3><span></span><p class="sum">A floor (${esc(symOr("in money"))}) holds back cuts: a channel never goes below the higher of its floor and its "may go down" limit. Lowest and highest allowed show which limit is active.</p></header>
           <div class="body"><div class="scroll"><table class="pltable"><thead><tr><th>Channel</th><th class="r">Planned</th><th>Floor</th><th class="r">Lowest allowed</th><th class="r">Highest allowed</th></tr></thead><tbody>${floorRows}</tbody></table></div></div></article>
         <article class="card pl-full" id="step-53"><header><span class="n">53</span><h3>Review</h3><span></span><p class="sum">What will run: the plan as Meridian's BudgetOptimizer.optimize() arguments, checked first.</p></header>
           <div class="body" id="pl-review"><p class="muted small">Checking…</p></div></article>
-        <article class="card pl-full" id="step-54"><header><span class="n">54</span><h3>Optimize</h3><span></span><p class="sum">Current against optimized spend, with 90% ranges. About a minute on the saved model.</p></header>
+        <article class="card pl-full" id="step-54"><header><span class="n">54</span><h3>Optimize</h3><span></span><p class="sum">${fut ? "Template against optimized spend over the future period, with 90% ranges and the total with the forecast." : "Current against optimized spend, with 90% ranges."} About a minute on the saved model.</p></header>
           <div class="body" id="pl-result"></div></article>
+        ${fut ? '<div class="pl-full" id="pl-plans" style="display:grid;gap:14px"></div>' : ""}
       </div>`;
     wire();
+    wireModeSwitch(() => renderPlan());
+    if (fut) futPlansBelow();
     const set = (patch, now = false) => { Object.assign(plPlan, patch); if (now) renderPlan(false); else plReview(); };
     $("main").querySelectorAll("[data-plperiod]").forEach(b => b.onclick = () => set({ period: b.dataset.plperiod, budget: null }, true));
     $("main").querySelectorAll("[data-pltype]").forEach(b => b.onclick = () => { const t = b.dataset.pltype, L = D.settings.limits[t];
@@ -2355,7 +2398,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     plTimer = setTimeout(async () => {
       const host = $("pl-review"); if (!host) return;
       try {
-        plCheck = await api("POST", `/api/runs/${run.run_id}/plan/check`, { plan: plPlanBody() });
+        plCheck = await api("POST", `/api/runs/${run.run_id}/plan/check`, { plan: plPlanBody(), mode: futMode });
         if (!plCheck.ok) throw new Error(plCheck.problems);
         const a = plCheck.args, D = plData, kpi = D.kpi || "KPI";
         const arr = v => `[${v.map(x => x.toFixed(2)).join(", ")}]`;
@@ -2386,8 +2429,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   async function plOptimize() {
     plResult = { building: true }; plShowResult();
     try {
-      let r = await api("POST", `/api/runs/${run.run_id}/plan/optimize`, { plan: plPlanBody() });
-      while (r.building) { await new Promise(ok => setTimeout(ok, 3000)); if (view !== "h") return; r = await api("GET", `/api/runs/${run.run_id}/plan/result/${r.key}`); }
+      let r = await api("POST", `/api/runs/${run.run_id}/plan/optimize`, { plan: plPlanBody(), mode: futMode });
+      const path = r.future ? "future/result" : "plan/result";
+      while (r.building) { await new Promise(ok => setTimeout(ok, 3000)); if (view !== "h") return; r = await api("GET", `/api/runs/${run.run_id}/${path}/${r.key}`); }
       plResult = { result: r.result, key: r.key };
     } catch (e) { plResult = { error: e.message }; }
     plShowResult();
@@ -2399,6 +2443,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     if (!R) { host.innerHTML = '<p class="muted small">Check the plan above, then Optimize.</p>'; return; }
     if (R.building) { host.innerHTML = '<p><span class="pill warn">Working</span> Optimizing on the saved model (about a minute). You can leave this page and come back.</p>'; return; }
     if (R.error || (R.result && R.result.error)) { host.innerHTML = `<p style="color:var(--block)">${esc(R.error || R.result.error)}</p>`; return; }
+    if (R.result && R.result.evaluation) { host.innerHTML = (changed ? '<div class="fbanner">The plan above changed since this result: Optimize again to update it.</div>' : "") + futPlanResultHtml(R.result, R.key); wireFutPlanResult(R.result, R.key); return; }
     const X = R.result, D = plData, kpi = D.kpi || "KPI", T = X.totals, hasRev = !!T.current.revenue;
     const sg = v => (v >= 0 ? "+" : "−"), dr = (s, f) => `${sg(s.mean)}${f(Math.abs(s.mean))} <span class="muted small">(90%: ${sg(s.lo)}${f(Math.abs(s.lo))} to ${sg(s.hi)}${f(Math.abs(s.hi))})</span>`;
     const outW = X.plan.args.use_kpi ? kpi : "revenue";
@@ -2563,6 +2608,364 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - 2 - v * (H - 4)).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${Math.max(1, v * (H - 4)).toFixed(1)}" rx="2" fill="var(--accent)"><title>week ${D.weeks[i]}: ${fpct(v)} left (90% ${fpct(D.lo[i])}–${fpct(D.hi[i])})</title></rect>`).join("")}</svg>`;
   }
   window.addEventListener("resize", () => { clearTimeout(fDraw.t); fDraw.t = setTimeout(() => { if (view === "f" && fsum && $("f-fit")) fDraw(); }, 150); });
+
+  // ---------- Future planning (G and H in Future mode) and Tracking ----------
+  let futMode = "past", futData = null, futMult = {}, futExact = null, futPoll = null, futSetupOpen = false, futDraft = null, trData = null, trPoll = null, trShowPlan = true;
+  const futKey = () => `mmm-futmode-${run && run.run_id}`;
+  function futLoadMode() { try { futMode = localStorage.getItem(futKey()) === "future" ? "future" : "past"; } catch (e) { /* storage off: Past */ } }
+  function futSetMode(m) { futMode = m; try { localStorage.setItem(futKey(), m); } catch (e) { /* not remembered */ } }
+  const futName = c => (futData && futData.display && futData.display[c]) || (plData && plData.display && plData.display[c]) || c;
+  function modeSwitch() {
+    return `<div class="modeswitch" role="group" aria-label="Past or future">${[["past", "Past", "what would have happened"], ["future", "Future", "plan a period"]].map(([k, a, b]) =>
+      `<button data-futmode="${k}" aria-pressed="${futMode === k}">${a}<small>${b}</small></button>`).join("")}</div>`;
+  }
+  function wireModeSwitch(rerender) {
+    $("main").querySelectorAll("[data-futmode]").forEach(b => b.onclick = () => { if (futMode === b.dataset.futmode) return;
+      futSetMode(b.dataset.futmode); plData = null; plPlan = null; plResult = null; futExact = null; rerender(); });
+  }
+  async function futFetch() {
+    futData = { ...(await api("GET", `/api/runs/${run.run_id}/future`)), run: run.run_id };
+    return futData;
+  }
+  const fp = futData => futData && futData.period;
+
+  // The setup card: open (a form) until the period is set, then a one-line summary with Change.
+  function futSetupHtml(D) {
+    const P = D.period, open = !P || futSetupOpen || !D.same_run;
+    if (!open) {
+      const f = P.forecast || {}, costN = Object.values(P.cost_pct || {}).filter(v => +v).length;
+      return `<article class="card" id="fut-setup"><header><span class="n">P</span><h3>Future period</h3><span class="pill pass">Set up</span>
+        <p class="sum">${esc(P.plan[0])} → ${esc(P.plan[P.plan.length - 1])} · ${P.plan.length} weeks · pattern from ${esc({ last_year: "the same weeks last year", recent: "the most recent weeks", custom: "a date range", upload: "an uploaded plan" }[P.template_kind] || P.template_kind)}
+          (${esc(P.template[0])} → ${esc(P.template[P.template.length - 1])})${costN ? ` · cost change on ${costN} channel${costN > 1 ? "s" : ""}` : ""} · forecast: ${esc(f.note || "none")}. Shared with ${view === "g" ? "Plan, Optimize (H)" : "What-If (G)"}.</p></header>
+        <div class="body" style="padding-top:0;display:flex;gap:8px;flex-wrap:wrap">${(P.warnings || []).map(w => `<span class="chip warn">${esc(w)}</span>`).join("")}<button class="btn" id="fut-change">Change</button></div></article>`;
+    }
+    const d = futDraft || (futDraft = P && D.same_run ? { start: P.start, weeks: P.weeks, template: { kind: P.template_kind, start: P.template_kind === "custom" ? P.template[0] : undefined },
+      cost: { ...(P.cost_pct || {}) }, forecast: { ...(P.forecast_spec || { source: "builtin" }) }, rpk: P.rpk || null } : structuredClone(D.defaults));
+    const tk = d.template.kind || "last_year", fsrc = d.forecast.source || "builtin";
+    const radio = (name, val, cur, label, extra = "") => `<label><input type="radio" name="${name}" value="${val}" ${cur === val ? "checked" : ""}> ${label}${extra}</label>`;
+    const costRows = D.channels.map(c => D.spend_only[c]
+      ? `<tr><td><b>${esc(futName(c))}</b></td><td><input type="number" value="0" disabled style="width:70px"> % <span class="muted small">spend only: no media units, so a cost change has no effect</span></td></tr>`
+      : `<tr><td><b>${esc(futName(c))}</b></td><td><input type="number" step="1" min="-90" max="500" data-futcost="${esc(c)}" value="${d.cost[c] ?? 0}" style="width:70px" aria-label="${esc(futName(c))} cost change, %"> %</td></tr>`).join("");
+    const rpk = Object.keys(D.rpk || {}).length ? `<div class="part"><h4><span class="n">+</span>Money value per ${esc(D.kpi || "KPI")}</h4>
+        ${Object.entries(D.rpk).map(([g, v]) => `<label class="small">${D.geos.length > 1 ? esc(g) + " " : ""}<input type="number" step="any" data-futrpk="${esc(g)}" value="${(d.rpk && d.rpk[g]) ?? v.toFixed(2)}" style="width:110px"></label>`).join(" ")}
+        <p class="muted small" style="margin:0">From the template weeks; change it if prices move in the plan period.</p></div>` : "";
+    return `<article class="card" id="fut-setup"><header><span class="n">P</span><h3>${P ? "Change the future period" : "Set up the future period"}</h3><span class="pill warn">${P && !D.same_run ? "Set up on another run" : "Needed for Future"}</span>
+        <p class="sum">Applies to What-If (G) and Plan, Optimize (H). Every choice goes into the planning log.${P && !D.same_run ? " This project's period was set up on another run's model; setting it up here replaces it." : ""}</p></header>
+      <div class="body"><div class="fsetup">
+        <div class="part"><h4><span class="n">1</span>Plan dates</h4>
+          <div class="row2"><label class="small">Start <input type="date" id="fut-start" value="${esc(d.start)}" step="7"></label>
+            <label class="small">Weeks <input type="number" id="fut-weeks" min="1" max="${D.settings.max_plan_weeks}" value="${d.weeks}" style="width:70px"></label></div>
+          <p class="muted small" style="margin:0">The data runs to ${esc(D.data.last)}; a plan starts on the same weekday. More than ${D.settings.stale_after_weeks} weeks later gets a warning (the model may be out of date).</p></div>
+        <div class="part"><h4><span class="n">2</span>Copy the weekly pattern from</h4>
+          <div class="radio">${radio("fut-tk", "last_year", tk, "The same weeks last year")}${radio("fut-tk", "recent", tk, "The most recent weeks")}
+            ${radio("fut-tk", "custom", tk, "A date range from", ` <input type="date" id="fut-tstart" value="${esc(d.template.start || D.data.first)}" min="${esc(D.data.first)}" max="${esc(D.data.last)}">`)}
+            ${radio("fut-tk", "upload", tk, "Upload planned spend", ` <input type="file" id="fut-upload" accept=".csv,.txt"> <span class="muted small" id="fut-upload-note">${d.upload ? "file read" : "week × channel CSV"}</span>`)}</div>
+          <p class="muted small" style="margin:0">Each channel keeps its week-by-week shape (bursts, pauses, dark weeks); a slider scales every week by the same %.</p></div>
+        <div class="part"><h4><span class="n">3</span>Media cost change</h4><div class="scroll"><table class="ctable"><tbody>${costRows}</tbody></table></div>
+          <p class="muted small" style="margin:0">Units = template units × spend multiplier ÷ (1 + cost change). Reach and frequency: reach changes, frequency stays.</p></div>
+        <div class="part"><h4><span class="n">4</span>Forecast if spend stays like last year</h4>
+          <div class="radio">${radio("fut-fs", "builtin", fsrc, "Built in: same weeks last year ×", ` (1 + <input type="number" id="fut-growth" step="0.1" value="${d.forecast.growth != null ? (d.forecast.growth * 100).toFixed(1) : (D.growth * 100).toFixed(1)}" style="width:70px"> % growth)`)}
+            ${radio("fut-fs", "csv", fsrc, "Upload a forecast CSV", ` <input type="file" id="fut-fcsv" accept=".csv,.txt"> <span class="muted small" id="fut-fcsv-note">date, forecast, optional lower and upper</span>`)}
+            ${radio("fut-fs", "total", fsrc, "One total for the period", ` <input type="number" id="fut-ftotal" step="any" value="${d.forecast.total ?? ""}" style="width:120px">`)}
+            ${radio("fut-fs", "none", fsrc, "No forecast <span class='muted small'>(media effects only, no totals)</span>")}</div>
+          <p class="muted small" style="margin:0">Meridian can't forecast the baseline (trend, seasons, controls). The built-in forecast's range is ${D.step31.naive_mape != null ? `±${(D.step31.naive_mape * 100).toFixed(1)}%, step 31's error of "same week last year"` : D.step31.holdout_mape != null ? `±${(D.step31.holdout_mape * 100).toFixed(1)}%, the model's holdout error` : "not known (no step 31 error)"}.</p></div>
+        ${rpk}
+      </div><div id="fut-err" class="small" role="alert" style="margin-top:10px"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn primary" id="fut-save">Use this period</button>
+        ${P && D.same_run ? '<button class="btn" id="fut-cancel">Cancel</button>' : ""}<span class="muted small">Plan A "Same as last year" (the template at 100%) is made as the reference.</span></div></div></article>`;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split(/\r?\n/).filter(l => l.trim()), sep = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
+    const rows = lines.map(l => l.split(sep).map(x => x.trim().replace(/^"|"$/g, "")));
+    return { head: rows[0], rows: rows.slice(1) };
+  }
+  function wireSetup(D, rerender) {
+    const ch = $("fut-change"); if (ch) ch.onclick = () => { futSetupOpen = true; futDraft = null; rerender(); };
+    const cancel = $("fut-cancel"); if (cancel) cancel.onclick = () => { futSetupOpen = false; futDraft = null; rerender(); };
+    const save = $("fut-save"); if (!save) return;
+    const d = futDraft;
+    const up = $("fut-upload"); if (up) up.onchange = async () => { const f = up.files[0]; if (!f) return;
+      const { head, rows } = parseCsv(await f.text()), norm = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const cols = {}; D.channels.forEach(c => { const i = head.findIndex(h => [norm(c), norm(futName(c))].includes(norm(h)) || norm(h).includes(norm(c))); if (i > 0) cols[c] = i; });
+      const missing = D.channels.filter(c => cols[c] == null);
+      if (missing.length) { $("fut-upload-note").innerHTML = `<span style="color:var(--block)">no column for ${missing.map(esc).join(", ")}</span>`; d.upload = null; return; }
+      d.upload = Object.fromEntries(D.channels.map(c => [c, rows.map(r => Number(r[cols[c]]) || 0)])); d.upload_weeks = rows.map(r => r[0]);
+      $("fut-upload-note").textContent = `${rows.length} weeks read`; };
+    const fcsv = $("fut-fcsv"); if (fcsv) fcsv.onchange = async () => { const f = fcsv.files[0]; if (f) { d.forecast.csv = await f.text(); $("fut-fcsv-note").textContent = `${f.name} read`; } };
+    save.onclick = async () => {
+      const pick = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
+      d.start = $("fut-start").value; d.weeks = Number($("fut-weeks").value);
+      d.template = { kind: pick("fut-tk"), start: pick("fut-tk") === "custom" ? $("fut-tstart").value : undefined };
+      document.querySelectorAll("[data-futcost]").forEach(x => { d.cost[x.dataset.futcost] = Number(x.value) || 0; });
+      const fs = pick("fut-fs");
+      d.forecast = { source: fs, ...(fs === "builtin" ? { growth: Number($("fut-growth").value) / 100 } : {}), ...(fs === "total" ? { total: Number($("fut-ftotal").value) } : {}),
+        ...(fs === "csv" ? { csv: d.forecast.csv } : {}) };
+      const rpk = {}; document.querySelectorAll("[data-futrpk]").forEach(x => { rpk[x.dataset.futrpk] = Number(x.value); });
+      if (d.template.kind === "upload" && d.upload && d.upload[D.channels[0]].length !== d.weeks) { d.weeks = d.upload[D.channels[0]].length; }
+      try {
+        await api("POST", `/api/runs/${run.run_id}/future/setup`, { start: d.start, weeks: d.weeks, template: d.template, cost: d.cost, forecast: d.forecast,
+          rpk: Object.keys(rpk).length ? rpk : null, upload: d.template.kind === "upload" ? d.upload : null });
+        futSetupOpen = false; futDraft = null; futMult = {}; futExact = null; plData = null; plPlan = null; plResult = null; rerender();
+      } catch (e) { $("fut-err").innerHTML = `<span style="color:var(--block)">${esc(e.message)}</span>`; }
+    };
+  }
+
+  // Saved plans (shared by G and H in Future mode).
+  function plansHtml(D) {
+    const plans = D.plans || [], kpi = D.kpi || "KPI";
+    const pending = (fp(D).pending_plans || []);
+    if (!plans.length && !pending.length) return "";
+    const src = p => p.source.kind === "reference" ? "auto (reference)" : p.source.kind === "optimizer" ? `Optimizer · ${esc(p.source.settings && p.source.settings.budget_type || "")}` : p.source.kind === "upload" ? "uploaded" : "What-If";
+    const sg = v => v == null ? "–" : `${v >= 0 ? "+" : "−"}${fnum(Math.abs(v))}`;
+    const rows = plans.map(p => `<tr class="${p.status === "archived" ? "muted" : ""}"><td><b>${esc(p.id)}</b> ${esc(p.name)} ${p.status === "tracked" ? '<span class="pill pass">tracked</span>' : p.status === "archived" ? '<span class="pill wait">archived</span>' : ""}
+        ${p.stale.length ? `<span class="chip warn" style="font-size:11.5px">made with an older ${p.stale.map(esc).join(" / ")} — recompute</span>` : ""}</td>
+      <td class="small">${src(p)}<div class="muted">${esc(p.by)} · ${esc(String(p.at).slice(0, 10))}</div></td><td class="num">${fmoney(p.spend)}</td>
+      <td class="num">${p.total ? `${fnum(p.total.mean)} <span class="muted small">(${fnum(p.total.lo)}–${fnum(p.total.hi)})</span>` : `<span class="muted small">media ${fnum(p.media.mean)}</span>`}</td>
+      <td class="num">${p.id === "A" ? "–" : sg(p.vs_a.outcome)}</td><td class="num">${p.id === "A" ? "–" : p.vs_a.spend == null ? "–" : fmoneyChange(p.vs_a.spend)}</td>
+      <td class="small" style="min-width:200px">${[["show", "Show on sliders"], ["rename", "Rename"], ["duplicate", "Duplicate"],
+        [p.status === "archived" ? "restore" : "archive", p.status === "archived" ? "Restore" : "Archive"], ...(p.status === "draft" ? [["track", "<b>Choose for tracking</b>"]] : []),
+        ...(p.stale.length ? [["recompute", "Recompute"]] : [])].filter(([a]) => !(a === "archive" && p.status === "tracked")).map(([a, t]) => `<a href="#" data-planact="${a}" data-plan="${esc(p.id)}">${t}</a>`).join(" · ")}</td></tr>`).join("");
+    return `<article class="card" id="fut-plans"><header><span class="n">★</span><h3>Saved plans</h3><span></span><p class="sum">For ${esc(fp(D).plan[0])} → ${esc(fp(D).plan[fp(D).plan.length - 1])}. Saved plans are read-only: Show on sliders, change, save as a new plan.</p></header>
+      <div class="body">${pending.map(p => `<p class="small">${p.error ? `<span style="color:var(--block)">${esc(p.name)}: ${esc(p.error)}</span>` : `<span class="pill warn">Working</span> ${esc(p.name)} is being worked out on the model…`}</p>`).join("")}
+        <div class="scroll"><table style="min-width:900px"><thead><tr><th>Plan</th><th>Made in</th><th class="r">Spend</th><th class="r">Total ${esc(kpi)} expected</th><th class="r">vs A, outcome</th><th class="r">vs A, spend</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="small muted" style="margin:10px 0 0">Choose for tracking buys nothing. It saves this plan's period-by-period predictions as the target, so the Tracking screen can compare real periods against them.</p></div></article>`;
+  }
+  function logHtml(entries) {
+    if (!entries || !entries.length) return "";
+    return `<details class="card" style="padding:12px 16px"><summary><b>Planning log</b> <span class="muted small">${entries.length} entr${entries.length === 1 ? "y" : "ies"}</span></summary>
+      <div class="scroll" style="margin-top:8px"><table style="min-width:600px"><tbody>${entries.slice().reverse().map(e => `<tr><td class="small nowrap">${esc(String(e.at).replace("T", " "))}</td><td class="small">${esc(e.by)}</td><td><b>${esc(e.what)}</b>
+        <div class="muted small">${esc(Object.entries(e.details || {}).filter(([, v]) => v != null && v !== "" && !(typeof v === "object" && !Object.keys(v).length)).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : typeof v === "number" ? fnum(v, 1) : v}`).join(" · "))}</div></td></tr>`).join("")}</tbody></table></div></details>`;
+  }
+  function wirePlans(D, rerender) {
+    $("main").querySelectorAll("[data-planact]").forEach(a => a.onclick = async e => { e.preventDefault();
+      const id = a.dataset.plan, act = a.dataset.planact, p = D.plans.find(x => x.id === id);
+      if (act === "show") { futMult = { ...(p.multipliers || {}) }; futExact = null; if (view !== "g") return switchView("g"); return rerender(); }
+      const body = {};
+      if (act === "rename") { const n = prompt("New name for plan " + id, p.name); if (!n) return; body.name = n; }
+      if (act === "track") { const cur = D.plans.find(x => x.status === "tracked");
+        if (cur) { const r = prompt(`Tracking will switch from plan ${cur.id} to plan ${id} from the next period. Weeks already tracked keep plan ${cur.id} as their target.\n\nWhy? (goes into the decision log)`); if (!r) return; body.reason = r; }
+        else if (!confirm(`Choose plan ${id} for tracking? Its week-by-week predictions are frozen as the target.`)) return; }
+      try { futData = { ...(await api("POST", `/api/runs/${run.run_id}/future/plans/${id}/${act}`, body)), run: run.run_id }; rerender(false); }
+      catch (err) { alert(err.message); } });
+  }
+
+  // What-If in Future mode.
+  function futCurveAt(c, m) {
+    const C = futData.curves.channels[c], g = futData.curves.grid; if (!C) return 0;
+    if (m <= g[0]) return C.kpi[0]; if (m >= g[g.length - 1]) return C.kpi[C.kpi.length - 1];
+    const i = g.findIndex(x => x >= m), a = g[i - 1], b = g[i]; return C.kpi[i - 1] + (C.kpi[i] - C.kpi[i - 1]) * (m - a) / (b - a);
+  }
+  async function renderWhatIfFuture(fetchAgain = true) {
+    $("rail").innerHTML = railHtml();
+    const head = `<div class="runhead"><div><span class="eyebrow">Screen G · steps 43–47 · Future</span><h1>What-If</h1></div><div class="chips">${modeSwitch()}</div></div>`;
+    clearTimeout(futPoll);
+    if (fetchAgain || !futData || futData.run !== run.run_id) {
+      try { await futFetch(); } catch (e) { $("main").innerHTML = `${head}<div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); wireModeSwitch(() => renderWhatIf()); return; }
+    }
+    const D = futData, P = fp(D), kpi = D.kpi || "KPI";
+    let body = "";
+    if (!P || !D.same_run || futSetupOpen) body = futSetupHtml(D);
+    else {
+      body = futSetupHtml(D);
+      const curvesReady = D.curves && !D.curves.building && !D.curves.error;
+      const chans = D.channels, st = D.whatif;
+      for (const c of chans) if (futMult[c] == null) futMult[c] = 1;
+      const tspend = c => (P.template_spend[c] || []).reduce((a, b) => a + b, 0);
+      const quick = curvesReady ? chans.reduce((s, c) => s + futCurveAt(c, futMult[c]) - futCurveAt(c, 1), 0) : null;
+      const spend = chans.reduce((s, c) => s + tspend(c) * futMult[c], 0), tsum = chans.reduce((s, c) => s + tspend(c), 0);
+      const fc = P.forecast && P.forecast.total, X = futExact && futExact.result;
+      const tot = X ? X.totals : null;
+      const out = chans.filter(c => tspend(c) > 0 && (futMult[c] < st.extrapolation.low || futMult[c] > st.extrapolation.high));
+      const rows = chans.map(c => { const z = !(tspend(c) > 0), pv = Math.round((futMult[c] - 1) * 100);
+        return `<div class="wi-row"><span class="name">${esc(futName(c))}</span><input type="range" data-futwi="${esc(c)}" min="${st.slider.min}" max="${st.slider.max}" step="${st.slider.step}" value="${pv}" ${z ? "disabled" : ""} aria-label="${esc(futName(c))} spend change, %">
+          <span class="pct">${pv >= 0 ? "+" : ""}${pv}%</span><span class="amt">${z ? "no spend in the template" : `${fmoney(tspend(c) * futMult[c])}${curvesReady ? ` · ${(futCurveAt(c, futMult[c]) - futCurveAt(c, 1)) >= 0 ? "+" : "−"}${fnum(Math.abs(futCurveAt(c, futMult[c]) - futCurveAt(c, 1)))}` : ""}`}</span></div>`; }).join("");
+      const totalTile = fc != null ? `<div class="tile"><span>Total ${esc(kpi)} expected</span><b>${fnum(tot && tot.total ? tot.total.mean : fc + (quick || 0))}</b>
+          <span>${tot && tot.total ? `90%: ${fnum(tot.total.lo)} – ${fnum(tot.total.hi)} · ` : "quick · "}forecast ${fnum(fc)} + plan change ${(tot ? tot.change.mean : quick || 0) >= 0 ? "+" : "−"}${fnum(Math.abs(tot ? tot.change.mean : quick || 0))}</span>
+          <button class="ibtn tileinfo" aria-label="How the total is made" title="total[t] = forecast[t] + (media_plan[t] − media_reference[t]). The forecast already includes last year's media pattern, so only the change from it is added. Reference = plan A, the template at 100%.">i</button></div>` : "";
+      body += `<div class="tiles">${totalTile}
+          <div class="tile"><span>Change from this plan</span><b>${(tot ? tot.change.mean : quick || 0) >= 0 ? "+" : "−"}${fnum(Math.abs(tot ? tot.change.mean : quick || 0))}</b><span>${tot ? `90%: ${fnum(tot.change.lo)} to ${fnum(tot.change.hi)} · ${Math.round(tot.share_better * 100)}% of draws favour it` : "quick result · Work out exactly for its range"}</span></div>
+          <div class="tile"><span>Spend</span><b>${fmoney(spend)}</b><span>plan A ${fmoney(tsum)} · ${fmoneyChange(spend - tsum)} (${tsum ? ((spend / tsum - 1) * 100).toFixed(1) : 0}%)</span></div></div>
+        <article class="card" id="step-43"><header><span class="n">43</span><h3>Enter a scenario</h3><span></span><p class="sum">Each channel's spend over ${esc(P.plan[0])} → ${esc(P.plan[P.plan.length - 1])}, as a share of the template. Every week scales by the same %.</p></header>
+          <div class="body">${curvesReady ? rows : D.curves && D.curves.error ? `<p style="color:var(--block)">${esc(D.curves.error)}</p>` : '<p><span class="pill warn">Working</span> Working out each channel\'s response over the plan weeks (usually under a minute). The sliders open when it\'s done.</p>'}
+            ${out.length ? `<div class="fbanner" style="border-color:var(--block);background:var(--block-soft)"><b>Beyond what the model has seen:</b> ${out.map(c => esc(futName(c))).join(", ")} (under ${st.extrapolation.low * 100}% or over ${st.extrapolation.high * 100}% of the template's spend). Treat the result as a guess.</div>` : ""}
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="fut-exact" ${curvesReady ? "" : "disabled"}>Work out exactly</button><button class="btn primary" id="fut-saveplan" ${curvesReady ? "" : "disabled"}>Save these sliders as a plan</button><button class="btn" id="fut-reset">Reset to plan A</button></div>
+            <div id="fut-exact-out" class="small">${futExact && futExact.building ? '<span class="pill warn">Working</span> On every posterior draw…' : futExact && futExact.error ? `<span style="color:var(--block)">${esc(futExact.error)}</span>` : ""}</div>
+            <p class="muted small">Organic media, non-media levers and controls are copied from the template weeks unchanged.</p></div></article>
+        ${plansHtml(D)}${logHtml(D.log)}`;
+      if (D.curves && D.curves.building || (P.pending_plans || []).some(p => !p.error)) futPoll = setTimeout(() => { if (view === "g" && futMode === "future") renderWhatIfFuture(); }, 3000);
+    }
+    $("main").innerHTML = head + `<div style="display:grid;gap:14px">${body}</div>`;
+    wire(); wireModeSwitch(() => renderWhatIf()); wireSetup(D, () => renderWhatIfFuture()); if (P) wirePlans(D, f => renderWhatIfFuture(f));
+    $("main").querySelectorAll("[data-futwi]").forEach(r => r.onchange = () => { futMult[r.dataset.futwi] = 1 + Number(r.value) / 100; futExact = null; renderWhatIfFuture(false); });
+    const reset = $("fut-reset"); if (reset) reset.onclick = () => { futMult = {}; futExact = null; renderWhatIfFuture(false); };
+    const ex = $("fut-exact"); if (ex) ex.onclick = () => futRun(false);
+    const sp = $("fut-saveplan"); if (sp) sp.onclick = () => futRun(true);
+  }
+  async function futRun(save) {
+    let name = null;
+    if (save) { name = prompt("Name for this plan", "What-if plan"); if (!name) return; }
+    futExact = { building: true }; $("fut-exact-out").innerHTML = '<span class="pill warn">Working</span> On every posterior draw…';
+    try {
+      let r = await api("POST", `/api/runs/${run.run_id}/future/evaluate`, { multipliers: futMult });
+      while (r.building) { await new Promise(ok => setTimeout(ok, 2500)); if (view !== "g") return; r = await api("GET", `/api/runs/${run.run_id}/future/result/${r.key}`); }
+      if (r.result.error) throw new Error(r.result.error);
+      futExact = { result: r.result, key: r.key };
+      if (save) await api("POST", `/api/runs/${run.run_id}/future/plans`, { key: r.key, name, source: { kind: "what-if" } });
+    } catch (e) { futExact = { error: e.message }; }
+    renderWhatIfFuture(true);
+  }
+
+  // Plan, Optimize in Future mode: the optimizer's result, saved as a plan or opened on the sliders.
+  function futPlanResultHtml(X, key) {
+    const D = plData, kpi = D.kpi || "KPI", E = X.evaluation, T = E.totals, fc = D.future && D.future.forecast;
+    const atLimit = c => { const r = X.plan.channels.find(x => x.channel === c), s = X.after.channels[c].spend;
+      return r && r.note !== "locked" && (Math.abs(s - r.max) <= Math.max(1, r.max * 0.002) ? "at upper limit" : Math.abs(s - r.min) <= Math.max(1, r.min * 0.002) && r.min < r.planned ? "at lower limit" : r.note === "locked" ? "locked" : ""); };
+    return `<div class="tiles" style="margin-bottom:12px">${T.total ? `<div class="tile"><span>Total ${esc(kpi)} expected</span><b>${fnum(T.total.mean)}</b><span>90%: ${fnum(T.total.lo)} – ${fnum(T.total.hi)} · forecast ${fnum(fc.total)} + change</span></div>` : ""}
+        <div class="tile"><span>Change vs plan A</span><b>${T.change.mean >= 0 ? "+" : "−"}${fnum(Math.abs(T.change.mean))}</b><span>90%: ${fnum(T.change.lo)} to ${fnum(T.change.hi)}</span></div>
+        <div class="tile"><span>Spend</span><b>${fmoney(T.spend)}</b><span>template ${fmoney(T.template_spend)}</span></div></div>
+      <div class="scroll"><table style="min-width:760px"><thead><tr><th>Channel</th><th class="r">Template</th><th class="r">Optimized</th><th class="r">Change</th><th class="r">${esc(kpi)} from it</th><th class="r">ROI</th><th class="r">Next ${esc(symOr("unit"))} returns</th><th></th></tr></thead><tbody>
+        ${X.channels.map(c => { const a = X.before.channels[c], b = X.after.channels[c], ch = a.spend ? b.spend / a.spend - 1 : 0;
+          return `<tr><td><b>${esc(futName(c))}</b></td><td class="num">${fmoney(a.spend)}</td><td class="num">${fmoney(b.spend)}</td><td class="num ${Math.abs(ch) < 0.005 ? "" : ch > 0 ? "delta up" : "delta down"}">${Math.abs(ch) < 0.005 ? "–" : (ch > 0 ? "+" : "−") + Math.round(Math.abs(ch) * 100) + "%"}</td>
+            <td class="num">${fnum((E.by_channel[c] || {}).media)}</td><td class="num">${b.roi.mean.toFixed(2)}</td><td class="num">${b.mroi.mean.toFixed(2)}</td><td class="small muted">${atLimit(c)}</td></tr>`; }).join("")}
+        ${T.total ? `<tr style="font-weight:600"><td>Total with forecast</td><td class="num">${fmoney(T.template_spend)}</td><td class="num">${fmoney(T.spend)}</td><td></td><td class="num">${fnum(T.total.mean)} <span class="muted small">(${fnum(T.total.lo)}–${fnum(T.total.hi)})</span></td><td></td><td></td><td class="small muted">forecast ${fnum(fc.total)} + change</td></tr>` : ""}</tbody></table></div>
+      <p class="muted small">Next ${esc(symOr("unit"))} returns: the return on one more ${esc(symOr("unit"))} at the optimized spend (marginal ROI). At a limit, the channel would move further if the limit allowed.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="fut-opt-save" data-key="${esc(key)}">Save as plan</button><button class="btn" id="fut-opt-open">Open in what-if to adjust</button></div>`;
+  }
+  function wireFutPlanResult(X, key) {
+    const s = $("fut-opt-save"); if (s) s.onclick = async () => { const n = prompt("Name for this plan", "Optimized"); if (!n) return;
+      try { await api("POST", `/api/runs/${run.run_id}/future/plans`, { key, name: n }); futData = null; renderPlan(false); } catch (e) { alert(e.message); } };
+    const o = $("fut-opt-open"); if (o) o.onclick = () => { futMult = { ...X.multipliers }; futExact = null; switchView("g"); };
+  }
+  async function futPlansBelow() {
+    const host = $("pl-plans"); if (!host) return;
+    try { if (!futData || futData.run !== run.run_id) await futFetch(); host.innerHTML = plansHtml(futData) + logHtml(futData.log); wirePlans(futData, () => renderPlan(false)); } catch (e) { host.innerHTML = ""; }
+  }
+
+  // ---------- T · Tracking ----------
+  async function renderTracking(fetchAgain = true) {
+    $("rail").innerHTML = railHtml();
+    clearTimeout(trPoll);
+    const head = `<div class="runhead"><div><span class="eyebrow">Screen T · after Plan, Optimize</span><h1>Tracking</h1></div>`;
+    try { if (fetchAgain || !trData || trData.run !== run.run_id) trData = { ...(await api("GET", `/api/runs/${run.run_id}/tracking`)), run: run.run_id }; }
+    catch (e) { $("main").innerHTML = `${head}</div><div class="card" style="padding:14px 16px"><p>${esc(e.message)}</p></div>`; wire(); return; }
+    const D = trData;
+    if (!D.tracked) {
+      $("main").innerHTML = `${head}</div><article class="card"><header><span class="n">T</span><h3>Nothing tracked yet</h3><span></span>
+        <p class="sum">Tracking compares real weeks against a plan's week-by-week predictions. Set up a future period in What-If (Future), save plans, then choose one for tracking.</p></header>
+        <div class="body"><div><button class="btn primary" id="tr-go">Open What-If · Future</button></div></div></article>`;
+      wire(); $("tr-go").onclick = () => { futSetMode("future"); switchView("g"); }; return;
+    }
+    const T = D.tracked, R = D.result, kpi = D.kpi || "KPI", st = D.settings;
+    const nm = c => (D.display && D.display[c]) || c;
+    const done = R && R.tiles ? R.tiles.weeks_done : 0;
+    let body = "";
+    if (D.pending_upload) {
+      const m = D.pending_upload.match;
+      body += `<article class="card" style="border-color:var(--block)"><header><span class="n">↑</span><h3>Columns that changed</h3><span class="pill block">Decision needed</span><p class="sum">${esc(D.pending_upload.file)}: confirmed once, remembered for later uploads.</p></header>
+        <div class="body"><div class="scroll"><table style="min-width:620px"><thead><tr><th>In this file</th><th>Looks like</th><th class="r">Similarity</th><th>Use it as</th></tr></thead><tbody>
+          ${Object.entries(m.offered).map(([n, o]) => `<tr><td><code>${esc(n)}</code></td><td><code>${esc(o.column)}</code></td><td class="num">${o.similarity.toFixed(2)}</td>
+            <td><select data-trren="${esc(n)}"><option value="${esc(o.column)}" selected>${esc(o.column)}</option><option value="">Leave it out</option></select></td></tr>`).join("")}
+          ${m.new.map(n => `<tr><td><code>${esc(n)}</code></td><td class="muted">no match</td><td></td><td class="muted small">left out (the model has no such column)</td></tr>`).join("")}</tbody></table></div>
+          <div><button class="btn primary" id="tr-confirm">Confirm and compare</button></div></div></article>`;
+    }
+    if (R && R.building) body += '<div class="card" style="padding:14px 16px"><span class="pill warn">Working</span> Predicting each week at the spend that actually ran, on the model…</div>';
+    if (R && R.error) body += `<div class="card" style="padding:14px 16px;color:var(--block)">${esc(R.error)}</div>`;
+    if (R && R.rows) {
+      const tl = R.tiles;
+      body += R.alerts.map(a => `<div class="alert ${a.level === "red" ? "" : "amber"}"><h3><span class="pill ${a.level === "red" ? "block" : "warn"}">${esc(a.title)}</span>${a.weeks && a.weeks.length ? ` ${a.weeks.length} weeks in a row (${esc(a.weeks[0])} → ${esc(a.weeks[a.weeks.length - 1])})` : ""}</h3>
+        <p style="margin:0">${a.kind === "range" ? `${esc(a.text)} Cumulative model gap ${(a.cumulative_gap_pct * 100).toFixed(1)}% (limit ${st.cumulative_gap_pct}%).`
+          : a.kind === "execution" ? `Execution gap ${fnum(a.execution_gap)} of a total gap ${fnum(a.total_gap)}.${a.channels.length ? " Driven by: " + a.channels.map(x => `${esc(nm(x.channel))} (${x.effect >= 0 ? "+" : "−"}${fnum(Math.abs(x.effect))})`).join(", ") + "." : ""}`
+          : a.kind === "spend" ? `${a.channels.map(c => esc(nm(c))).join(", ")}: outside ±${st.spend_tolerance_pct}% of the plan for ${st.spend_off_weeks}+ weeks in a row.` : esc(a.text)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-trevent>Add an event</button><button class="btn" data-trrefit>Start a refit</button></div></div>`).join("");
+      body += `<div class="tiles">
+          <div class="tile"><span>Actual to date</span><b>${fnum(tl.actual)}</b><span>${esc(kpi)}, ${tl.weeks_done} week${tl.weeks_done === 1 ? "" : "s"}</span></div>
+          ${tl.predicted != null ? `<div class="tile"><span>Predicted to date, at actual spend</span><b>${fnum(tl.predicted)}</b><span>gap ${tl.gap >= 0 ? "+" : "−"}${fnum(Math.abs(tl.gap))} (${(tl.gap_pct * 100).toFixed(1)}%)</span></div>
+          <div class="tile"><span>Weeks inside the range</span><b>${tl.inside} of ${tl.weeks_done}</b><span>range: ${esc(R.bounds_from || "")}</span></div>` : '<div class="tile"><span>No forecast</span><b>–</b><span>spend only: set a forecast to compare the KPI</span></div>'}
+          <div class="tile"><span>Spend vs plan</span><b>${tl.spend_vs_plan == null ? "–" : `${tl.spend_vs_plan >= 0 ? "+" : "−"}${(Math.abs(tl.spend_vs_plan) * 100).toFixed(1)}%`}</b><span>${tl.channels_within ? `every channel within ±${st.spend_tolerance_pct}%` : tl.worst_channel ? `furthest: ${esc(nm(tl.worst_channel.channel))} ${tl.worst_channel.off >= 0 ? "+" : "−"}${Math.abs(tl.worst_channel.off * 100).toFixed(0)}%` : ""}</span></div></div>
+        ${tl.predicted != null ? `<article class="card"><header><span class="n">1</span><h3>${esc(kpi)}, week by week</h3><span></span><p class="sum">Actual against the prediction at the spend that actually ran.</p></header>
+          <div class="body"><div class="flegend"><span><i style="background:var(--ink)"></i>Actual</span><span><i style="background:var(--s1)"></i>Predicted at actual spend (dashed)</span><span><i style="background:var(--s1);opacity:.3"></i>Expected range</span>
+            <span><i style="background:var(--kpi)"></i>Plan's original prediction</span><label class="small"><input type="checkbox" id="tr-showplan" ${trShowPlan ? "checked" : ""}> show plan</label><span style="color:var(--block)">● outside the range</span></div>
+          <div class="fchart" id="tr-chart"></div></div></article>
+        <article class="card"><header><span class="n">2</span><h3>Where the gap comes from</h3><span></span><p class="sum">Execution gap: predicted at actual spend − the plan's prediction ("we didn't spend as planned"). Model / outside gap: actual − predicted at actual spend.</p></header>
+          <div class="body"><div class="flegend"><span><i style="background:var(--gx)"></i>Execution gap</span><span><i style="background:var(--gm)"></i>Model / outside gap</span></div><div class="fchart" id="tr-gap"></div></div></article>` : ""}
+        <article class="card"><header><span class="n">3</span><h3>Week by week</h3><span></span><p class="sum">Click a week for its channels' spend against the plan.</p></header>
+          <div class="body"><div class="scroll"><table class="trtable" style="min-width:860px"><thead><tr><th>Week</th><th class="r">Planned spend</th><th class="r">Actual spend</th><th class="r">Plan's predicted</th><th class="r">Predicted at actual</th><th class="r">Actual</th><th class="r">Gap</th><th>Status</th></tr></thead><tbody>
+            ${R.rows.map((r, i) => `<tr data-trrow="${i}" style="cursor:pointer"><td class="nowrap">▸ ${esc(r.week)}</td><td class="num">${fmoney(r.planned_spend)}</td><td class="num">${fmoney(r.actual_spend)}</td><td class="num">${fnum(r.plan_predicted)}</td>
+              <td class="num">${r.predicted == null ? "–" : `${fnum(r.predicted)} <span class="muted small">(${fnum(r.lo)}–${fnum(r.hi)})</span>`}</td><td class="num">${fnum(r.actual)}</td><td class="num">${r.gap_pct == null ? "–" : (r.gap_pct * 100).toFixed(1) + "%"}</td>
+              <td><span class="pill ${r.status === "inside" || r.status === "spend on plan" ? "pass" : r.status === "spend off plan" ? "warn" : "block"}">${esc(r.status === "below" ? "below range" : r.status === "above" ? "above range" : r.status)}</span></td></tr>
+              <tr class="sub" data-trsub="${i}" hidden><td colspan="8">${Object.entries(r.channels).map(([c, v]) => `<span style="margin-right:14px"${v.outside ? ' class="delta down"' : ""}>${esc(nm(c))}: ${fmoney(v.actual)} vs ${fmoney(v.planned)}${v.off == null ? "" : ` (${v.off >= 0 ? "+" : "−"}${Math.abs(v.off * 100).toFixed(0)}%)`}</span>`).join("")}</td></tr>`).join("")}
+            ${T.plan_weeks.filter(w => !R.rows.some(r => r.week === w)).map(w => `<tr class="muted"><td>${esc(w)}</td><td class="num">${fmoney(Object.values(D.targets[w] ? D.targets[w].spend : {}).reduce((a, b) => a + b, 0))}</td><td class="num">–</td><td class="num">${fnum(D.targets[w] && D.targets[w].total)}</td><td class="num">–</td><td class="num">–</td><td></td><td><span class="pill wait">to come</span></td></tr>`).join("")}
+          </tbody></table></div><div style="display:flex;gap:8px"><a class="btn" href="/api/runs/${run.run_id}/tracking.csv">Export CSV</a></div></div></article>`;
+    }
+    if (!R) body += `<article class="card"><header><span class="n">↑</span><h3>Upload actuals</h3><span></span><p class="sum">The real weeks, in the same format as the training file. Columns are matched like the training file's; only renamed ones are asked about.</p></header>
+      <div class="body"><p class="small">Plan weeks: ${esc(T.plan_weeks[0])} → ${esc(T.plan_weeks[T.plan_weeks.length - 1])}.</p></div></article>`;
+    const settingsHtml = `<details class="card" style="padding:12px 16px" id="tr-settings"><summary><b>Tracking settings</b> <span class="muted small">alert thresholds</span></summary>
+      <div class="row2" style="margin-top:10px">${[["spend_tolerance_pct", "Spend tolerance ±%"], ["spend_off_weeks", "Spend off plan: weeks in a row"], ["outside_range_weeks", "Outside the range: weeks in a row"],
+        ["cumulative_gap_pct", "Cumulative model gap %"], ["execution_share", "Execution share of the gap"], ["similarity", "Rename similarity"]].map(([k, t]) => `<label class="small">${t} <input type="number" step="any" data-trset="${k}" value="${st[k]}" style="width:80px"></label>`).join("")}
+        <button class="btn" id="tr-saveset">Save</button></div></details>`;
+    const evHtml = D.events.length ? `<p class="small"><b>Events:</b> ${D.events.map(e => `${esc(e.date)}${e.end !== e.date ? "→" + esc(e.end) : ""} ${esc(e.note)}`).join("; ")} <span class="muted">(offered as calendar flags at the next refit)</span></p>` : "";
+    $("main").innerHTML = `${head}<div class="chips"><span class="chip">Plan ${esc(T.id)} · ${esc(T.name)}</span><span class="chip">period ${done} of ${T.plan_weeks.length}${R && R.tiles && R.tiles.to_week ? ` · to ${esc(R.tiles.to_week)}` : ""}</span><span class="chip">model ${esc(String(T.model_key).slice(0, 8))}</span>
+        <label class="btn" style="cursor:pointer">Upload actuals<input type="file" id="tr-file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label><button class="btn" data-trevent>Add an event</button>${R && R.rows ? '<button class="btn" data-trrefit>Start a refit</button>' : ""}</div></div>
+      <div id="tr-msg" class="small" role="status"></div><div style="display:grid;gap:14px">${body}${evHtml}${settingsHtml}${logHtml(D.log)}</div>`;
+    wire();
+    if (R && R.rows && R.tiles.predicted != null) { trChart(R, D); trGap(R); }
+    const sp = $("tr-showplan"); if (sp) sp.onchange = () => { trShowPlan = sp.checked; trChart(R, D); };
+    $("main").querySelectorAll("[data-trrow]").forEach(tr => tr.onclick = () => { const s = document.querySelector(`[data-trsub="${tr.dataset.trrow}"]`); s.hidden = !s.hidden; });
+    const msg = t => { $("tr-msg").innerHTML = `<p style="color:var(--block)">${esc(t)}</p>`; };
+    $("tr-file").onchange = async () => { const f = $("tr-file").files[0]; if (!f) return; const fd = new FormData(); fd.append("file", f);
+      try { await api("POST", `/api/runs/${run.run_id}/tracking/upload`, fd); renderTracking(); } catch (e) { msg(e.message); } };
+    const cf = $("tr-confirm"); if (cf) cf.onclick = async () => { const ren = {}; document.querySelectorAll("[data-trren]").forEach(s => { ren[s.dataset.trren] = s.value || null; });
+      try { await api("POST", `/api/runs/${run.run_id}/tracking/confirm`, { file: D.pending_upload.file, renames: ren }); renderTracking(); } catch (e) { msg(e.message); } };
+    $("main").querySelectorAll("[data-trevent]").forEach(b => b.onclick = async () => { const date = prompt("Date of the event (YYYY-MM-DD)", (R && R.tiles && R.tiles.to_week) || T.plan_weeks[0]); if (!date) return;
+      const note = prompt("What happened? (e.g. a competitor's price cut, an outage)"); if (!note) return;
+      try { await api("POST", `/api/runs/${run.run_id}/tracking/events`, { date, note }); renderTracking(); } catch (e) { msg(e.message); } });
+    $("main").querySelectorAll("[data-trrefit]").forEach(b => b.onclick = async () => { if (!confirm("Start a refit with the new weeks added to the training file? It opens as a new run in this project, from Phase A, with the same answers, roles, seed and sampler; events are offered as calendar flags in step 21.")) return;
+      try { const d = await api("POST", `/api/runs/${run.run_id}/tracking/refit`); view = null; show(d, false); window.scrollTo(0, 0); } catch (e) { msg(e.message); } });
+    $("tr-saveset").onclick = async () => { const s = {}; document.querySelectorAll("[data-trset]").forEach(x => { s[x.dataset.trset] = Number(x.value); });
+      try { trData = { ...(await api("PUT", `/api/runs/${run.run_id}/tracking/settings`, { settings: s })), run: run.run_id }; renderTracking(false); } catch (e) { msg(e.message); } };
+    if (R && R.building) trPoll = setTimeout(() => { if (view === "t") renderTracking(); }, 3000);
+  }
+  function trChart(R, D) {
+    const host = $("tr-chart"); if (!host) return;
+    const W = fwidth("tr-chart"), H = 280, weeks = D.tracked.plan_weeks, n = weeks.length, pos = Object.fromEntries(weeks.map((w, i) => [w, i]));
+    const rows = R.rows, plan = weeks.map(w => D.targets[w] ? D.targets[w].total : null);
+    const vals = [...rows.flatMap(r => [r.actual, r.lo, r.hi]), ...(trShowPlan ? plan.filter(v => v != null) : [])];
+    const ticks = fTicks(Math.min(...vals) * 0.98, Math.max(...vals) * 1.02, 4);
+    const yl = v => fcompact(v), l = labelCol(ticks.map(yl), 11, 80), g = { W, H, l, r: 12, t: 16, b: 26 };
+    g.x = i => g.l + (i / Math.max(1, n - 1)) * (g.W - g.l - g.r);
+    g.y = v => g.t + (1 - (v - ticks[0]) / (ticks[ticks.length - 1] - ticks[0])) * (g.H - g.t - g.b);
+    const xs = rows.map(r => g.x(pos[r.week]));
+    const band = rows.map((r, i) => `${i ? "L" : "M"}${xs[i].toFixed(1)} ${g.y(r.hi).toFixed(1)}`).join("") + rows.map((r, i) => [i, r]).reverse().map(([i, r]) => `L${xs[i].toFixed(1)} ${g.y(r.lo).toFixed(1)}`).join("") + "Z";
+    const line = (arr, f) => arr.map((r, i) => `${i ? "L" : "M"}${xs[i].toFixed(1)} ${g.y(f(r)).toFixed(1)}`).join("");
+    const out = rows.map((r, i) => r.range && r.range !== "inside" ? i : -1).filter(i => i >= 0);
+    let spans = ""; let a = null;
+    out.concat([-9]).forEach((i, k) => { if (a == null) a = i; const nxt = out[k + 1]; if (i >= 0 && nxt !== i + 1) {
+      const x0 = xs[a] - (g.W - g.l - g.r) / Math.max(1, n - 1) / 2, x1 = xs[i] + (g.W - g.l - g.r) / Math.max(1, n - 1) / 2;
+      spans += `<rect x="${Math.max(g.l, x0).toFixed(1)}" y="${g.t}" width="${(Math.min(g.W - g.r, x1) - Math.max(g.l, x0)).toFixed(1)}" height="${g.H - g.t - g.b}" fill="var(--block-soft)"/><text x="${((xs[a] + xs[i]) / 2).toFixed(1)}" y="${g.t + 12}" text-anchor="middle" fill="var(--block)" font-size="11" font-weight="600">${rows[a].range === "below" ? "below range" : "above range"}</text>`; a = null; } else if (i < 0) a = null; });
+    const planPath = trShowPlan ? plan.map((v, i) => v == null ? "" : `${i && plan[i - 1] != null ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(v).toFixed(1)}`).join("") : "";
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Actual ${esc(D.kpi || "KPI")} per week against the prediction at actual spend">${spans}${fAxisY(g, ticks, yl)}
+      <path d="${band}" fill="var(--s1)" fill-opacity="0.14"/>${planPath ? `<path d="${planPath}" fill="none" stroke="var(--kpi)" stroke-width="1.2"/>` : ""}
+      <path d="${line(rows, r => r.predicted)}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-dasharray="6 4"/><path d="${line(rows, r => r.actual)}" fill="none" stroke="var(--ink)" stroke-width="2"/>
+      ${rows.map((r, i) => `<circle cx="${xs[i].toFixed(1)}" cy="${g.y(r.actual).toFixed(1)}" r="${r.range !== "inside" ? 5 : 4}" fill="${r.range !== "inside" ? "var(--block)" : "var(--ink)"}" stroke="var(--surface)" stroke-width="2"/>`).join("")}
+      <line class="fx" y1="${g.t}" y2="${g.H - g.b}" stroke="var(--ink)" stroke-dasharray="2 3" style="display:none"/>
+      <text x="${g.l}" y="${H - 8}" fill="var(--muted)" font-size="11">${esc(weeks[0])}</text><text x="${g.W - g.r}" y="${H - 8}" text-anchor="end" fill="var(--muted)" font-size="11">${esc(weeks[n - 1])}</text></svg>`;
+    fHover(host, g, n, i => { const r = rows.find(x => x.week === weeks[i]); return r ? `<b>${esc(r.week)}</b><br>actual ${fnum(r.actual)} · predicted ${fnum(r.predicted)}<br><span style="opacity:.75">range ${fnum(r.lo)}–${fnum(r.hi)} · plan ${fnum(r.plan_predicted)}</span>` : `<b>${esc(weeks[i])}</b><br>plan ${fnum(plan[i])} (to come)`; });
+  }
+  function trGap(R) {
+    const host = $("tr-gap"); if (!host) return;
+    const W = fwidth("tr-gap"), H = 200, rows = R.rows, n = rows.length;
+    const m = Math.max(1, ...rows.map(r => Math.abs(r.execution_gap || 0) + Math.abs(r.model_gap || 0)));
+    const ticks = fTicks(-m, m, 4), yl = v => (v > 0 ? "+" : "") + fcompact(v), l = labelCol(ticks.map(yl), 11, 80);
+    const g = { W, H, l, r: 12, t: 10, b: 24 }, step = (W - l - g.r) / Math.max(1, n), bw = Math.min(28, step * 0.6);
+    g.y = v => g.t + (1 - (v - ticks[0]) / (ticks[ticks.length - 1] - ticks[0])) * (H - g.t - g.b);
+    const seg = (x, v0, v1, col, label) => { const y0 = g.y(Math.max(v0, v1)), y1 = g.y(Math.min(v0, v1));
+      return `<rect x="${(x - bw / 2).toFixed(1)}" y="${y0.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, y1 - y0).toFixed(1)}" rx="3" fill="${col}" stroke="var(--surface)" stroke-width="2"><title>${label} ${(v1 - v0) >= 0 ? "+" : "−"}${fnum(Math.abs(v1 - v0))}</title></rect>`; };
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly gap split into execution and model or outside">
+      ${ticks.map(v => `<line x1="${l}" x2="${W - g.r}" y1="${g.y(v)}" y2="${g.y(v)}" stroke="${v === 0 ? "var(--muted)" : "var(--line)"}"/><text x="${l - 8}" y="${g.y(v) + 4}" text-anchor="end" fill="var(--muted)" font-size="11">${yl(v)}</text>`).join("")}
+      ${rows.map((r, i) => { const x = l + step * (i + 0.5), e = r.execution_gap || 0, md = r.model_gap || 0;
+        return seg(x, 0, e, "var(--gx)", `${r.week}: execution gap`) + seg(x, e, e + md, "var(--gm)", `${r.week}: model / outside gap`); }).join("")}
+      ${rows.map((r, i) => n <= 16 || i % Math.ceil(n / 12) === 0 ? `<text x="${(l + step * (i + 0.5)).toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="var(--muted)" font-size="10.5">${esc(r.week.slice(5))}</text>` : "").join("")}</svg>`;
+  }
 
   // ---------- Phase I: Export, refit (steps 55-58) ----------
   let exData = null;
@@ -2865,7 +3268,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   // ---------- boot ----------
   function route() {
     const h = location.hash;
-    const m = h.match(/^#run=([0-9a-f]{12})(?:\/([bcdefghi]))?$/);
+    const m = h.match(/^#run=([0-9a-f]{12})(?:\/([bcdefghit]))?$/);
     if (m) {
       if (run && run.run_id === m[1]) return;              // the run's own view changes use replaceState
       view = m[2] || "a";

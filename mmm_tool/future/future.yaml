@@ -1,0 +1,21 @@
+# Future planning and tracking: defaults the screens start from (judgment calls, all editable).
+
+plan_weeks: 13            # a new plan's length
+max_plan_weeks: 104
+stale_after_weeks: 26     # warn when a plan starts this long after the last data week
+
+forecast:
+  # The built-in forecast: the KPI in the same weeks last year x (1 + growth). Growth starts at
+  # the change of the latest 52 weeks against the 52 before (0 with under 104 weeks of data).
+  growth_from_data: true
+  z90: 1.6449             # a 90% range is +/- 1.645 standard deviations
+
+tracking:                 # the thresholds of the Tracking screen's alerts (per project, editable there)
+  spend_tolerance_pct: 10       # a channel's spend this far from plan is "off plan"
+  spend_off_weeks: 2            # ... for this many weeks in a row -> amber alert
+  outside_range_weeks: 3        # actual outside the expected range this many weeks in a row -> red
+  cumulative_gap_pct: 5         # or the cumulative model gap beyond this -> red
+  execution_share: 0.5          # a gap at least this much "execution" -> amber, naming the channels
+  similarity: 0.75              # a renamed column is offered when its name is this similar
+
+seed: 0                   # the random draws that combine the forecast's range with the model's

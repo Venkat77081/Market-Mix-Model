@@ -422,6 +422,82 @@ returns (step 23) is flagged: the optimizer adds budget there up to its upper li
 `mmm_tool/plan/plan.yaml`; `tests/test_phase_h.py` checks the mapping and, with `MMM_FIT_TESTS=1`,
 a real optimization (budget kept, limits and locks respected, never worse than the current split).
 
+## Future planning (Phases G and H) and Tracking
+
+What-If (G) and Plan (H) have a **Past / Future** switch. Past is the screens above. Future plans
+weeks after the data, using the accepted model, and the **Tracking** screen (T, between H and I)
+then compares what happened with the plan chosen for tracking.
+
+**Setup** (once per project, editable): the plan's first week and its length (13 weeks by default,
+up to 104), the **template** weeks whose spend pattern each plan starts from (the same weeks last
+year, the latest weeks, a custom start, or an uploaded weekly spend plan), the expected change in
+cost per unit per channel, the money value per KPI unit, and the **baseline forecast**: what the KPI
+would be with the template's media. The setup creates **plan A**, the template at 100%, which
+changes nothing.
+
+**The baseline forecast.** The tool has no separate forecasting tool; pick one of:
+
+| Source | What it is |
+|---|---|
+| Built-in (default) | the KPI in the same weeks last year × (1 + growth). Growth starts at the latest 52 weeks against the 52 before (0 with under 104 weeks of data) and can be edited. Its range is ± the naive-forecast error from step 31 (else the model's test MAPE) |
+| Upload | a CSV with a date column and a forecast column (and optional low/high columns), e.g. from your finance team's forecast; dates match within 3 days, and every plan week needs a row |
+| One total | a total for the period, spread over the weeks like the template's KPI |
+| None | media change only: the plan's results are shown as the change from plan A |
+
+**How a plan is worked out.** total[week] = forecast[week] + (the plan's media effect − plan A's
+media effect), on every posterior draw. The media effects come from Meridian's
+`Analyzer.incremental_outcome(new_data=…)` on a future data set: the lead-in weeks before the plan
+(real data, so adstock carries over) plus the plan weeks, every tensor rebuilt and `time` set.
+Spend scales by each channel's multiplier (or comes from the upload, split across regions by the
+template's shares); media units are spend ÷ (1 + cost change); a reach-and-frequency channel scales
+reach. The forecast's range is added with one shared draw per posterior draw, centred, so plan A's
+total equals the forecast. **Optimize** in future mode is `BudgetOptimizer.optimize(new_data=…)`
+over the plan weeks.
+
+**Plans** are saved per project (A, B, …) with who made them; rename, duplicate, archive,
+recompute (a plan is marked stale when the model or forecast changes) and **Choose for tracking**,
+which freezes its weekly targets. Switching to another plan needs a reason and freezes targets only
+from the first week without actuals. Every action is in the project's planning log.
+
+**Tracking.** Upload actuals (the same export format as training; renamed columns are offered for
+confirmation by name similarity). Per week: actual KPI against the expected range, actual spend
+against plan, and the gap split into **execution** (spend differed from plan; the model's effect of
+the actual spend against the planned spend) and **model** (the rest). Alerts:
+
+| Alert | When |
+|---|---|
+| Red, outside the predicted range | 3 weeks in a row outside, or a cumulative model gap beyond 5%. When spend was on plan it says so: check outside causes first |
+| Amber, execution | at least half the gap is execution; names the channels |
+| Amber, spend off plan | a channel's spend 10% or more from plan for 2 weeks in a row |
+
+Events (a promotion, a stock-out) can be noted per week; **Refit with actuals** starts a new run with
+the training rows plus the new ones, the events becoming custom events. The table downloads as CSV.
+
+Defaults are in `mmm_tool/future/future.yaml`:
+
+| Setting | Default |
+|---|---|
+| `plan_weeks` | 13 |
+| `max_plan_weeks` | 104 |
+| `stale_after_weeks` (warn when a plan starts this long after the data) | 26 |
+| `forecast.growth_from_data` | true |
+| `forecast.z90` | 1.6449 |
+| `tracking.spend_tolerance_pct` | 10 |
+| `tracking.spend_off_weeks` | 2 |
+| `tracking.outside_range_weeks` | 3 |
+| `tracking.cumulative_gap_pct` | 5 |
+| `tracking.execution_share` | 0.5 |
+| `tracking.similarity` | 0.75 |
+| `seed` | 0 |
+
+The tracking thresholds can be changed per project on the Tracking screen. Everything is stored in
+the project folder: `runs/projects/<slug>/planning/` holds `period.json`, `plans.json`,
+`tracking.json` and `log.json`; calculations run in the background (`python -m mmm_tool.future`) and
+are cached in `<run>/fit/future/` for the saved model. `tests/test_future.py` covers the period,
+forecast, store, tracking and API without Meridian, and with `MMM_FIT_TESTS=1` a real fit: future
+mode with a template equal to the training weeks matches past mode, plan A changes nothing, scaling,
+reach and frequency, the optimizer, and tracking.
+
 ## Phase I: Export, refit (steps 55–58)
 
 Opens once a fit has finished, accepted or rejected (the rail). It reads what the earlier phases

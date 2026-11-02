@@ -921,6 +921,16 @@ def whatif_saved(run_id: str, body: SavedIn) -> dict:
 
 class PlanIn(BaseModel):
     plan: dict[str, Any]
+    mode: str = "past"                      # "future": the project's future period (future_routes)
+
+
+def _inputs_for(run_id: str, d: Path, mode: str) -> dict:
+    inp = _plan_inputs(d)
+    if mode == "future":
+        from .future_routes import future_plan_inputs
+
+        inp = future_plan_inputs(run_id, inp)
+    return inp
 
 
 def _plan_inputs(d: Path) -> dict[str, Any]:
@@ -980,16 +990,17 @@ def _plan_check(inp: dict, plan: dict) -> dict:
 
 
 @app.get("/api/runs/{run_id}/plan")
-def plan_screen(run_id: str) -> dict:
-    """What the Plan and Optimize screens need, and the last optimization."""
+def plan_screen(run_id: str, mode: str = "past") -> dict:
+    """What the Plan and Optimize screens need, and the last optimization (mode=future: the
+    project's future period, its template spend as the history)."""
     from .. import whatif as wi
     from ..plan.optimize import defaults, settings as psettings
 
     d = _run_dir(run_id)
-    inp = _plan_inputs(d)
+    inp = _inputs_for(run_id, d, mode)
     pd_ = job.fit_dir(d) / "plan"
     last = None
-    if (pd_ / "last.json").exists():
+    if mode == "past" and (pd_ / "last.json").exists():
         k = json.loads((pd_ / "last.json").read_text(encoding="utf-8")).get("key")
         last = _cached(pd_ / f"result_{k}.json", wi.model_key(d)) if k else None
         if last is None and k and (pd_ / f"request_{k}.json").exists():
@@ -997,7 +1008,9 @@ def plan_screen(run_id: str) -> dict:
             if proc is not None and proc.poll() is None:
                 last = {"key": k, "building": True}
     out = {k: v for k, v in inp.items() if k != "run"}
-    out.update(settings=psettings(), defaults=defaults(inp["channels"], inp["money"]), last=last)
+    out.update(settings=psettings(), defaults=defaults(inp["channels"], inp["money"]), last=last, mode=mode)
+    if mode == "future":
+        out["defaults"]["period"] = "future"
     key = _answer_key(d)
     st = job.status(d) or {}
     if key and st.get("result"):
@@ -1012,7 +1025,7 @@ def plan_check(run_id: str, body: PlanIn) -> dict:
     """Step 53: the plan as BudgetOptimizer.optimize() arguments, or every problem with it
     (a plan being edited is often incomplete, so problems are an answer, not an error)."""
     try:
-        return _clean({"ok": True, **_plan_check(_plan_inputs(_run_dir(run_id)), body.plan)})
+        return _clean({"ok": True, **_plan_check(_inputs_for(run_id, _run_dir(run_id), body.mode), body.plan)})
     except HTTPException as e:
         if e.status_code != 400:
             raise
@@ -1027,7 +1040,11 @@ def plan_optimize(run_id: str, body: PlanIn) -> dict:
     from .. import whatif as wi
 
     d = _run_dir(run_id)
-    checked = _plan_check(_plan_inputs(d), body.plan)
+    checked = _plan_check(_inputs_for(run_id, d, body.mode), body.plan)
+    if body.mode == "future":
+        from .future_routes import future_optimize
+
+        return future_optimize(run_id, checked)
     k = _h.sha256(json.dumps(checked["args"], sort_keys=True, default=str).encode()).hexdigest()[:12]
     pd_ = job.fit_dir(d) / "plan"
     wi.write(pd_ / "last.json", {"key": k})
@@ -1315,3 +1332,9 @@ def main() -> None:
     args = p.parse_args()
     print(f"MMM tool on http://{args.host}:{args.port}  (runs saved in {RUNS_DIR.resolve()})")
     uvicorn.run(app, host=args.host, port=args.port)
+
+
+# Future planning and Tracking (future_routes.py), registered last so its paths never shadow these.
+from .future_routes import router as _future_router  # noqa: E402
+
+app.include_router(_future_router)
