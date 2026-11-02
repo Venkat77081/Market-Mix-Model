@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -414,7 +414,9 @@ def _tracking_ctx(run_id: str) -> tuple[dict, dict, dict | None]:
     tp = store.tracked(c["pdir"], setup["id"])
     if tp and tp["run_id"] != c["d"].name:
         try:
-            c = _ctx(tp["run_id"])
+            other = _ctx(tp["run_id"])
+            if other["slug"] == c["slug"]:              # a run moved to another project isn't this project's
+                c = other
         except HTTPException:
             pass
     return c, setup, tp
@@ -491,7 +493,9 @@ def _process_actuals(c: dict, setup: dict, tp: dict, path: Path, renames: dict[s
     payload = _payload(store.snapshot(setup, tp), "evaluate", spend=spend, units=units)
     key, _ = _job(c["d"], payload)
     t.update(actuals=on, actual_weeks=on["weeks"], all_weeks=sorted(set(t.get("all_weeks") or []) | set(act["weeks"])), pending_key=key, pending_payload=payload,
-             actuals_file=path.name, pending_upload=None)
+             actuals_file=path.name, actuals_files=list(dict.fromkeys((t.get("actuals_files") or ([t["actuals_file"]] if t.get("actuals_file") else []))
+                                                                   + [path.name])),
+             renames_used={**(t.get("renames_used") or {}), path.name: {n: o for n, o in renames.items() if o}}, pending_upload=None)
     store.save_tracking(c["pdir"], t)
     store.log(c["pdir"], "actuals uploaded", {"file": path.name, "plan_weeks": len(on["weeks"]),
                                               "all_weeks": len(act["weeks"]), "renames": {n: o for n, o in renames.items() if o}})
@@ -639,9 +643,20 @@ def tracking_refit(run_id: str) -> dict:
     a = A()
     meta = a._meta(c["d"])
     old, _ = load_file(c["d"] / meta["file"], Answers(meta["answers"]))
-    new, _ = load_file(store.folder(c["pdir"]) / "actuals" / t["actuals_file"], Answers(meta["answers"]))
-    new = new.rename(columns={n: o for n, o in t["renames"].items() if o})
-    new = new[[col for col in old.columns if col in new.columns]]
+    parts = []
+    for fname in t.get("actuals_files") or [t["actuals_file"]]:          # every upload, oldest first (later ones win)
+        f = store.folder(c["pdir"]) / "actuals" / fname
+        if not f.is_file():
+            continue
+        part, _ = load_file(f, Answers(meta["answers"]))
+        if part is None:
+            continue
+        used = (t.get("renames_used") or {}).get(fname) or {n: o for n, o in t["renames"].items() if o}
+        part = part.rename(columns=used)
+        parts.append(part[[col for col in old.columns if col in part.columns]])
+    if not parts:
+        raise HTTPException(409, "The uploaded actuals files are missing; upload them again.")
+    new = pd.concat(parts, ignore_index=True)
     date = next((col for col, r in (c["run"].a.roles or {}).items() if r == "date"), old.columns[0])
     both = pd.concat([old, new], ignore_index=True)
     both["_d"] = pd.to_datetime(both[date], errors="coerce")

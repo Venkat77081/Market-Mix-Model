@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..ingest.types import Answers, StepResult, Verdict
-from ..profile.context import BADGE_TEXT
 from ..profile.pipeline import PhaseCResult
 from .calendar import add_calendar_flags
 from .context import DCtx

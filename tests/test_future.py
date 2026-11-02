@@ -410,6 +410,20 @@ def test_tracking_upload_asks_about_a_renamed_column_once(client):
     path.write_text(new.tail(2).to_csv(index=False))                                          # only the latest weeks
     part = client.post(f"/api/runs/{rid}/tracking/upload", files={"file": ("new3.csv", path.read_bytes(), "text/csv")}).json()
     assert part["weeks"] == plan                                                              # the earlier weeks stay
+    # A refit uses every upload: the training weeks plus all 4 new ones, renamed to the training columns
+    rf = client.post(f"/api/runs/{rid}/tracking/refit")
+    assert rf.status_code == 200, rf.text
+    new_id = rf.json()["run_id"]
+    m = json.loads((run_path(new_id) / "meta.json").read_text())
+    both = pd.read_csv(run_path(new_id) / m["file"])
+    assert len(both) == len(raw) + 4 and spend_col in both.columns and spend_col + "_inr" not in both.columns
+    assert both[spend_col].tail(4).notna().all()
+    # The bundle carries the project's future plans and tracking
+    import io
+    import zipfile
+
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/runs/{rid}/bundle.zip").content))
+    assert {"future/period.json", "future/plans.json", "future/tracking.json", "future/log.json"} <= set(z.namelist())
     assert "columns matched" in [e["what"] for e in store.entries(pdir)]
 
 

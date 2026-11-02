@@ -6,7 +6,6 @@ paid media channel are set and the mapping has been confirmed.
 """
 from __future__ import annotations
 
-import re
 import time
 from dataclasses import asdict, dataclass
 

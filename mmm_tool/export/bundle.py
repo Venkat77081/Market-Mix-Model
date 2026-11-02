@@ -104,6 +104,25 @@ def _settings_files(run_settings: dict) -> dict[str, bytes]:
     return out
 
 
+def _add_planning(run_dir: Path, files: dict[str, bytes]) -> None:
+    """The project's future period, plans, tracking and planning log, when this run's model made
+    any of them (future/ in the bundle)."""
+    from .. import projects
+
+    if not projects.project_of(run_dir):
+        return
+    pl = run_dir.parent.parent / "planning"
+    if not pl.is_dir():
+        return
+    read = lambda n: json.loads((pl / n).read_text(encoding="utf-8")) if (pl / n).is_file() else None  # noqa: E731
+    period, plans = read("period.json") or {}, (read("plans.json") or {}).get("plans", [])
+    if period.get("run_id") != run_dir.name and not any(p.get("run_id") == run_dir.name for p in plans):
+        return
+    for n in ("period.json", "plans.json", "tracking.json", "log.json"):
+        if (pl / n).is_file():
+            files[f"future/{n}"] = (pl / n).read_bytes()
+
+
 def build(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: dict | None = None,
           roles: dict[str, str] | None = None) -> bytes:
     run_dir = Path(run_dir)
@@ -147,6 +166,7 @@ def build(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: di
         add_file(f"plan/result_{k}.json", fd / "plan" / f"result_{k}.json")
         add_file("plan/optimization_summary.html", fd / "plan" / f"report_{k}" / "optimization_summary.html")
     add_file("test/answer_key.json", run_dir / "answer_key.json")
+    _add_planning(run_dir, files)
     g = rpt.gather(run_dir, full_log, kpi, registry_entry)
     files["reports/report.html"] = rpt.html_report(g).encode()
     for name, text in rpt.csv_tables(g).items():

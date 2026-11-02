@@ -18,7 +18,6 @@ import json
 import string
 import time
 from pathlib import Path
-from typing import Any
 
 STATUSES = ("draft", "tracked", "archived")
 
