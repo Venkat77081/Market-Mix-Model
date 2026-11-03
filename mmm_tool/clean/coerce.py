@@ -70,7 +70,8 @@ def coerce_types(ctx: Ctx) -> StepResult:
         numbers = s.map(lambda v: to_number(v, units, mark))
         numbers[yes_no] = low[yes_no].map(YES_NO)
         numbers[text_null] = np.nan
-        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & text.str.contains(r"[,.₹$€£¥()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
+        plain = text.str.fullmatch(r"\s*[-+]?\d+(\.\d+)?([eE][-+]?\d+)?\s*", na=False)     # 1234.5 needs no reading
+        formatted = ~blank & ~text_null & ~yes_no & numbers.notna() & ~plain & text.str.contains(r"[,.₹$€£¥()%a-z]|^\s*[-–—]\s*$", case=False, regex=True, na=False)
         unreadable = ~blank & ~text_null & numbers.isna()
         symbols = sorted({sym for v in text.dropna() if (sym := currency_of(v))})
         if symbols:
@@ -83,12 +84,14 @@ def coerce_types(ctx: Ctx) -> StepResult:
             "column": col, "role": role,
             "text_nulls": int(text_null.sum()), "formatted": int(formatted.sum()), "yes_no": int(yes_no.sum()),
             "blank": int(blank.sum()), "unreadable": int(unreadable.sum()), "examples": examples, "decimal_mark": mark,
+            "formatted_example": next(iter(text[formatted]), None),
         })
 
     totals = {k: sum(r[k] for r in report) for k in ("text_nulls", "formatted", "yes_no", "unreadable")}
     parts = [f"{len(report)} columns are numbers now"]
     if totals["formatted"]:
-        parts.append(f"{totals['formatted']:,} formatted numbers read (e.g. 1,20,000)")
+        ex = next((f"'{r['formatted_example']}' in {r['column']}" for r in report if r.get("formatted_example")), None)
+        parts.append(f"{totals['formatted']:,} formatted numbers read" + (f" (e.g. {ex})" if ex else ""))
     if totals["text_nulls"]:
         parts.append(f"{totals['text_nulls']:,} text nulls marked missing")
     if totals["yes_no"]:

@@ -112,12 +112,14 @@ def classify(value) -> tuple[str, object]:
 
 def explaining_region(df: pd.DataFrame, date_col: str) -> str | None:
     """A text column with a few repeating values that makes every (date, value)
-    pair unique, as in long-format regional data."""
+    pair unique, as in long-format regional data. Exact duplicate rows don't count against it:
+    Phase B step 8 removes them."""
+    distinct = df.drop_duplicates()
     for col in df.columns:
         if col == date_col or numeric_share(df[col]) >= 0.8:
             continue
         n = df[col].nunique()
-        if 2 <= n <= 60 and not df.duplicated([date_col, col]).any():
+        if 2 <= n <= 60 and not distinct.duplicated([date_col, col]).any():
             return col
     return None
 

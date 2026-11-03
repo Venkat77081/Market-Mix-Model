@@ -1,0 +1,44 @@
+{
+ "kpi_column": "Orders",
+ "assumes_decisions": "every paid channel kept as its own channel; Revenue ($) as the revenue column",
+ "kpi_per_spend_unit": 1000,
+ "channels": [
+  {
+   "source_columns": [
+    "TV Spend ($)"
+   ],
+   "true_roi": 1.106,
+   "true_share_of_kpi_pct": 7.9,
+   "true_kpi_per_spend": 19.084,
+   "true_marginal_roi": 0.782
+  },
+  {
+   "source_columns": [
+    "Search Spend ($)"
+   ],
+   "true_roi": 1.757,
+   "true_share_of_kpi_pct": 10.44,
+   "true_kpi_per_spend": 30.314,
+   "true_marginal_roi": 0.772
+  },
+  {
+   "source_columns": [
+    "Social Spend ($)"
+   ],
+   "true_roi": 1.113,
+   "true_share_of_kpi_pct": 4.52,
+   "true_kpi_per_spend": 19.209,
+   "true_marginal_roi": 0.705
+  },
+  {
+   "source_columns": [
+    "Display Spend ($)"
+   ],
+   "true_roi": 0.388,
+   "true_share_of_kpi_pct": 1.08,
+   "true_kpi_per_spend": 6.703,
+   "true_marginal_roi": 0.188
+  }
+ ],
+ "true_non_media_share_pct": 76.06
+}

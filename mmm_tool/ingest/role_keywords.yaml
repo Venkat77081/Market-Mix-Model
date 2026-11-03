@@ -58,6 +58,7 @@ rules:
 
   - role: non_media_treatment
     words: [discount, discounts, promo, promotion, offer, cashback, incentive, incentives, commission]
+    unless: [competitor, competitors, competition, rival, rivals]   # a competitor's promotion is outside your control
     reason: a lever you control that isn't media
 
   - role: control
