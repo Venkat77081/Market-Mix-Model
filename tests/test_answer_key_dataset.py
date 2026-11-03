@@ -31,7 +31,22 @@ def test_the_committed_files_are_what_the_generator_writes(tmp_path):
     data.to_csv(tmp_path / "d.csv", index=False)
     assert (tmp_path / "d.csv").read_text() == (HERE / "home_goods_mmm.csv").read_text()
     assert key == json.loads((HERE / "truth_for_tool.json").read_text())
-    assert details["planted_problems"] == json.loads((HERE / "truth_details.json").read_text())["planted_problems"]
+    saved = json.loads((HERE / "truth_details.json").read_text())
+    assert details["planted_problems"] == saved["planted_problems"] and details["what_if"] == saved["what_if"]
+
+
+def test_the_actuals_and_the_true_execution_gap():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("make_dataset", HERE / "make_dataset.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    fut, truth = mod.future_actuals(11)
+    assert fut.to_csv(index=False) == (HERE / "home_goods_actuals_next13.csv").read_text()
+    assert truth == json.loads((HERE / "truth_details.json").read_text())["future_actuals"]
+    assert truth["true_execution_gap_total"] < 0                                  # TV at half costs orders
+    # --check-plan agrees with the What-If table
+    assert mod.true_change({"search": 1.2})["orders_change"] == json.loads((HERE / "truth_details.json").read_text())["what_if"]["search"]["120%"]["all"]["orders_change"]
 
 
 def test_phases_a_to_d_read_the_file_as_the_checklist_says():
@@ -63,3 +78,15 @@ def test_a_competitors_promotion_is_an_outside_factor():
     s = pd.Series([0, 1, 0, 0, 1] * 10)
     assert suggest_role("Competitor Promo", s, "week").role == "control"
     assert suggest_role("Promo Flag", s, "week").role == "non_media_treatment"
+
+
+def test_a_flights_off_weeks_dont_reset_the_spend_off_plan_run():
+    from mmm_tool.future import tracking
+
+    plan = [f"2026-01-{d:02d}" for d in (5, 12, 19, 26)]
+    tg = {w: {"week": w, "spend": {"tv": p, "search": 50.0}, "total": None, "plan_id": "A"} for w, p in zip(plan, (100.0, 100.0, 0.0, 0.0))}
+    on = {"weeks": plan, "kpi": [1.0] * 4, "spend": {"tv": [50.0, 50.0, 0.0, 0.0], "search": [50.0] * 4}, "units": {}}
+    at = {"weeks": plan, "per_week": {"total": None}, "by_channel": {}}
+    sets = {"spend_tolerance_pct": 10, "spend_off_weeks": 2, "outside_range_weeks": 3, "cumulative_gap_pct": 5, "execution_share": 0.5}
+    r = tracking.compare(on, tg, at, sets, None)
+    assert next(a for a in r["alerts"] if a["kind"] == "spend")["channels"] == ["tv"]       # TV at half, then off as planned

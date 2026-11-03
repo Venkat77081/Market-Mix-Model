@@ -76,6 +76,216 @@
   "competitor": -29908.3,
   "noise": 3888.0
  },
+ "what_if": {
+  "tv": {
+   "0%": {
+    "all": {
+     "orders_change": -147350.1,
+     "revenue_change": -8541585.58
+    },
+    "last_52": {
+     "orders_change": -54252.2,
+     "revenue_change": -3156404.75
+    }
+   },
+   "50%": {
+    "all": {
+     "orders_change": -67358.1,
+     "revenue_change": -3903990.55
+    },
+    "last_52": {
+     "orders_change": -23549.2,
+     "revenue_change": -1369786.23
+    }
+   },
+   "80%": {
+    "all": {
+     "orders_change": -23145.4,
+     "revenue_change": -1341301.14
+    },
+    "last_52": {
+     "orders_change": -7900.5,
+     "revenue_change": -459428.82
+    }
+   },
+   "120%": {
+    "all": {
+     "orders_change": 19046.0,
+     "revenue_change": 1103551.41
+    },
+    "last_52": {
+     "orders_change": 6332.8,
+     "revenue_change": 368141.76
+    }
+   },
+   "150%": {
+    "all": {
+     "orders_change": 41754.0,
+     "revenue_change": 2419010.02
+    },
+    "last_52": {
+     "orders_change": 13661.7,
+     "revenue_change": 794013.06
+    }
+   }
+  },
+  "search": {
+   "0%": {
+    "all": {
+     "orders_change": -194795.2,
+     "revenue_change": -11288997.12
+    },
+    "last_52": {
+     "orders_change": -63932.3,
+     "revenue_change": -3712662.45
+    }
+   },
+   "50%": {
+    "all": {
+     "orders_change": -59483.7,
+     "revenue_change": -3446613.44
+    },
+    "last_52": {
+     "orders_change": -19676.0,
+     "revenue_change": -1142497.87
+    }
+   },
+   "80%": {
+    "all": {
+     "orders_change": -19351.6,
+     "revenue_change": -1121210.44
+    },
+    "last_52": {
+     "orders_change": -6419.8,
+     "revenue_change": -372755.61
+    }
+   },
+   "120%": {
+    "all": {
+     "orders_change": 15513.4,
+     "revenue_change": 898789.11
+    },
+    "last_52": {
+     "orders_change": 5160.9,
+     "revenue_change": 299650.15
+    }
+   },
+   "150%": {
+    "all": {
+     "orders_change": 33776.4,
+     "revenue_change": 1956839.77
+    },
+    "last_52": {
+     "orders_change": 11254.1,
+     "revenue_change": 653428.12
+    }
+   }
+  },
+  "social": {
+   "0%": {
+    "all": {
+     "orders_change": -84323.5,
+     "revenue_change": -4885375.32
+    },
+    "last_52": {
+     "orders_change": -27354.1,
+     "revenue_change": -1587876.81
+    }
+   },
+   "50%": {
+    "all": {
+     "orders_change": -34081.6,
+     "revenue_change": -1974611.62
+    },
+    "last_52": {
+     "orders_change": -11103.2,
+     "revenue_change": -644339.67
+    }
+   },
+   "80%": {
+    "all": {
+     "orders_change": -11758.9,
+     "revenue_change": -681269.99
+    },
+    "last_52": {
+     "orders_change": -3840.4,
+     "revenue_change": -222842.06
+    }
+   },
+   "120%": {
+    "all": {
+     "orders_change": 9856.6,
+     "revenue_change": 571037.27
+    },
+    "last_52": {
+     "orders_change": 3226.8,
+     "revenue_change": 187218.16
+    }
+   },
+   "150%": {
+    "all": {
+     "orders_change": 21911.1,
+     "revenue_change": 1269375.78
+    },
+    "last_52": {
+     "orders_change": 7182.9,
+     "revenue_change": 416717.23
+    }
+   }
+  },
+  "display": {
+   "0%": {
+    "all": {
+     "orders_change": -20132.5,
+     "revenue_change": -1166180.48
+    },
+    "last_52": {
+     "orders_change": -6568.2,
+     "revenue_change": -381104.59
+    }
+   },
+   "50%": {
+    "all": {
+     "orders_change": -6541.5,
+     "revenue_change": -379000.82
+    },
+    "last_52": {
+     "orders_change": -2158.3,
+     "revenue_change": -125295.86
+    }
+   },
+   "80%": {
+    "all": {
+     "orders_change": -2175.1,
+     "revenue_change": -126025.81
+    },
+    "last_52": {
+     "orders_change": -720.1,
+     "revenue_change": -41809.34
+    }
+   },
+   "120%": {
+    "all": {
+     "orders_change": 1779.9,
+     "revenue_change": 103133.25
+    },
+    "last_52": {
+     "orders_change": 591.1,
+     "revenue_change": 34324.05
+    }
+   },
+   "150%": {
+    "all": {
+     "orders_change": 3919.9,
+     "revenue_change": 227138.01
+    },
+    "last_52": {
+     "orders_change": 1304.0,
+     "revenue_change": 75727.09
+    }
+   }
+  }
+ },
  "weekly_contribution_orders": {
   "tv": [
    801.4,
@@ -731,5 +941,42 @@
    "where": "about 45% of weeks, all regions",
    "expect": "Phase B step 10 counts them as real zeros in a media column, not missing data; TV is flighted, not always-on"
   }
- ]
+ ],
+ "future_actuals": {
+  "weeks": [
+   "2025-12-29",
+   "2026-01-05",
+   "2026-01-12",
+   "2026-01-19",
+   "2026-01-26",
+   "2026-02-02",
+   "2026-02-09",
+   "2026-02-16",
+   "2026-02-23",
+   "2026-03-02",
+   "2026-03-09",
+   "2026-03-16",
+   "2026-03-23"
+  ],
+  "spend_rule": "same weeks last year; TV at 50%",
+  "true_execution_gap_orders": [
+   -256.6,
+   -415.6,
+   -513.6,
+   -584.5,
+   -644.0,
+   -679.9,
+   -617.4,
+   -463.8,
+   -298.9,
+   -161.6,
+   -77.6,
+   -35.1,
+   -13.8
+  ],
+  "true_execution_gap_total": -4762.4,
+  "true_media_orders_as_planned": 39571.4,
+  "true_media_orders_as_run": 34809.0,
+  "actual_orders_total": 157368
+ }
 }

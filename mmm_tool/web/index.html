@@ -3278,7 +3278,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   // ---------- boot ----------
   function route() {
     const h = location.hash;
-    const m = h.match(/^#run=([0-9a-f]{12})(?:\/([bcdefghit]))?$/);
+    const m = h.match(/^#run=([0-9a-f]{12})(?:\/([abcdefghit]))?$/);
     if (m) {
       if (run && run.run_id === m[1]) return;              // the run's own view changes use replaceState
       view = m[2] || "a";

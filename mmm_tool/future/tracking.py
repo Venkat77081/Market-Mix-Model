@@ -212,7 +212,9 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
     # Amber: a channel off its spend tolerance for N weeks in a row.
     if rows:
         need = int(settings["spend_off_weeks"])
-        off_ch = [c for c in rows[0]["channels"] if _streak([r["channels"][c]["outside"] for r in rows]) >= need]
+        # weeks with nothing planned and nothing spent (a flight's off weeks) neither break nor extend a run
+        active = lambda c: [r["channels"][c]["outside"] for r in rows if r["channels"][c]["planned"] or r["channels"][c]["actual"]]  # noqa: E731
+        off_ch = [c for c in rows[0]["channels"] if _streak(active(c)) >= need]
         if off_ch:
             alerts.append({"level": "amber", "kind": "spend", "title": "Spend off plan", "channels": off_ch,
                            "text": f"{', '.join(off_ch)}: outside ±{tol:.0%} of the plan for {need}+ weeks in a row."})

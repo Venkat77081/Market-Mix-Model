@@ -135,6 +135,10 @@ zero spend, the 10x jump ratio, how close to a power of 10 a level shift must be
 
 ## Answer keys
 
+**Checking the whole tool:** `examples/answer_key_check/` has a 3-region export whose true ROIs,
+What-If results and Tracking gap are known, with a step-by-step list of what every screen should
+show on it (its `README.md`).
+
 `tests/data/phase_a_tests/` holds 19 test exports and `expected_phase_a.json`, their answer key.
 `python tests/expected_phase_a.py` prints a check-by-check report for every file; the same checks run
 in `pytest` (`tests/test_expected_phase_a.py`).
