@@ -20,6 +20,8 @@ Thresholds are in fit.yaml.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import hashlib
 import json
 import time
@@ -333,32 +335,110 @@ def direction_check(ctx: ECtx) -> list[dict[str, Any]]:
     return out
 
 
+def narrowing_text(k: float) -> str:
+    """'narrower by 59%' or 'wider by 12%': the one wording, and rounding, of step 33's figure."""
+    return f"narrower by {k:.0%}" if k >= 0 else f"wider by {-k:.0%}"
+
+
+def narrowing_note(k: float) -> str:
+    """Step 33's figure in a sentence, with the same number and rounding as the table."""
+    return f"the data narrowed its ROI range by only {k:.0%}" if k >= 0 else f"its ROI range came out {-k:.0%} wider than the prior"
+
+
 def prior_driven(ctx: ECtx) -> StepResult:
     """Step 33. Each channel's posterior 90% ROI range against its prior's. The prior's range is
     exact when step 25 set a known distribution on ROI (LogNormal by default); Meridian's prior
-    draws are used only when there is no closed form (an mroi or share-of-sales prior)."""
+    draws are used when there is no closed form (an mroi or share-of-sales prior) and for a
+    channel with a lift test: its prior over the whole period is then the sampled prior ROI
+    (sample_prior, ROI with use_posterior=False), since the lift test applies to its own weeks.
+    A calibrated channel (from the calibration spec Meridian was given) is anchored to its lift
+    test, never prior-driven, and is left out of the warning count."""
     need = float(ctx.cfg["prior_driven"]["min_narrowing"])
     paid = ctx.metrics[ctx.metrics["paid"]]
     kind = ctx.config.get("prior_type", "roi")
     priors = ctx.config.get("roi_priors") or {}
+    calibrated = m.calibrated_channels(getattr(ctx, "mmm", None))
     rows, driven = [], []
     for ch, r in paid.iterrows():
-        exact = gates.exact_prior_range(priors.get(ch), ctx.confidence) if kind == "roi" else None
+        cal = ch in calibrated
+        exact = gates.exact_prior_range(priors.get(ch), ctx.confidence) if kind == "roi" and not cal else None
         prior = exact or (r["roi_prior_ci_lo"], r["roi_prior_ci_hi"])
         post = (r["roi_posterior_ci_lo"], r["roi_posterior_ci_hi"])
         k = gates.narrowing(prior, post)
-        rows.append({"channel": ch, "narrowing": k, "prior": list(prior), "posterior": list(post),
-                     "prior_source": "exact" if exact else "prior draws"})
-        if k < need:
+        rows.append({"channel": ch, "narrowing": k, "narrowing_text": narrowing_text(k), "prior": list(prior),
+                     "posterior": list(post), "calibrated": cal,
+                     "prior_source": "exact" if exact else "sampled" if cal else "prior draws",
+                     "prior_note": "(sampled; lift test applies to its own weeks)" if cal else None,
+                     "low": (k < need) and not cal})
+        if cal:
+            ctx.badge(ch, "anchored_to_lift_test")
+            if "prior_driven" in ctx.badges.get(ch, []):
+                ctx.badges[ch].remove("prior_driven")
+        elif k < need:
             driven.append(ch)
             ctx.badge(ch, "prior_driven")
-    details = {"channels": rows, "min_narrowing": need, "prior_driven": driven}
+    cleared = clear_hard_to_measure(ctx, calibrated, {row["channel"]: row["posterior"] for row in rows})
+    details = {"channels": rows, "min_narrowing": need, "prior_driven": driven, "calibrated": sorted(calibrated),
+               "hard_to_measure_cleared": cleared}
     if not driven:
-        return _step(33, Verdict.PASS, f"Every channel's ROI range is at least {need:.0%} narrower than its prior.", details)
+        return _step(33, Verdict.PASS, f"Every channel's ROI range is at least {need:.0%} narrower than its prior"
+                     + (" (channels with a lift test are anchored to it)." if calibrated else "."), details)
     return _step(33, Verdict.WARN, f"{len(driven)} channel(s) badged prior-driven: {', '.join(driven)}.", details,
-                 [f"'{c}': the data narrowed its ROI range by only "
-                  f"{next(r['narrowing'] for r in rows if r['channel'] == c):.0%}; its ROI mostly repeats the prior. "
-                  "A lift test (step 26) would anchor it." for c in driven])
+                 [f"'{c}': {narrowing_note(next(r['narrowing'] for r in rows if r['channel'] == c))}; its ROI mostly "
+                  "repeats the prior. A lift test (step 26) would anchor it." for c in driven])
+
+
+def clear_hard_to_measure(ctx: ECtx, calibrated: set[str], ranges: dict[str, list[float]]) -> list[dict]:
+    """A calibrated channel whose 90% ROI range is now narrower than in the project's previous run
+    is no longer hard to measure: the lift test did its job. Returns what was cleared."""
+    hard = [c for c in calibrated if "hard_to_measure" in ctx.badges.get(c, [])]
+    if not hard or getattr(ctx, "out_dir", None) is None:
+        return []
+    prev = previous_ranges(Path(ctx.out_dir).parent)
+    if prev is None:
+        return []
+    run_id, before = prev
+    out = []
+    for c in hard:
+        if c in before and c in ranges:
+            w0, w1 = before[c][1] - before[c][0], ranges[c][1] - ranges[c][0]
+            if w1 < w0:
+                ctx.badges[c].remove("hard_to_measure")
+                out.append({"channel": c, "previous_run": run_id, "previous": before[c], "now": ranges[c]})
+    return out
+
+
+def previous_ranges(run_dir: Path) -> tuple[str, dict[str, list[float]]] | None:
+    """The 90% ROI ranges of the project's previous fit: the run this one was refit from, else the
+    other run in the same folder whose fit finished last. None when there is none."""
+    import json
+
+    from . import job
+
+    def ranges(d: Path):
+        res = (job.status(d) or {}).get("result") or {}
+        rows = {c["channel"]: [c["roi_posterior_ci_lo"], c["roi_posterior_ci_hi"]] for c in res.get("channels", [])
+                if c.get("paid") and c.get("roi_posterior_ci_lo") is not None}
+        return rows or None
+
+    run_dir = Path(run_dir)
+    try:
+        meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {}
+    src = (meta.get("refit_of") or {}).get("run_id") if isinstance(meta.get("refit_of"), dict) else None
+    src = src or meta.get("refit_from")
+    if src and (run_dir.parent / src).is_dir() and ranges(run_dir.parent / src):
+        return src, ranges(run_dir.parent / src)
+    best = None
+    for d in run_dir.parent.iterdir() if run_dir.parent.is_dir() else []:
+        if d == run_dir or not (d / "meta.json").is_file():
+            continue
+        st = job.status(d) or {}
+        r = ranges(d)
+        if r and st.get("finished") and (best is None or st["finished"] > best[0]):
+            best = (st["finished"], d.name, r)
+    return (best[1], best[2]) if best else None
 
 
 NEAR_ASSUMPTION = "stable because it stays near the starting assumption, not because the data confirms it"

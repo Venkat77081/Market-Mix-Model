@@ -748,7 +748,9 @@ def get_summary(run_id: str) -> dict:
         raise HTTPException(404, "The Model Summary is being built." if building else
                             "No Model Summary: Phase F opens once a model is accepted in Phase E.")
     st = job.status(d) or {}
-    out = json.loads(path.read_text(encoding="utf-8"))
+    from ..summary.build import with_cost_per
+
+    out = with_cost_per(json.loads(path.read_text(encoding="utf-8")))
     built_from = (st.get("result") or {}).get("inputs")
     if built_from:
         run = _pipeline(d)

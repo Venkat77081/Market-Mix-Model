@@ -126,6 +126,28 @@ def fitted_kpi(mmm) -> np.ndarray:
     return draws.reshape(-1, draws.shape[-1]).mean(axis=0)
 
 
+def calibrated_channels(mmm) -> set[str]:
+    """Channels with a lift test, from the calibration spec Meridian was given (roi_calibration,
+    rf_roi_calibration, or their per-week calibration periods); never from channel names."""
+    if mmm is None or getattr(mmm, "model_spec", None) is None:
+        return set()
+    from meridian.model import spec as spec_mod
+
+    sp, data, out = mmm.model_spec, mmm.input_data, set()
+    for cal, period, coord in ((getattr(sp, "roi_calibration", None), getattr(sp, "roi_calibration_period", None), "media_channel"),
+                               (getattr(sp, "rf_roi_calibration", None), getattr(sp, "rf_roi_calibration_period", None), "rf_channel")):
+        names = [str(c) for c in getattr(data, coord).values] if getattr(data, coord, None) is not None else []
+        for entry in (cal.spec if cal is not None else ()):
+            if isinstance(entry, spec_mod.ChannelCalibrationSpec):
+                out.update(str(c) for c in entry.channels)
+            else:                                        # a DateRange: every channel of this kind
+                out.update(names)
+        if period is not None:
+            p = np.asarray(period, bool)
+            out.update(n for i, n in enumerate(names) if i < p.shape[-1] and p[..., i].any())
+    return out
+
+
 def channel_metrics(mmm, confidence: float) -> pd.DataFrame:
     """Per paid channel: ROI (money if there is revenue, else KPI per unit of
     spend) and incremental KPI, each with prior and posterior mean, median and

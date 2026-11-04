@@ -218,7 +218,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
 .flegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
 .flegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .badge { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap; display: inline-block; }
-.badge.calibrated { color: var(--pass); border-color: currentColor; }
+.badge.calibrated, .badge.anchored_to_lift_test { color: var(--pass); border-color: currentColor; }
+td.ftrust { min-width: 200px; white-space: normal; } td.ftrust .badge { margin: 1px 0; }
 .badge.model_only { color: var(--muted); border-color: var(--line); }
 .badge.hard_to_measure, .badge.rarely_on, .badge.moves_with, .badge.season_timed { color: var(--warn); border-color: currentColor; }
 .badge.prior_driven { color: var(--block); border-color: currentColor; }
@@ -1516,6 +1517,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="holdout_weeks" aria-label="Holdout weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select>${kn}</div>`;
   }
 
+  // Step 33's figure, the same text as its notes: "narrower by 59%", or "wider by 12%" in amber.
+  const narrowText = r => r.narrowing_text || (r.narrowing >= 0 ? `narrower by ${Math.round(r.narrowing * 100)}%` : `wider by ${Math.round(-r.narrowing * 100)}%`);
+  const narrowCell = (r, need) => `<td class="num" ${r.narrowing < 0 || (!r.calibrated && r.narrowing < need) ? 'style="color:var(--warn)"' : ""}>${esc(narrowText(r).replace(/^narrower by /, ""))}</td>`;
+
   // ---------- page ----------
   // ---------- Phase C step bodies ----------
   const CHOICE_LABEL = { other: "Merge into Other", drop: "Drop", keep: "Keep", combine: "Combine", exclude: "Exclude" };
@@ -1785,14 +1790,18 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
       const modelCell = c => money ? r2(c.roi_posterior_mean) : r2(tr[c.channel] && tr[c.channel].model != null ? tr[c.channel].model : c.roi_posterior_mean);
       const rangeCell = c => money || !tr[c.channel] || tr[c.channel].lo == null ? range(c.roi_posterior_ci_lo, c.roi_posterior_ci_hi) : range(tr[c.channel].lo, tr[c.channel].hi);
       const truthHead = T ? `<th>True ${esc(money ? "ROI" : T.label)}</th><th>Truth in range?</th><th>True share</th>` : "";
-      const nonMedia = T ? `<tr><td><b>Non-media</b> <span class="muted small">(baseline and controls)</span></td><td></td><td></td><td class="num">${pct(T.non_media.model_share)}</td><td></td><td></td><td></td><td class="num">${T.non_media.true_share == null ? "–" : pct(T.non_media.true_share)}</td></tr>` : "";
+      const s33 = (fitResult().steps || []).find(x => x.step === 33), nb = Object.fromEntries(((s33 && s33.details.channels) || []).map(r => [r.channel, r]));
+      const nbCell = c => { const r = nb[c.channel]; return r ? narrowCell(r, s33.details.min_narrowing) : '<td class="muted small">–</td>'; };
+      const nonMedia = `<tr><td><b>Non-media</b> <span class="muted small">(baseline and controls)</span></td><td></td><td></td><td class="num">${pct(T ? T.non_media.model_share : d.contributions.baseline_share)}</td><td></td><td></td>${T ? `<td></td><td></td><td class="num">${T.non_media.true_share == null ? "–" : pct(T.non_media.true_share)}</td>` : ""}</tr>`;
       return `${T ? `<div class="decide soft"><p><b>Compared with known truth</b> <span class="muted small">(answer key ${esc(run.answer_key.file || "")}, test files only: information, not a pass/fail rule)</span></p>${T.assumes_decisions ? `<p class="small">${esc(T.assumes_decisions)}</p>` : ""}</div>` : ""}<dl class="kv"><div><dt>Baseline share of KPI</dt><dd>${pct(d.contributions.baseline_share)} <span class="muted small">(${pct(d.limits.baseline_share[0])}–${pct(d.limits.baseline_share[1])})</span></dd></div>
         <div><dt>Contributions vs fit</dt><dd>${(Math.abs(d.contributions.reconcile_error) * 100).toFixed(3)}% apart</dd></div><div><dt>ROI unit</dt><dd>${d.roi_in_money ? (sym() ? `${sym()} per ${sym()}` : "return per unit of spend") : `KPI per ${symOr("unit of spend")}`}</dd></div></dl>
-        <div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>${esc(money ? "ROI" : T.label)}</th><th>90% range</th><th>Share of KPI</th><th>Badges</th>${truthHead}</tr></thead><tbody>${rows.map(c =>
-          `<tr><td><b>${esc(c.channel)}</b></td><td class="num" ${d.roi_out_of_range[c.channel] != null ? 'style="color:var(--block)"' : ""}>${modelCell(c)}</td><td class="num">${rangeCell(c)}</td><td class="num">${pct(c.share_of_kpi)}</td><td class="small">${c.badges.map(esc).join(", ")}</td>${truthCells(c)}</tr>`).join("")}${nonMedia}</tbody></table></div>
+        <div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>${esc(money ? "ROI" : T.label)}</th><th>90% range</th><th>Share of KPI</th><th>Narrower by</th><th>Badges</th>${truthHead}</tr></thead><tbody>${rows.map(c =>
+          `<tr><td><b>${esc(c.channel)}</b></td><td class="num" ${d.roi_out_of_range[c.channel] != null ? 'style="color:var(--block)"' : ""}>${modelCell(c)}</td><td class="num">${rangeCell(c)}</td><td class="num">${pct(c.share_of_kpi)}</td>${nbCell(c)}<td class="small">${c.badges.map(esc).join(", ")}</td>${truthCells(c)}</tr>`).join("")}${nonMedia}</tbody></table></div>
         ${T ? `<p class="small">${num(T.inside)} of ${num(T.compared)} channels have the truth inside their 90% range.${T.mean_abs_error != null ? ` Mean absolute ${esc(money ? "ROI" : T.label)} error: ${(T.mean_abs_error * 100).toFixed(0)}%.` : ""}${T.compared < T.channels ? ` ${num(T.channels - T.compared)} channel(s) have no truth to compare.` : ""}</p>` : ""}`; },
-    33: s => `<div class="scroll"><table style="min-width:480px"><thead><tr><th>Channel</th><th>Prior 90%${s.details.channels.every(c => c.prior_source === "exact") ? ' <span class="muted small">(exact)</span>' : ""}</th><th>Posterior 90%</th><th>Narrower by</th></tr></thead><tbody>${s.details.channels.map(c =>
-      `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${range(...c.prior)}</td><td class="num">${range(...c.posterior)}</td><td class="num" ${c.narrowing < s.details.min_narrowing ? 'style="color:var(--warn)"' : ""}>${pct(Math.max(0, c.narrowing))}</td></tr>`).join("")}</tbody></table></div>`,
+    33: s => `<div class="scroll"><table style="min-width:520px"><thead><tr><th>Channel</th><th>Prior 90%${s.details.channels.every(c => c.prior_source === "exact") ? ' <span class="muted small">(exact)</span>' : ""}</th><th>Posterior 90%</th><th>Narrower by</th><th>Badge</th></tr></thead><tbody>${s.details.channels.map(c =>
+      `<tr><td><b>${esc(c.channel)}</b></td><td class="num">${range(...c.prior)}${c.prior_note ? ` <span class="muted small">${esc(c.prior_note)}</span>` : ""}</td><td class="num">${range(...c.posterior)}</td>${narrowCell(c, s.details.min_narrowing)}
+        <td class="small">${c.calibrated ? '<span class="badge anchored_to_lift_test">anchored to lift test</span>' : c.narrowing < s.details.min_narrowing ? '<span class="badge prior_driven">prior-driven</span>' : ""}</td></tr>`).join("")}</tbody></table></div>
+      ${(s.details.hard_to_measure_cleared || []).map(x => `<p class="small" style="margin:6px 0 0">'${esc(x.channel)}' is no longer hard to measure: its 90% range ${range(...x.now)} is narrower than in run ${esc(x.previous_run)} (${range(...x.previous)}).</p>`).join("")}`,
     34: s => { const d = s.details; if (d.skipped === true) return "";
       const SHORT = w => w.startsWith("all weeks") ? "All weeks" : w.replace("without the first and last ", "No first+last ").replace("without the first ", "No first ").replace("without the last ", "No last ").replace(/ weeks$/, "");
       const ST = { supported: ["pass", "supported"], near_assumption: ["wait", "near assumption"], unstable: ["warn", "unstable"], not_measured: ["wait", "not checked"] };
@@ -2051,7 +2060,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         <div class="flegend"><span><i style="background:var(--kpi)"></i>actual</span><span><i style="background:var(--accent)"></i>predicted, with its 90% range</span></div>`),
       40: fpanel(40, "Trust badges", "How much to trust each channel's numbers. Hover a badge for the reason.",
         `<div class="scroll"><table style="min-width:520px"><tbody>${S.paid.map(c => `<tr><td style="width:120px;font-weight:500">${esc(c)}</td>
-          <td style="width:260px">${fbadges(S.badges[c])}</td><td class="muted small">${(S.badges[c] || []).filter(b => b.badge !== "model_only").map(b => esc(b.why)).join(" ") || "No experiment behind it; the estimate comes from the data and the default prior."}</td></tr>`).join("")}</tbody></table></div>`),
+          <td class="ftrust" style="width:260px">${fbadges(S.badges[c])}</td><td class="muted small">${(S.badges[c] || []).filter(b => b.badge !== "model_only").map(b => esc(b.why)).join(" ") || "No experiment behind it; the estimate comes from the data and the default prior."}</td></tr>`).join("")}</tbody></table></div>`),
       39: fpanel(39, "ROI table", `${esc(v.roi_unit)}, mean and 90% range${fPeriod === "last_52" ? " · last 52 weeks" : ""}. Next-${esc(symOr("unit"))} ROI is the return on one more ${esc(cur().unit)} at current spend.`,
         `<div class="fchart" id="f-roi"></div>
         <div class="scroll"><table class="froi" style="min-width:860px"><thead><tr><th>Channel</th><th class="r">Spend</th><th class="r">ROI</th><th class="r">90% range</th><th class="r">Next-${esc(symOr("unit"))} ROI</th>${S.truth_marginal_roi ? `<th class="r">True next-${esc(symOr("unit"))} ROI</th>` : ""}
@@ -2059,7 +2068,7 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
           ${roi.rows.map(r => `<tr${r.channel === "all paid" ? ' style="font-weight:600"' : ""}><td>${esc(r.channel === "all paid" ? "All paid media" : r.channel)}</td><td class="r">${fmoney(r.spend)}</td>
             <td class="r">${r.roi.mean.toFixed(2)}</td><td class="r muted">${r.roi.lo.toFixed(2)}–${r.roi.hi.toFixed(2)}</td><td class="r">${r.channel === "all paid" ? "" : r.mroi.mean.toFixed(2)}</td>${S.truth_marginal_roi ? `<td class="r">${S.truth_marginal_roi[r.channel] != null ? Number(S.truth_marginal_roi[r.channel]).toFixed(2) : (r.channel === "all paid" ? "" : '<span class="muted small">no truth</span>')}</td>` : ""}
             <td class="r">${fnum(r.kpi_driven.mean)}</td><td class="r muted">${fnum(r.kpi_driven.lo)}–${fnum(r.kpi_driven.hi)}</td><td class="r">${fmoney(r.cost_per_kpi.mean)}</td>
-            <td>${r.channel === "all paid" ? "" : fbadges(S.badges[r.channel])}</td></tr>`).join("")}</tbody></table></div>`),
+            <td class="ftrust">${r.channel === "all paid" ? "" : fbadges(S.badges[r.channel])}</td></tr>`).join("")}</tbody></table></div>`),
       38: fpanel(38, "Sales breakdown", `${esc(kpi)} from the baseline and from each channel${fPeriod === "last_52" ? ", last 52 weeks" : ""}; the parts add up to the predicted total.`,
         `<div class="fchart" id="f-total"></div><div class="fchart" id="f-weekly"></div><div class="flegend" id="f-legend"></div>
         <div class="scroll"><table class="froi" style="min-width:420px"><thead><tr><th>Part</th><th class="r">${esc(kpi)}</th><th class="r">90% range</th><th class="r">Share</th></tr></thead><tbody>

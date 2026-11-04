@@ -14,6 +14,8 @@ from typing import Any
 from .. import currency as money_fmt
 
 
+from ..summary.build import with_cost_per
+
 def _read(p: Path) -> Any:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
@@ -25,7 +27,7 @@ def gather(run_dir: Path, decision_log: list[dict], kpi: dict, registry_entry: d
     meta = _read(run_dir / "meta.json") or {}
     plan_last = _read(fd / "plan" / "last.json")
     plan = _read(fd / "plan" / f"result_{plan_last['key']}.json") if plan_last else None
-    return {"meta": meta, "kpi": kpi, "result": _read(fd / "result.json"), "summary": _read(fd / "summary.json"),
+    return {"meta": meta, "kpi": kpi, "result": _read(fd / "result.json"), "summary": with_cost_per(_read(fd / "summary.json")),
             "saved": (_read(fd / "whatif" / "saved.json") or {}).get("scenarios", []),
             "plan": plan if plan and not plan.get("error") else None, "decisions": decision_log,
             "registry": registry_entry}

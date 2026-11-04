@@ -38,6 +38,7 @@ BADGE_TEXT = {
     "calibrated": "calibrated", "model_only": "model only", "hard_to_measure": "hard to measure",
     "prior_driven": "prior-driven", "unstable": "unstable", "rarely_on": "rarely on",
     "moves_with": "moves with another channel", "season_timed": "timed with a season",
+    "anchored_to_lift_test": "anchored to lift test",
 }
 
 
@@ -48,6 +49,24 @@ def _f(x) -> float:
 def _range(da, dist: str = "posterior") -> dict[str, float]:
     s = da.sel(distribution=dist)
     return {"mean": _f(s.sel(metric="mean")), "lo": _f(s.sel(metric="ci_lo")), "hi": _f(s.sel(metric="ci_hi"))}
+
+
+def cost_per(spend: float | None, kpi: dict | None) -> dict[str, float | None]:
+    """Cost per KPI unit from the spend and the KPI it drove: spend / mean KPI (not the mean over
+    draws of spend / draw KPI, which a few low draws pull up), and its 90% range spend / upper KPI
+    to spend / lower KPI (dividing flips the order)."""
+    div = lambda k: (spend / k) if (spend is not None and k is not None and k > 0) else None  # noqa: E731
+    k = kpi or {}
+    return {"mean": div(k.get("mean")), "lo": div(k.get("hi")), "hi": div(k.get("lo"))}
+
+
+def with_cost_per(summary: dict | None) -> dict | None:
+    """A stored summary with every row's cost per KPI worked out from its spend and KPI driven
+    (summaries saved before this took Meridian's per-draw average)."""
+    for period in ("all", "last_52"):
+        for r in (((summary or {}).get("roi") or {}).get(period) or {}).get("rows", []):
+            r["cost_per_kpi"] = cost_per(r.get("spend"), r.get("kpi_driven"))
+    return summary
 
 
 def _names(ds) -> list[str]:
@@ -115,9 +134,10 @@ def roi_table(an, money: bool, selected: list[str] | None) -> dict[str, Any]:
             "mroi": _range(rev["mroi"].sel(channel=c)),
             "kpi_driven": _range(kpi["incremental_outcome"].sel(channel=c)),
             "revenue_driven": _range(rev["incremental_outcome"].sel(channel=c)) if money else None,
-            "cost_per_kpi": _range(kpi["cpik"].sel(channel=c)),
             "share_of_kpi": _f(kpi["pct_of_contribution"].sel(channel=c, distribution="posterior", metric="mean")) / 100,
         })
+    for r in rows:
+        r["cost_per_kpi"] = cost_per(r["spend"], r["kpi_driven"])
     return {"rows": rows}
 
 
@@ -177,11 +197,18 @@ def trust_badges(badges: dict[str, list[str]], e_steps: dict[int, dict], config:
                 why = "No experiment behind it; the estimate comes from the data and the default prior."
             elif b == "hard_to_measure":
                 why = "Spend barely varies from week to week, so the data says little about its effect (step 16)."
+            elif b == "anchored_to_lift_test":
+                k = narrow.get(c, {}).get("narrowing")
+                why = ("A lift test anchors its ROI; against its sampled prior over the whole period its range is "
+                       + (f"{k:.0%} narrower" if k >= 0 else f"{-k:.0%} wider") + " (step 33)." if k is not None
+                       else "A lift test anchors its ROI (steps 26 and 33).")
             elif b == "prior_driven" and "calibrated" in badges.get(c, []):
                 why = "Its ROI comes mostly from its lift test, which set the prior (steps 26 and 33)."
             elif b == "prior_driven":
                 k = narrow.get(c, {}).get("narrowing")
-                why = (f"The data narrowed its ROI range by only {k:.0%} (30% needed), so its ROI mostly repeats the prior (step 33)."
+                from ..fit.steps import narrowing_note
+
+                why = (f"{narrowing_note(k)[0].upper()}{narrowing_note(k)[1:]} (30% narrower needed), so its ROI mostly repeats the prior (step 33)."
                        if k is not None else "Its ROI mostly repeats the prior (step 33).")
             elif b == "unstable":
                 cv = stab.get(c, {}).get("cv")

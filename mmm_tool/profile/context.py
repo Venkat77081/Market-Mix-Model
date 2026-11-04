@@ -41,6 +41,7 @@ BADGE_TEXT = {
     "calibrated": "calibrated",      # Phase D step 26: a lift test sets its prior
     "model_only": "model only",      # no experiment behind it
     "prior_driven": "prior-driven",  # Phase E step 33: the data barely narrowed the ROI prior
+    "anchored_to_lift_test": "anchored to lift test",   # Phase E step 33: a calibrated channel, never prior-driven
     "unstable": "unstable",          # Phase E step 34: ROI moves when the window of weeks moves
 }
 
