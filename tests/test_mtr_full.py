@@ -125,3 +125,31 @@ def test_the_knots_default_is_12_for_157_weeks():
 def test_run2_lift_test_calibrates_search():
     r = run({"lift_tests": [LIFT]})
     assert "search" in r.d.config["calibration"]
+
+
+@needs
+def test_refit_with_actuals_reads_day_first_dates_as_the_run_does():
+    # pandas' default reads 13/01/2026 as NaT (month-first) and the merge kept 69 of 169 rows
+    from mmm_tool.api.future_routes import _parsed_dates
+    from mmm_tool.ingest.load import load_file
+    from mmm_tool.ingest.types import Answers
+
+    old, _ = load_file(RAW, Answers({}, True))
+    new = pd.read_csv(HERE / "raw" / "MTR_actuals_2026Q1.csv", dtype=str)
+    both = pd.concat([old, new[[c for c in old.columns if c in new.columns]]], ignore_index=True)
+    d = _parsed_dates(both, "Week (dd/mm/yyyy)", {})
+    assert d.notna().all() and d.iloc[-1] == pd.Timestamp("2026-03-30") and d.iloc[len(old)] == pd.Timestamp("2026-01-05")
+    assert both.assign(_d=d).drop_duplicates("_d").shape[0] == 156 + 13                 # the 3 exact copies, then 13 new weeks
+
+
+def test_a_short_event_is_not_the_same_as_a_mostly_zero_column():
+    from mmm_tool.configure.calendar import same_event
+
+    n = 170
+    imputed, shortage = np.zeros(n), np.zeros(n)
+    imputed[89] = 1
+    shortage[165:] = 1
+    assert not same_event(imputed, shortage)                                          # agree in 164/170 weeks, share none
+    festive, flag = np.zeros(n), np.zeros(n)
+    festive[40:56], flag[41:56] = 1, 1                                                # one boundary week differs
+    assert same_event(festive, flag)

@@ -661,6 +661,19 @@ def tracking_csv(run_id: str) -> Response:
                     headers={"Content-Disposition": 'attachment; filename="tracking.csv"'})
 
 
+def _parsed_dates(df: pd.DataFrame, date_col: str, answers: dict) -> pd.Series:
+    """The dates of a training file with actuals appended, read by step 2's own parser with the
+    run's answers: dd/mm/yyyy stays day-first (pandas' default would read it month-first and lose
+    every date with a day above 12). Row for row with df."""
+    from ..ingest.dates import parse_dates
+    from ..ingest.types import Answers
+
+    out, col, step = parse_dates(df.reset_index(drop=True), Answers({**answers, "duplicate_dates": "merge"}, True), date_col)
+    if out is None or col != date_col or len(out) != len(df):
+        raise HTTPException(400, f"The dates in '{date_col}' couldn't all be read after adding the actuals: {step.summary}")
+    return pd.Series(pd.to_datetime(out[col]).values, index=df.index)
+
+
 @router.post("/api/runs/{run_id}/tracking/refit")
 def tracking_refit(run_id: str) -> dict:
     """A refit with the new weeks: the training file plus the actuals' weeks (renamed to the
@@ -696,12 +709,13 @@ def tracking_refit(run_id: str) -> dict:
     new = pd.concat(parts, ignore_index=True)
     date = next((col for col, r in (c["run"].a.roles or {}).items() if r == "date"), old.columns[0])
     both = pd.concat([old, new], ignore_index=True)
-    both["_d"] = pd.to_datetime(both[date], errors="coerce")
+    both["_d"] = _parsed_dates(both, date, meta["answers"])               # read as the run reads them (day-first, …)
     keys = ["_d"] + ([c["geo_col"]] if c["geo_col"] and c["geo_col"] in both.columns else [])
+    last_new = both["_d"].iloc[len(old):].max()
     both = both.drop_duplicates(keys, keep="last").sort_values(keys).drop(columns="_d")
     d = projects.runs_folder(a.RUNS_DIR, c["slug"]) / __import__("uuid").uuid4().hex[:12]
     d.mkdir(parents=True)
-    name = f"{Path(meta['file']).stem}_to_{str(pd.to_datetime(new[date], errors='coerce').max().date())}.csv"
+    name = f"{Path(meta['file']).stem}_to_{str(last_new.date())}.csv"
     both.to_csv(d / name, index=False)
     hit = reg.find_run(reg.load(a._reg_dir(c["d"])), c["d"].name)
     roles = c["run"].a.roles if c["run"].a is not None else None

@@ -11,7 +11,6 @@ data column in nearly every week is that column, and is checked once.
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from ..ingest.types import Answers, StepResult, Verdict
@@ -29,14 +28,14 @@ NAME = "Spend timed with seasons"
 
 def calendar_seasons(weeks: pd.DatetimeIndex, data_flags: pd.DataFrame, answers: Answers) -> pd.DataFrame:
     """Weekly 0/1 columns for the calendar events step 21 will add, named as step 21 names them."""
-    from ..configure.calendar import SAME_EVENT_AGREEMENT, planned_events, week_flags
+    from ..configure.calendar import planned_events, same_event, week_flags
 
     out = {}
     for e in planned_events(answers.values):
         flag = week_flags(weeks, e)
         if flag.sum() in (0, len(flag)):
             continue
-        if any(np.mean(data_flags[c].to_numpy() == flag) >= SAME_EVENT_AGREEMENT for c in data_flags.columns):
+        if any(same_event(data_flags[c].to_numpy(), flag) for c in data_flags.columns):
             continue
         out[f"cal_{e['name']}"] = flag
     return pd.DataFrame(out, index=weeks)

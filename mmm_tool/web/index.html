@@ -2894,10 +2894,11 @@ td.ftrust { min-width: 200px; white-space: normal; } td.ftrust .badge { margin: 
     if (R && R.error) body += `<div class="card" style="padding:14px 16px;color:var(--block)">${esc(R.error)}</div>`;
     if (R && R.rows) {
       const tl = R.tiles;
-      body += R.alerts.map(a => `<div class="alert ${a.level === "red" ? "" : "amber"}"><h3><span class="pill ${a.level === "red" ? "block" : "warn"}">${esc(a.title)}</span>${a.weeks && a.weeks.length ? ` ${a.weeks.length} weeks in a row (${esc(a.weeks[0])} → ${esc(a.weeks[a.weeks.length - 1])})` : ""}</h3>
+      body += R.alerts.map(a => `<div class="alert ${a.level === "red" ? "" : "amber"}"><h3><span class="pill ${a.level === "red" ? "block" : "warn"}">${esc(a.title)}</span>${a.weeks && a.weeks.length ? ` ${a.weeks.length} weeks in a row (${esc(a.weeks[0])} → ${esc(a.weeks[a.weeks.length - 1])}${a.ongoing === false ? ", then back in range" : ""})` : ""}</h3>
         <p style="margin:0">${a.kind === "range" ? `${esc(a.text)} Cumulative model gap ${(a.cumulative_gap_pct * 100).toFixed(1)}% (limit ${st.cumulative_gap_pct}%).`
           : a.kind === "execution" ? `Execution gap ${fnum(a.execution_gap)} of a total gap ${fnum(a.total_gap)}.${a.channels.length ? " Driven by: " + a.channels.map(x => `${esc(nm(x.channel))} (${x.effect >= 0 ? "+" : "−"}${fnum(Math.abs(x.effect))})`).join(", ") + "." : ""}`
-          : a.kind === "spend" ? `${a.channels.map(c => esc(nm(c))).join(", ")}: outside ±${st.spend_tolerance_pct}% of the plan for ${st.spend_off_weeks}+ weeks in a row.` : esc(a.text)}</p>
+          : a.kind === "spend" ? (a.runs ? Object.entries(a.runs).map(([c, v]) => `${esc(nm(c))}: ${v.off == null ? "spent with nothing planned" : `${Math.round(Math.abs(v.off) * 100)}% ${v.off < 0 ? "under" : "over"} plan`} for ${v.weeks.length} weeks (${esc(v.weeks[0])} → ${esc(v.weeks[v.weeks.length - 1])}${v.ongoing ? ", still" : ""})`).join("; ") + "."
+            : `${a.channels.map(c => esc(nm(c))).join(", ")}: outside ±${st.spend_tolerance_pct}% of the plan for ${st.spend_off_weeks}+ weeks in a row.`) : esc(a.text)}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-trevent>Add an event</button><button class="btn" data-trrefit>Start a refit</button></div></div>`).join("");
       body += `<div class="tiles">
           <div class="tile"><span>Actual to date</span><b>${fnum(tl.actual)}</b><span>${esc(kpi)}, ${tl.weeks_done} week${tl.weeks_done === 1 ? "" : "s"}</span></div>

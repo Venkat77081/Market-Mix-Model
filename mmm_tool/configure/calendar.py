@@ -22,6 +22,16 @@ STEP = 21
 NAME = "Calendar flags"
 NAME_OK = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 SAME_EVENT_AGREEMENT = 0.95
+SAME_EVENT_OVERLAP = 0.6      # and their "on" weeks mostly the same ones (overlap / union)
+
+
+def same_event(column: np.ndarray, flag: np.ndarray) -> bool:
+    """A 0/1 data column already carries a calendar event: they agree in nearly every week and
+    their on-weeks mostly coincide. Agreement alone isn't enough: a short event (5 weeks of 170)
+    'agrees' with any mostly-zero column, such as a flag on one interpolated week."""
+    v, f = np.asarray(column, float) > 0, np.asarray(flag, float) > 0
+    union = (v | f).sum()
+    return bool(np.mean(v == f) >= SAME_EVENT_AGREEMENT and union and (v & f).sum() / union >= SAME_EVENT_OVERLAP)
 NO_PRESET = "none"
 
 
@@ -145,7 +155,7 @@ def add_calendar_flags(ctx: DCtx, answers: Answers) -> StepResult:
         row = {"event": e["name"], "label": e["label"], "source": e["source"], "weeks_on": int(flag.sum()), "column": col}
         # A data column that agrees in nearly every week (built from week starts,
         # say, so a boundary week differs) already carries this event.
-        twin = next((c for c, v in existing.items() if np.mean(v == flag) >= SAME_EVENT_AGREEMENT), None)
+        twin = next((c for c, v in existing.items() if same_event(v, flag)), None)
         if twin:
             row["status"] = f"already in your data as '{twin}'"
         elif flag.sum() in (0, len(flag)):

@@ -108,6 +108,20 @@ def spend_for_model(on: dict, targets: dict, plan_weeks: list[str], channels: li
                 for w in plan_weeks] for c in channels}
 
 
+def last_run(flags: list[bool], need: int) -> tuple[int, int] | None:
+    """(start, end) of the latest run of at least `need` True values in a row, ended or not: an
+    alert stays on the screen after the weeks that raised it are over."""
+    best, start = None, None
+    for i, f in enumerate(list(flags) + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            if i - start >= need:
+                best = (start, i - 1)
+            start = None
+    return best
+
+
 def _streak(flags: list[bool]) -> int:
     n = 0
     for f in reversed(flags):
@@ -184,20 +198,22 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
         tiles["gap"] = tiles["actual"] - tiles["predicted"]
         tiles["gap_pct"] = tiles["gap"] / tiles["predicted"] if tiles["predicted"] else None
         # Red: outside the range for N weeks in a row, or the cumulative model gap beyond the limit.
-        streak_lo = _streak([r["range"] == "below" for r in rows])
-        streak_hi = _streak([r["range"] == "above" for r in rows])
         cum = tiles["gap_pct"] or 0.0
         n_need = int(settings["outside_range_weeks"])
-        if streak_lo >= n_need or streak_hi >= n_need or abs(cum) > float(settings["cumulative_gap_pct"]) / 100:
-            side = "below" if (streak_lo >= streak_hi and (streak_lo or cum < 0)) else "above"
-            weeks_out = rows[-max(streak_lo, streak_hi):] if max(streak_lo, streak_hi) else rows
+        runs = {side: last_run([r["range"] == side for r in rows], n_need) for side in ("below", "above")}
+        latest = max((v[1], k) for k, v in runs.items() if v) if any(runs.values()) else None
+        if latest or abs(cum) > float(settings["cumulative_gap_pct"]) / 100:
+            side = latest[1] if latest else ("below" if cum < 0 else "above")
+            run = runs[side] if latest else None
+            weeks_out = rows[run[0]:run[1] + 1] if run else rows
             on_plan_spend = not any(r["spend_off_plan"] for r in weeks_out)
             alerts.append({"level": "red", "kind": "range", "side": side,
                            "title": f"{'Below' if side == 'below' else 'Above'} the predicted range",
-                           "weeks": [r["week"] for r in weeks_out] if max(streak_lo, streak_hi) else [],
+                           "weeks": [r["week"] for r in weeks_out] if run else [],
+                           "ongoing": bool(run and run[1] == len(rows) - 1),
                            "text": ("Spend matched the plan, so the gap is not explained by media. Check outside causes first."
                                     if on_plan_spend else "Spend was also off plan in these weeks; see the execution gap."),
-                           "streak": max(streak_lo, streak_hi), "cumulative_gap_pct": cum})
+                           "streak": (run[1] - run[0] + 1) if run else 0, "cumulative_gap_pct": cum})
         # Amber: the gap mostly comes from spending differently from the plan.
         exe = sum(r["execution_gap"] or 0 for r in rows)
         tot = sum((r["actual"] - r["plan_predicted"]) for r in rows if r["plan_predicted"] is not None)
@@ -213,11 +229,21 @@ def compare(on: dict, targets: dict, at_actual: dict, settings: dict, holdout_er
     if rows:
         need = int(settings["spend_off_weeks"])
         # weeks with nothing planned and nothing spent (a flight's off weeks) neither break nor extend a run
-        active = lambda c: [r["channels"][c]["outside"] for r in rows if r["channels"][c]["planned"] or r["channels"][c]["actual"]]  # noqa: E731
-        off_ch = [c for c in rows[0]["channels"] if _streak(active(c)) >= need]
-        if off_ch:
-            alerts.append({"level": "amber", "kind": "spend", "title": "Spend off plan", "channels": off_ch,
-                           "text": f"{', '.join(off_ch)}: outside ±{tol:.0%} of the plan for {need}+ weeks in a row."})
+        spend_runs = {}
+        for c in rows[0]["channels"]:
+            act = [r for r in rows if r["channels"][c]["planned"] or r["channels"][c]["actual"]]
+            run = last_run([r["channels"][c]["outside"] for r in act], need)
+            if run:
+                part = act[run[0]:run[1] + 1]
+                pl, ac = sum(r["channels"][c]["planned"] for r in part), sum(r["channels"][c]["actual"] for r in part)
+                spend_runs[c] = {"weeks": [r["week"] for r in part], "off": (ac / pl - 1) if pl else None,
+                                 "ongoing": part[-1]["week"] == act[-1]["week"]}
+        if spend_runs:
+            def say(c, v):
+                size = f"{abs(v['off']):.0%} {'under' if v['off'] < 0 else 'over'} plan" if v["off"] is not None else "spent with nothing planned"
+                return f"{c}: {size} for {len(v['weeks'])} weeks ({v['weeks'][0]} → {v['weeks'][-1]}{', still' if v['ongoing'] else ''})"
+            alerts.append({"level": "amber", "kind": "spend", "title": "Spend off plan", "channels": list(spend_runs),
+                           "runs": spend_runs, "text": "; ".join(say(c, v) for c, v in spend_runs.items()) + "."})
     upd = float(sum(r.get("model_update") or 0.0 for r in rows))
     tiles["model_update"] = upd if at_plan else None
     if at_plan and rows and has_total:

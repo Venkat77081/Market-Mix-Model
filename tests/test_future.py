@@ -591,3 +591,19 @@ def test_tracking_with_actuals_on_plan_has_no_execution_gap(fitted):
     r2 = tracking.compare(on, targets, at, SET, None, a["by_channel"], at_plan=again)
     assert all(abs(row["model_update"]) < 1e-6 * abs(row["plan_predicted"]) for row in r2["rows"])
     assert all(abs(x["execution_gap"] - y["execution_gap"]) < 1e-6 * abs(x["plan_predicted"]) for x, y in zip(r["rows"], r2["rows"]))
+
+
+def test_an_ended_run_of_off_plan_spend_still_alerts_with_its_weeks():
+    # MTR_FULL's Tracking: search 40% under plan for 3 weeks, then on plan; KPI 10% below for the last 5
+    plan, _ = period.plan_weeks("2025-12-29", 13, WEEKS)
+    tg = _targets(plan, {"tv": 100, "search": 50}, 1000.0)
+    search = [50.0] * 3 + [30.0] * 3 + [50.0] * 7
+    kpi = [1000.0] * 8 + [900.0] * 5
+    on = {"weeks": plan, "kpi": kpi, "spend": {"tv": [100.0] * 13, "search": search}, "units": {}}
+    r = tracking.compare(on, tg, _at_actual(plan, [1000.0] * 13, {"tv": 300, "search": 200}), SET, None, {"tv": {"media": 300}, "search": {"media": 200}})
+    sp = next(a for a in r["alerts"] if a["kind"] == "spend")
+    assert sp["channels"] == ["search"] and sp["runs"]["search"]["weeks"] == plan[3:6] and not sp["runs"]["search"]["ongoing"]
+    assert sp["runs"]["search"]["off"] == pytest.approx(-0.4) and "search: 40% under plan for 3 weeks" in sp["text"]
+    red = next(a for a in r["alerts"] if a["kind"] == "range")
+    assert red["weeks"] == plan[8:] and red["ongoing"] and red["text"].startswith("Spend matched the plan")
+    assert tracking.last_run([True, True, False, True], 2) == (0, 1) and tracking.last_run([True, False], 2) is None
