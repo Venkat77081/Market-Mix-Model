@@ -183,7 +183,7 @@ calendars and past lift tests, and can change any setting. The result is a JSON 
 | 24 Baseline flexibility | one knot per quarter | `knots`, with a live preview (below); amber above weeks/8, red above weeks/6 | `knots` |
 | 25 ROI priors | average return (ROI), Meridian's default prior | what you know (`prior_type`: `roi`, `mroi` or `contribution`) and a 90% range per channel (`roi_ranges`) | `media_prior_type`, `roi_m` / `mroi_m` / `contribution_m` (and `_rf`) |
 | 26 Lift-test calibration | none | tests: channel, dates, ROI and 90% range (`lift_tests`); several per channel are combined | prior + `roi_calibration` |
-| 27 Holdout | last 13 weeks | 8–26 (`holdout_weeks`) | `holdout` |
+| 27 Holdout | last 13 weeks; knots in the holdout fit inside the training weeks | 8–26 (`holdout_weeks`); knots inside the training weeks or spread over all weeks, Meridian's default, for comparison (`holdout_knots`) | `holdout`, and the holdout fit's `knots` |
 
 **Step 24 preview.** Before you choose, the step shows what each number of knots does. Knot
 placement and weights come from Meridian's `knots.get_knot_info`. For every K from 1 to weeks/4, a
@@ -297,9 +297,9 @@ the other checks, so every reason shows; the final fit (36) runs only for an acc
 | Step | What it checks | Pass rule | Kind |
 |---|---|---|---|
 | 28 Prior check | `sample_prior`: does the prior imply believable sales? | prior 90% range of total KPI covers the actual total and is at most 10× as wide as it | warning |
-| 29 Fit with holdout | `sample_posterior` with the step 27 weeks held back, with the run's seed | quick: 2 chains, 300/300/300; full: 4 chains, 500 adapt, 500 burn-in, 1,000 kept; or Custom | — |
+| 29 Fit with holdout | `sample_posterior` with the step 27 weeks held back, with the run's seed. Its knots are an explicit list inside the training weeks, `round(x) for x in linspace(0, last training week, K)` (duplicates removed, K capped at the training weeks), so none sits in the held-back weeks where there is no KPI: the baseline stays flat there at the last training knot. The final fit (step 36) keeps `knots=K` over all weeks | quick: 2 chains, 300/300/300; full: 4 chains, 500 adapt, 500 burn-in, 1,000 kept; or Custom | — |
 | 30 Convergence | largest R-hat, ignoring NaN (parameters the model doesn't use) | all below 1.1; otherwise one automatic retry with twice the adapt and burn-in, then fail and wait | gate |
-| 31 Holdout accuracy | test and train MAPE and R² (national) | test MAPE below 10% and below a same-week-last-year forecast | gate |
+| 31 Holdout accuracy | test and train MAPE and R² (national), and the test bias, mean(predicted ÷ actual − 1). A failed test whose error has one sign in at least 80% of test weeks and is at least 5% says the baseline was guessed for the held-back weeks | test MAPE below 10% and below a same-week-last-year forecast | gate |
 | 32 Plausibility | ROI per channel, baseline share, contributions | ROI 0.05–20 (when ROI is ₹ per ₹); baseline 20–95% of the KPI; baseline + contributions = the fit | gate |
 | 33 Did the data teach anything? | each channel's ROI, posterior vs prior; the prior's 90% range is exact from its distribution (LogNormal by default: 0.28–5.37), from prior draws only without a closed form | 1 − posterior width ÷ prior width at least 30%, else badge **prior-driven** | badge |
 | 34 Stability (optional) | refits without the first 26, last 26, and both | ROI CV below 0.3, else badge **unstable**; a stable channel that is also hard to measure or prior-driven is noted as stable only because it stays near the starting assumption | badge; Skipped when not run |

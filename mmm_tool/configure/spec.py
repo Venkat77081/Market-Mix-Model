@@ -61,6 +61,32 @@ def _vector(names: list[str], values: dict[str, Any], key, default) -> np.ndarra
     return np.array([key(values[n]) if n in values else default for n in names], dtype=np.float64)
 
 
+def holdout_knots(config: dict[str, Any], weeks: list[str]) -> tuple[int | list[int], dict | None]:
+    """The knots for a fit: config["knots"] (Meridian spreads K over every week), or, for the holdout
+    fit (step 29) with knots kept inside the training weeks (step 27, the default), an explicit list
+
+        round(x) for x in linspace(0, last_training_index, K)
+
+    so no knot sits in the held-back weeks, where there is no KPI to place it: Meridian holds the
+    baseline flat after the last knot. Duplicates are removed; K is capped at the training weeks.
+    Knots are on the time axis, so a regional model uses the same list. Returns (knots, info);
+    info is None when the knots are config["knots"] unchanged."""
+    k = int(config["knots"])
+    hold = config.get("holdout")
+    if not hold or hold.get("knots_in", "training") == "all":
+        return k, None
+    train = [i for i, w in enumerate(weeks) if not (hold["start"] <= w <= hold["end"])]
+    if not train:
+        return k, None
+    last = max(train)
+    n_train = last + 1
+    use = min(k, n_train)
+    locs = sorted({round(float(x)) for x in np.linspace(0, last, use)})
+    return locs, {"requested": k, "knots": len(locs), "locations": locs, "last_training_index": last,
+                  "train_weeks": n_train, "held_weeks": len(weeks) - n_train, "capped": k > n_train,
+                  "merged": len(locs) < use}
+
+
 def build_model_spec(config: dict[str, Any], input_data):
     """Meridian's ModelSpec from Phase D's config. Every per-channel vector follows
     input_data's own channel order (media_channel, rf_channel, control_variable), built by
@@ -123,7 +149,7 @@ def build_model_spec(config: dict[str, Any], input_data):
         media_prior_type=kind if media else None,
         rf_prior_type=kind if rf else None,
         max_lag=config["max_lag"],
-        knots=config["knots"],
+        knots=holdout_knots(config, [str(t)[:10] for t in input_data.time.values])[0],
         adstock_decay_spec={ch: shape for ch, shape in config["adstock"].items() if ch in media + rf},
         saturation_spec=saturation if saturation else constants.HILL,
         roi_calibration=_calibration(spec_mod, config, media) if kind == "roi" else None,

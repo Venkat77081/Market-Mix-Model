@@ -178,11 +178,24 @@ def holdout(ctx: DCtx, answers: Answers) -> StepResult:
         return _blocked(27, "Holdout", d, problem)
     start, end = weeks[-n], weeks[-1]
     train = len(weeks) - n
-    ctx.config["holdout"] = {"weeks": n, "start": str(start.date()), "end": str(end.date()), "train_weeks": train}
+    d_knots = Decision(id="holdout_knots", step=27,
+                           question="Where should the holdout fit (step 29) place the baseline's knots?",
+                           options=["training", "all"], default="training",
+                           context={"labels": {"training": "Inside the training weeks (recommended)",
+                                               "all": "Spread over all weeks (Meridian's default)"}})
+    knots_in = answers.ask(d_knots)
+    if knots_in not in ("training", "all"):
+        knots_in = "training"
+    ctx.config["holdout"] = {"weeks": n, "start": str(start.date()), "end": str(end.date()), "train_weeks": train,
+                             "knots_in": knots_in}
     warnings = []
+    if knots_in == "all":
+        warnings.append("The holdout fit spreads its knots over all weeks, so some sit in the held-back weeks, where "
+                        "there is no data: the baseline there is a guess and the test (step 31) mostly measures that guess.")
     if train < MIN_TRAIN_WEEKS:
         warnings.append(f"Only {train} weeks remain to fit on while testing (step 29); "
                         "the final fit (step 36) uses all weeks.")
     return StepResult(27, "Holdout", Verdict.WARN if warnings else Verdict.PASS,
-                      f"Last {n} weeks held out ({start.date()} to {end.date()}); {train} weeks to fit on.",
-                      ctx.config["holdout"], warnings, [d])
+                      f"Last {n} weeks held out ({start.date()} to {end.date()}); {train} weeks to fit on; "
+                      + ("knots inside the training weeks." if knots_in == "training" else "knots spread over all weeks."),
+                      ctx.config["holdout"], warnings, [d, d_knots])

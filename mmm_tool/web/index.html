@@ -1510,8 +1510,10 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
   }
 
   function step27(s) {
-    const dec = decision(s, "holdout_weeks");
-    return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="holdout_weeks" aria-label="Holdout weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
+    const dec = decision(s, "holdout_weeks"), kd = decision(s, "holdout_knots");
+    const kn = kd ? `<p style="margin-top:10px">Knots in holdout fit</p><select data-select="holdout_knots" aria-label="Knots in holdout fit">${kd.options.map(o => `<option value="${esc(o)}" ${o === (current(kd) || kd.default) ? "selected" : ""}>${esc((kd.context.labels || {})[o] || o)}</option>`).join("")}</select>
+      <p class="muted small" style="margin:6px 0 0">Inside the training weeks, the baseline stays flat over the held-back weeks, so the test checks media and controls. Spread over all weeks is Meridian's default, for comparison: knots in the held-back weeks are placed without data.</p>` : "";
+    return `<div class="decide soft"><p>${esc(dec.question)}</p><select data-select-int="holdout_weeks" aria-label="Holdout weeks">${dec.options.map(o => `<option ${o === current(dec) ? "selected" : ""}>${o}</option>`).join("")}</select>${kn}</div>`;
   }
 
   // ---------- page ----------
@@ -1758,7 +1760,8 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
     28: s => { const d = s.details; return `<dl class="kv"><div><dt>Actual total KPI</dt><dd>${num(Math.round(d.actual_total))}</dd></div>
       <div><dt>Prior 90% range</dt><dd>${num(Math.round(d.prior_low))} – ${num(Math.round(d.prior_high))}</dd></div><div><dt>Width vs actual</dt><dd>${d.width_ratio.toFixed(1)}×</dd></div></dl>`; },
     29: s => { const d = s.details, k = d.sampler; return `<dl class="kv"><div><dt>Sampler</dt><dd>${k.n_chains} chains · ${k.n_adapt} adapt · ${k.n_burnin} burn-in · ${k.n_keep} kept</dd></div>
-      <div><dt>Time</dt><dd>${num(d.seconds)} s</dd></div><div><dt>Held back</dt><dd>${d.holdout ? `${esc(d.holdout.start)} to ${esc(d.holdout.end)}` : "nothing"}</dd></div></dl>`; },
+      <div><dt>Time</dt><dd>${num(d.seconds)} s</dd></div><div><dt>Held back</dt><dd>${d.holdout ? `${esc(d.holdout.start)} to ${esc(d.holdout.end)}` : "nothing"}</dd></div>
+      ${d.knots ? `<div><dt>Knots</dt><dd>${esc(d.knots.text)}<div class="muted small mono">at weeks ${d.knots.locations.map(Number).join(", ")}</div></dd></div>` : ""}</dl>`; },
     30: s => { const d = s.details, at = d.attempts || [];
       const row = a => `<tr><td>${a.attempt}</td><td class="small">${a.sampler.n_chains} chains · ${a.sampler.n_adapt} adapt · ${a.sampler.n_burnin} burn-in · ${a.sampler.n_keep} kept</td>
         <td class="num" ${a.ok ? "" : 'style="color:var(--block)"'}>${a.rhat == null ? (a.ok ? "–" : "very large") : a.rhat.toFixed(3)}</td><td class="mono small">${esc(a.parameter || "")}</td><td class="num">${a.seconds == null ? "–" : num(Math.round(a.seconds)) + " s"}</td></tr>`;
@@ -1770,7 +1773,9 @@ select.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent
         ${res && res.waiting ? `<div class="decide"><p>Steps 31 onward wait until the model converges. Continue anyway to check the rest; every later screen and the export will carry a <b>did not converge</b> badge.</p><button class="btn" id="fit-continue">Continue anyway</button></div>` : ""}`; },
     31: s => { const d = s.details, a = d.accuracy || {}; const row = k => a[k] ? `<tr><td>${k}</td><td class="num">${pct(a[k].MAPE)}</td><td class="num">${r2(a[k].R_Squared)}</td></tr>` : "";
       return `${fitChart(d.chart)}<div class="scroll"><table style="min-width:360px"><thead><tr><th></th><th>MAPE</th><th>R²</th></tr></thead><tbody>${row("Train")}${row("Test")}${row("All Data")}
-      ${d.naive_mape != null ? `<tr><td>Same week last year</td><td class="num">${pct(d.naive_mape)}</td><td></td></tr>` : ""}</tbody></table></div>`; },
+      ${d.naive_mape != null ? `<tr><td>Same week last year</td><td class="num">${pct(d.naive_mape)}</td><td></td></tr>` : ""}
+      ${d.test_bias && d.test_bias.mean != null ? `<tr><td>Test bias</td><td class="num">${d.test_bias.mean >= 0 ? "+" : "−"}${(Math.abs(d.test_bias.mean) * 100).toFixed(0)}%</td><td class="small muted">${Math.round(d.test_bias.share_same_sign * 100)}% of test weeks the same way</td></tr>` : ""}</tbody></table></div>
+      ${d.flat_baseline_note ? `<p class="muted small" style="margin:6px 0 0">${esc(d.flat_baseline_note)}</p>` : ""}`; },
     32: s => { const d = s.details, rows = fitResult().channels.filter(c => c.paid);
       const T = run.fit && run.fit.truth, tr = T ? Object.fromEntries(T.rows.map(r => [r.channel, r])) : {};
       const money = !T || T.measure === "roi";

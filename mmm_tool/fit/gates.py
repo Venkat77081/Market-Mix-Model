@@ -53,6 +53,19 @@ def holdout_ok(test_mape: float, naive_mape: float, mape_max: float) -> dict:
     return {"ok": bool(under and beats), "under_max": bool(under), "beats_naive": bool(beats)}
 
 
+def test_bias(predicted, actual, same_sign: float = 0.8, min_bias: float = 0.05) -> dict:
+    """Step 31. The test weeks' bias, mean(predicted / actual - 1), and whether it is one-sided: the
+    same sign in at least same_sign of the weeks and at least min_bias in size."""
+    p, a = np.asarray(predicted, float), np.asarray(actual, float)
+    ok = a != 0
+    r = p[ok] / a[ok] - 1
+    if not len(r):
+        return {"mean": None, "share_same_sign": None, "one_sided": False}
+    mean = float(r.mean())
+    share = float(max((r > 0).mean(), (r < 0).mean()))
+    return {"mean": mean, "share_same_sign": share, "one_sided": bool(share >= same_sign and abs(mean) >= min_bias)}
+
+
 def plausible(roi: Mapping[str, float], baseline_share: float, reconcile_error: float, *, roi_min: float,
               roi_max: float, share_range: tuple[float, float], tolerance: float, roi_in_money: bool = True) -> dict:
     """Step 32. ROI per channel inside [roi_min, roi_max] (when ROI is money per

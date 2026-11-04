@@ -129,8 +129,46 @@ def fit_holdout(ctx: ECtx) -> StepResult:
     ctx.progress(29, f"Fitting ({_fmt_sampler(ctx.sampler)})", 0.0)
     secs = _fit(ctx, ctx.mmm, ctx.sampler, "fit_holdout")
     where = f"weeks {hold['start']} to {hold['end']} held back" if hold else "no holdout"
-    return _step(29, Verdict.PASS, f"Fitted with {_fmt_sampler(ctx.sampler)}; {where}; {secs:,.0f} s.",
-                 {"sampler": ctx.sampler, "seconds": secs, "holdout": hold})
+    knots = knot_placement(ctx.config, m.weeks(ctx.mmm))
+    return _step(29, Verdict.WARN if knots and knots.get("cap_warning") else Verdict.PASS, f"Fitted with {_fmt_sampler(ctx.sampler)}; {where}; {secs:,.0f} s."
+                 + (f" {knots['text']}" if knots else ""),
+                 {"sampler": ctx.sampler, "seconds": secs, "holdout": hold, "knots": knots},
+                 [knots["cap_warning"]] if knots and knots.get("cap_warning") else [])
+
+
+def knot_placement(config: dict, weeks: list[str]) -> dict | None:
+    """Where the holdout fit's knots are (step 29's card), or None without a holdout."""
+    from ..configure.spec import holdout_knots
+
+    hold = config.get("holdout")
+    if not hold:
+        return None
+    k = int(config["knots"])
+    knots, info = holdout_knots(config, weeks)
+    held = sum(hold["start"] <= w <= hold["end"] for w in weeks)
+    if info is not None:
+        out = {"placement": "training", **info,
+               "text": f"Knots: {info['knots']}, placed in the {info['train_weeks']} training weeks "
+                       f"(weeks 0–{info['last_training_index']}); the baseline is held flat over the "
+                       f"{info['held_weeks']} held-back weeks."}
+        if info["capped"]:
+            out["cap_warning"] = (f"Step 24 chose {k} knots, more than the {info['train_weeks']} training weeks; "
+                                  f"the holdout fit uses {info['knots']} (the final fit, step 36, uses {k} over all weeks).")
+        elif info["merged"]:
+            out["cap_warning"] = f"{k} knots rounded onto {info['knots']} distinct training weeks."
+        return out
+    try:
+        from ..configure.baseline import knot_info
+
+        locs = [int(x) for x in knot_info(len(weeks), k, 1).knot_locations]
+    except ImportError:                       # Meridian not installed (it always is for a real fit)
+        locs = None
+    first_held = next((i for i, w in enumerate(weeks) if hold["start"] <= w <= hold["end"]), len(weeks))
+    inside = sum(x >= first_held for x in locs) if locs is not None else None
+    where = (f"{inside} of them sit in the {held} held-back weeks, where the baseline is a guess" if inside is not None
+             else f"some sit in the {held} held-back weeks, where the baseline is a guess")
+    return {"placement": "all", "knots": k, "locations": locs or [], "held_weeks": held, "knots_in_held_weeks": inside,
+            "text": f"Knots: {k}, spread over all {len(weeks)} weeks (Meridian's default); {where}."}
 
 
 SUGGESTIONS = [
@@ -199,7 +237,12 @@ def holdout_accuracy(ctx: ECtx) -> StepResult:
     t_mape, t_r2 = acc["Test"]["MAPE"], acc["Test"].get("R_Squared")
     res = gates.holdout_ok(t_mape, naive, float(cfg["test_mape_max"]))
     ctx.gates[31] = res["ok"]
-    details = {"accuracy": acc, "naive_mape": naive, "test_mape_max": cfg["test_mape_max"], **res, "chart": chart}
+    bias = gates.test_bias(fitted[test], actual[test])
+    knots = knot_placement(ctx.config, week_list)
+    details = {"accuracy": acc, "naive_mape": naive, "test_mape_max": cfg["test_mape_max"], **res, "chart": chart,
+               "test_bias": bias, "knots_in": (knots or {}).get("placement"),
+               "flat_baseline_note": ("Test weeks use a flat baseline from the last training knot, so the test checks "
+                                      "media and controls, not a guessed trend.") if (knots or {}).get("placement") == "training" else None}
     head = (f"Test MAPE {t_mape:.1%} (R² {t_r2:.2f}) on {int(test.sum())} held-back weeks; "
             f"train MAPE {acc['Train']['MAPE']:.1%}; "
             + (f"same-week-last-year forecast {naive:.1%}" if naive == naive
@@ -211,8 +254,17 @@ def holdout_accuracy(ctx: ECtx) -> StepResult:
         why.append(f"test MAPE is not below {cfg['test_mape_max']:.0%}")
     if not res["beats_naive"]:
         why.append("it doesn't beat repeating last year's sales")
-    return _step(31, Verdict.FAIL, f"Failed: {' and '.join(why)}. {head}.", details,
-                 ["A model that can't predict weeks it hasn't seen can't be trusted to split sales between channels."])
+    if bias["one_sided"]:
+        # Off the same way nearly every test week: the held-back weeks' baseline was guessed, not media.
+        side = "above" if bias["mean"] > 0 else "below"
+        msg = (f"Predictions are consistently {side} actual in the held-back weeks ({bias['mean']:+.0%}). This usually "
+               "means the baseline was guessed for those weeks (knots in the held-back period), not that media is wrong. "
+               "Fix: place knots inside the training weeks (step 29).")
+        details["diagnosis"] = "baseline_guess"
+    else:
+        msg = "A model that can't predict weeks it hasn't seen can't be trusted to split sales between channels."
+        details["diagnosis"] = "both_ways"
+    return _step(31, Verdict.FAIL, f"Failed: {' and '.join(why)}. {head}.", details, [msg])
 
 
 def plausibility(ctx: ECtx) -> StepResult:

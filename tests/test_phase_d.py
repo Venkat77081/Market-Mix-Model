@@ -38,7 +38,7 @@ def test_defaults_complete_without_questions(default_run):
     assert cfg["max_lag"] == 8 and cfg["knots"] == 12
     assert set(cfg["adstock"].values()) == {"geometric"}
     assert all(p["source"] == "default" and p["mu"] == 0.2 and p["sigma"] == 0.9 for p in cfg["roi_priors"].values())
-    assert cfg["holdout"] == {"weeks": 13, "start": "2025-09-29", "end": "2025-12-22", "train_weeks": 143}
+    assert cfg["holdout"] == {"weeks": 13, "start": "2025-09-29", "end": "2025-12-22", "train_weeks": 143, "knots_in": "training"}
     assert all(b == ["model_only"] for b in r.d.badges.values())
 
 
@@ -148,7 +148,10 @@ def test_builds_meridian_objects(clean):
     assert sorted(map(str, data.media_channel.values)) == sorted(c.name for c in r.d.channels)
     assert data.kpi.shape[-1] == 156
     spec = build_model_spec(r.d.config, data)
-    assert spec.max_lag == 8 and spec.knots == 12 and spec.adstock_decay_spec["tv"] == "binomial"
+    assert spec.max_lag == 8 and spec.adstock_decay_spec["tv"] == "binomial"
+    # the holdout fit (13 weeks held back): 12 knots inside the 143 training weeks; the final fit: 12 over all
+    assert spec.knots == [round(x) for x in np.linspace(0, 142, 12)] and max(spec.knots) == 142
+    assert build_model_spec({**r.d.config, "holdout": None}, data).knots == 12
     order = list(map(str, data.media_channel.values))
     mu = np.asarray(spec.prior.roi_m.loc if hasattr(spec.prior.roi_m, "loc") else spec.prior.roi_m.parameters["loc"])
     assert np.isclose(mu[order.index("search")], math.log(2.9), atol=0.05)
