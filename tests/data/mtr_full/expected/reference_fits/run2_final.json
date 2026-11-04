@@ -1,0 +1,358 @@
+{
+  "settings": {
+    "chains": 4,
+    "adapt": 500,
+    "burnin": 500,
+    "keep": 1000,
+    "seed": 42
+  },
+  "seconds": 104,
+  "weeks": 157,
+  "rhat_max": 1.0107,
+  "rhat_worst": "mu_t",
+  "accuracy": {
+    "R_Squared|All Data": 0.951,
+    "MAPE|All Data": 0.0187,
+    "wMAPE|All Data": 0.0187
+  },
+  "prior_total_kpi_90": [
+    516456,
+    772916
+  ],
+  "actual_total_kpi": 484692,
+  "channels": {
+    "tv": {
+      "roi_mean": 1.28,
+      "roi_90": [
+        0.947,
+        1.656
+      ],
+      "prior_roi_90": [
+        0.293,
+        5.584
+      ],
+      "narrowed_by_pct": 86.6,
+      "mroi_mean": 0.874,
+      "share_of_kpi_pct": 6.52,
+      "alpha_mean": 0.603,
+      "alpha_90": [
+        0.502,
+        0.693
+      ]
+    },
+    "yt": {
+      "roi_mean": 1.431,
+      "roi_90": [
+        0.647,
+        2.596
+      ],
+      "prior_roi_90": [
+        0.24,
+        5.256
+      ],
+      "narrowed_by_pct": 61.2,
+      "mroi_mean": 0.942,
+      "share_of_kpi_pct": 1.45,
+      "alpha_mean": 0.378,
+      "alpha_90": [
+        0.085,
+        0.677
+      ]
+    },
+    "search": {
+      "roi_mean": 2.862,
+      "roi_90": [
+        2.45,
+        3.335
+      ],
+      "prior_roi_90": [
+        2.584,
+        4.73
+      ],
+      "narrowed_by_pct": 58.8,
+      "mroi_mean": 1.702,
+      "share_of_kpi_pct": 9.85,
+      "alpha_mean": 0.169,
+      "alpha_90": [
+        0.012,
+        0.409
+      ]
+    },
+    "meta": {
+      "roi_mean": 1.216,
+      "roi_90": [
+        0.29,
+        2.67
+      ],
+      "prior_roi_90": [
+        0.281,
+        5.272
+      ],
+      "narrowed_by_pct": 52.3,
+      "mroi_mean": 0.581,
+      "share_of_kpi_pct": 2.57,
+      "alpha_mean": 0.474,
+      "alpha_90": [
+        0.081,
+        0.868
+      ]
+    },
+    "agg": {
+      "roi_mean": 1.403,
+      "roi_90": [
+        0.288,
+        3.326
+      ],
+      "prior_roi_90": [
+        0.292,
+        5.583
+      ],
+      "narrowed_by_pct": 42.6,
+      "mroi_mean": 0.738,
+      "share_of_kpi_pct": 4.9,
+      "alpha_mean": 0.343,
+      "alpha_90": [
+        0.031,
+        0.818
+      ]
+    },
+    "print": {
+      "roi_mean": 0.894,
+      "roi_90": [
+        0.247,
+        1.852
+      ],
+      "prior_roi_90": [
+        0.241,
+        5.455
+      ],
+      "narrowed_by_pct": 69.2,
+      "mroi_mean": 0.57,
+      "share_of_kpi_pct": 0.27,
+      "alpha_mean": 0.452,
+      "alpha_90": [
+        0.071,
+        0.903
+      ]
+    }
+  },
+  "non_media_share_pct": 74.44,
+  "optimizer_past": {
+    "multipliers": {
+      "tv": 0.995,
+      "yt": 1.114,
+      "search": 1.5,
+      "meta": 0.7,
+      "agg": 0.711,
+      "print": null
+    },
+    "spend_cr": 37.09,
+    "historical_spend_cr": 37.09,
+    "gain_premium_cr": 3.0
+  },
+  "what_if_past": {
+    "tv +20%": {
+      "spend_change_cr": 7.34,
+      "policies_change": {
+        "mean": 4085.0,
+        "p05": 2927.0,
+        "p95": 5297.0,
+        "share_positive": 1.0
+      },
+      "premium_change_cr": {
+        "mean": 6.07,
+        "p05": 4.35,
+        "p95": 7.88,
+        "share_positive": 1.0
+      }
+    },
+    "search -30%": {
+      "spend_change_cr": -7.44,
+      "policies_change": {
+        "mean": -9677.0,
+        "p05": -11872.0,
+        "p95": -7066.0,
+        "share_positive": 0.0
+      },
+      "premium_change_cr": {
+        "mean": -14.38,
+        "p05": -17.64,
+        "p95": -10.51,
+        "share_positive": 0.0
+      }
+    },
+    "agg +50%": {
+      "spend_change_cr": 12.61,
+      "policies_change": {
+        "mean": 5179.0,
+        "p05": 726.0,
+        "p95": 13493.0,
+        "share_positive": 1.0
+      },
+      "premium_change_cr": {
+        "mean": 7.7,
+        "p05": 1.08,
+        "p95": 20.09,
+        "share_positive": 1.0
+      }
+    },
+    "meta off": {
+      "spend_change_cr": -15.25,
+      "policies_change": {
+        "mean": -12464.0,
+        "p05": -27376.0,
+        "p95": -2975.0,
+        "share_positive": 0.0
+      },
+      "premium_change_cr": {
+        "mean": -18.54,
+        "p05": -40.72,
+        "p95": -4.42,
+        "share_positive": 0.0
+      }
+    },
+    "all -10%": {
+      "spend_change_cr": -11.14,
+      "policies_change": {
+        "mean": -7700.0,
+        "p05": -9925.0,
+        "p95": -6038.0,
+        "share_positive": 0.0
+      },
+      "premium_change_cr": {
+        "mean": -11.45,
+        "p05": -14.75,
+        "p95": -8.97,
+        "share_positive": 0.0
+      }
+    },
+    "all +10%": {
+      "spend_change_cr": 11.14,
+      "policies_change": {
+        "mean": 7152.0,
+        "p05": 5562.0,
+        "p95": 9240.0,
+        "share_positive": 1.0
+      },
+      "premium_change_cr": {
+        "mean": 10.63,
+        "p05": 8.27,
+        "p95": 13.74,
+        "share_positive": 1.0
+      }
+    }
+  },
+  "future": {
+    "template": [
+      "2025-01-06",
+      "2025-03-31"
+    ],
+    "plans": {
+      "A": {
+        "multipliers": {
+          "tv": 1.0,
+          "yt": 1.0,
+          "search": 1.0,
+          "meta": 1.0,
+          "agg": 1.0,
+          "print": 1.0
+        },
+        "spend_cr": 8.75,
+        "change_vs_A_policies": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p95": 0.0,
+          "share_positive": 0.0
+        },
+        "total_expected_policies": 41610,
+        "weekly_change_mean": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "B": {
+        "multipliers": {
+          "tv": 0.8,
+          "yt": 1.0,
+          "search": 1.2,
+          "meta": 1.0,
+          "agg": 1.0,
+          "print": 1.0
+        },
+        "spend_cr": 8.68,
+        "change_vs_A_policies": {
+          "mean": 119.0,
+          "p05": -47.0,
+          "p95": 273.0,
+          "share_positive": 0.884
+        },
+        "total_expected_policies": 41729,
+        "weekly_change_mean": [
+          7.0,
+          5.5,
+          1.8,
+          6.4,
+          14.4,
+          20.6,
+          6.4,
+          -3.3,
+          -2.3,
+          5.6,
+          12.7,
+          20.0,
+          24.5
+        ]
+      },
+      "C": {
+        "multipliers": {
+          "tv": 0.951,
+          "yt": 1.318,
+          "search": 1.5,
+          "meta": 0.7,
+          "agg": 0.7,
+          "print": 1.0
+        },
+        "spend_cr": 8.75,
+        "change_vs_A_policies": {
+          "mean": 460.0,
+          "p05": -205.0,
+          "p95": 949.0,
+          "share_positive": 0.895
+        },
+        "total_expected_policies": 42070,
+        "weekly_change_mean": [
+          42.9,
+          39.5,
+          33.1,
+          29.7,
+          31.7,
+          32.5,
+          30.0,
+          37.8,
+          40.1,
+          38.0,
+          34.8,
+          35.3,
+          35.0
+        ]
+      }
+    }
+  },
+  "tracking": {
+    "execution_gap_total": -272,
+    "predicted_at_actual_total": 41457,
+    "predicted_plan_total": 41730,
+    "actual_total": 39576
+  }
+}

@@ -33,6 +33,11 @@ PARAMS_PER_MEDIA = 3      # effect (ROI), carryover (adstock), saturation (half 
 PARAMS_PER_CONTROL = 1
 WEEKS_PER_KNOT = 13       # baseline flexibility: about one knot per quarter (step 24 default)
 
+
+def default_knots(weeks: int) -> int:
+    """Step 24's default: about one knot per quarter, to the nearest knot (157 weeks: 12, not 13)."""
+    return max(1, int(weeks / WEEKS_PER_KNOT + 0.5))
+
 BADGE_TEXT = {
     "hard_to_measure": "hard to measure",
     "rarely_on": "rarely on",

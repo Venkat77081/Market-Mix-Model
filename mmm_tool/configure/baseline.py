@@ -30,7 +30,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .context import KNOTS_AMBER_WEEKS, KNOTS_MAX_WEEKS, KNOTS_RED_WEEKS, WEEKS_PER_KNOT
+from ..profile.context import default_knots
+from .context import KNOTS_AMBER_WEEKS, KNOTS_MAX_WEEKS, KNOTS_RED_WEEKS
 
 RIDGE_ALPHA = 1.0          # on standardised controls and media; knot levels are not penalised
 PREVIEW_DECAY = 0.5        # geometric adstock decay used by the preview only
@@ -65,7 +66,7 @@ def spacing(locations) -> int | None:
 def limits(n_weeks: int) -> dict[str, Any]:
     """Default, slider range, quick choices and warning thresholds for a number of weeks."""
     return {
-        "default": max(1, math.ceil(n_weeks / WEEKS_PER_KNOT)),
+        "default": default_knots(n_weeks),
         "max": max(1, n_weeks // KNOTS_MAX_WEEKS),
         "amber": n_weeks / KNOTS_AMBER_WEEKS,
         "red": n_weeks / KNOTS_RED_WEEKS,

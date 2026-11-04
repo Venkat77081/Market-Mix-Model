@@ -158,7 +158,7 @@ def check(name):
         cols, bad, missing = compare(t, tr)
         add(f"{len(cols)} columns equal truth over {len(tr)} weeks", not bad, bad)
     if name == "B02_exact_duplicate_rows.csv":
-        add("asks before merging", "duplicate_dates" in dec)
+        add("exact copies don't stop step 2 (step 8 drops them; blocks: false)", "duplicate_dates" not in dec)
     if name == "B03_split_rows_aggregation.csv":
         s8 = bstep(r, 8)
         rules = {x["column"]: x.get("applied") for x in (s8.details.get("rules", []) if s8 else [])}

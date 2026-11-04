@@ -163,27 +163,21 @@ def test_a_real_summary_cost_per_matches_its_own_row(tmp_path):
 
 # MTR_FULL, run 2 (a lift test on search) ------------------------------------------------------------
 
-MTR_FULL = next((p for p in Path(__file__).parent.joinpath("data").rglob("*") if p.stem.lower() == "mtr_full" and p.is_file()), None)
-LIFT = next((p for p in Path(__file__).parent.joinpath("data").rglob("lift_tests.csv")), None)
-needs_mtr = pytest.mark.skipif(MTR_FULL is None or LIFT is None or os.environ.get("MMM_FIT_TESTS") != "1",
-                               reason="put MTR_FULL and raw/lift_tests.csv in tests/data and set MMM_FIT_TESTS=1")
+from test_mtr_full import LIFT  # noqa: E402
+from test_mtr_full import RAW as MTR_FULL  # noqa: E402
 
-
-def _lift_tests(path: Path) -> list[dict]:
-    df = pd.read_csv(path)
-    col = lambda *names: next(c for c in df.columns if any(n in c.lower() for n in names))  # noqa: E731
-    return [{"channel": str(r[col("channel")]), "start": str(r[col("start")])[:10], "end": str(r[col("end")])[:10],
-             "roi": float(r[col("roi", "estimate")]), "low": float(r[col("low", "lower")]), "high": float(r[col("high", "upper")])}
-            for _, r in df.iterrows()]
+needs_mtr = pytest.mark.skipif(not MTR_FULL.exists() or os.environ.get("MMM_FIT_TESTS") != "1",
+                               reason="MTR_FULL is in tests/data/mtr_full; set MMM_FIT_TESTS=1 to fit it")
 
 
 @needs_mtr
 def test_mtr_full_run2_search_is_anchored_to_its_lift_test():
-    from mmm_tool.fit.pipeline import run_phase_e
-    from mmm_tool.pipeline import run_pipeline
+    from test_mtr_full import run
 
-    r = run_pipeline(MTR_FULL, {"lift_tests": _lift_tests(LIFT), "duplicate_dates": "merge"}, accept_defaults=True)
-    e = run_phase_e(r.d, {"sampler": "quick"})
+    from mmm_tool.fit.pipeline import run_phase_e
+
+    r = run({"lift_tests": [LIFT]})
+    e = run_phase_e(r.d, {"sampler": {"n_chains": 4, "n_adapt": 500, "n_burnin": 500, "n_keep": 1000}, "seed": 42})
     st = {s.step: s for s in e.steps}
     rows = {x["channel"]: x for x in st[33].details["channels"]}
     print("\n" + "\n".join(f"{c}: prior {x['prior'][0]:.2f}-{x['prior'][1]:.2f} posterior {x['posterior'][0]:.2f}-{x['posterior'][1]:.2f} "

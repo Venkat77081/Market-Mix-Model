@@ -1,0 +1,29 @@
+{
+ "NAMES": {
+  "week_start": "Week (dd/mm/yyyy)",
+  "policies": "New Policies",
+  "premium_lakh": "Premium (\u20b9 lakh)",
+  "tv_spend": "TV Spend",
+  "tv_grps": "TV GRPs",
+  "yt_spend": "YouTube Spend",
+  "yt_impressions": "YouTube Impr.",
+  "search_spend": "Search Spend",
+  "search_clicks": "Search Clicks",
+  "meta_spend": "Meta Spend",
+  "agg_spend": "PolicyBazaar Commission",
+  "print_spend": "Print Spend",
+  "branded_search": "Branded Search Vol",
+  "car_sales": "Car Sales (SIAM)",
+  "fuel_index": "Fuel Price Idx",
+  "competitor_discount": "Competitor Discount",
+  "festive": "Festive Season"
+ },
+ "MISSING": "2024-09-16",
+ "DUPS": [
+  "2023-05-22",
+  "2024-05-13",
+  "2025-07-21"
+ ],
+ "FLEET": "2024-07-15",
+ "PRINT_END": "2024-06-24"
+}

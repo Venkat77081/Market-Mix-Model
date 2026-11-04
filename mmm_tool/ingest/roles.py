@@ -157,7 +157,8 @@ def value_checks(df: pd.DataFrame, out: list[RoleSuggestion], kpi: RoleSuggestio
             rcv, ocv = _cv(r), _cv(x[m])
             if rcv < REVENUE_RATIO_CV and rcv < REVENUE_STEADIER * ocv:
                 cur = money_fmt.get(money_fmt.detect(df, [s.column]))
-                reason = (f"{s.column} ÷ {kpi.column} stays between {money_fmt.money(r.min(), cur)} and {money_fmt.money(r.max(), cur)} "
+                dec = 0 if r.min() >= 10 else 2 if r.min() >= 0.1 else 4           # a column in lakh: 0.13, not 0
+                reason = (f"{s.column} ÷ {kpi.column} stays between {money_fmt.money(r.min(), cur, dec)} and {money_fmt.money(r.max(), cur, dec)} "
                           f"(varies {rcv:.0%}): revenue for the KPI. Use it as revenue per KPI = {s.column} ÷ {kpi.column}")
                 revenue.append((rcv, s, reason))
                 continue

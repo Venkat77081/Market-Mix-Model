@@ -291,9 +291,16 @@ def parse_dates(df: pd.DataFrame, answers: Answers, date_col: str | None = None,
     counted = f"{n_rows:,} rows, {n_unique:,} unique dates"
     if n_unique < n_rows:
         region = explaining_region(out, date_col)
+        copies = len(out) - len(out.drop_duplicates())
         if region:
             details["repeats_explained_by"] = region
             counted += f" ({n_unique:,} dates × {out[region].nunique()} values of '{region}')"
+        elif copies and not out.drop_duplicates()[date_col].duplicated().any():
+            # every repeat is an exact copy of a whole row: step 8 drops it, nothing to decide here
+            repeated = out[date_col][out.duplicated(keep="first")]
+            examples = sorted({str(x.date()) for x in repeated})[:5]
+            details["exact_copies"] = copies
+            warnings.append(f"{copies} row(s) are exact copies of another row (e.g. {examples}); Phase B step 8 drops them.")
         else:
             repeated = out[date_col][out[date_col].duplicated(keep=False)]
             examples = sorted({str(x.date()) for x in repeated})[:5]

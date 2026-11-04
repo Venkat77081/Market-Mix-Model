@@ -1,0 +1,2 @@
+channel_source_column,start_date,end_date,roi,roi_low,roi_high,method
+Search Spend,2025-06-02,2025-07-27,2.74,2.34,3.14,geo holdout: brand + generic search paused in matched test cities (synthetic)

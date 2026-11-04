@@ -1,0 +1,153 @@
+{
+  "settings": {
+    "chains": 4,
+    "adapt": 500,
+    "burnin": 500,
+    "keep": 1000,
+    "seed": 42
+  },
+  "seconds": 126,
+  "weeks": 157,
+  "rhat_max": 1.0029,
+  "rhat_worst": "knot_values",
+  "accuracy": {
+    "R_Squared|All Data": 0.9514,
+    "MAPE|All Data": 0.0186,
+    "wMAPE|All Data": 0.0186
+  },
+  "prior_total_kpi_90": [
+    486466,
+    761627
+  ],
+  "actual_total_kpi": 484692,
+  "channels": {
+    "tv": {
+      "roi_mean": 1.26,
+      "roi_90": [
+        0.933,
+        1.633
+      ],
+      "prior_roi_90": [
+        0.293,
+        5.584
+      ],
+      "narrowed_by_pct": 86.8,
+      "mroi_mean": 0.862,
+      "share_of_kpi_pct": 6.42,
+      "alpha_mean": 0.6,
+      "alpha_90": [
+        0.5,
+        0.69
+      ]
+    },
+    "yt": {
+      "roi_mean": 1.458,
+      "roi_90": [
+        0.654,
+        2.553
+      ],
+      "prior_roi_90": [
+        0.24,
+        5.256
+      ],
+      "narrowed_by_pct": 62.1,
+      "mroi_mean": 0.956,
+      "share_of_kpi_pct": 1.48,
+      "alpha_mean": 0.381,
+      "alpha_90": [
+        0.085,
+        0.671
+      ]
+    },
+    "search": {
+      "roi_mean": 3.363,
+      "roi_90": [
+        1.037,
+        5.778
+      ],
+      "prior_roi_90": [
+        0.291,
+        5.5
+      ],
+      "narrowed_by_pct": 9.0,
+      "mroi_mean": 1.951,
+      "share_of_kpi_pct": 11.58,
+      "alpha_mean": 0.186,
+      "alpha_90": [
+        0.015,
+        0.463
+      ]
+    },
+    "meta": {
+      "roi_mean": 1.187,
+      "roi_90": [
+        0.294,
+        2.632
+      ],
+      "prior_roi_90": [
+        0.281,
+        5.272
+      ],
+      "narrowed_by_pct": 53.2,
+      "mroi_mean": 0.573,
+      "share_of_kpi_pct": 2.51,
+      "alpha_mean": 0.47,
+      "alpha_90": [
+        0.071,
+        0.87
+      ]
+    },
+    "agg": {
+      "roi_mean": 1.372,
+      "roi_90": [
+        0.277,
+        3.197
+      ],
+      "prior_roi_90": [
+        0.292,
+        5.583
+      ],
+      "narrowed_by_pct": 44.8,
+      "mroi_mean": 0.713,
+      "share_of_kpi_pct": 4.79,
+      "alpha_mean": 0.347,
+      "alpha_90": [
+        0.025,
+        0.829
+      ]
+    },
+    "print": {
+      "roi_mean": 0.895,
+      "roi_90": [
+        0.253,
+        1.848
+      ],
+      "prior_roi_90": [
+        0.241,
+        5.455
+      ],
+      "narrowed_by_pct": 69.4,
+      "mroi_mean": 0.57,
+      "share_of_kpi_pct": 0.27,
+      "alpha_mean": 0.459,
+      "alpha_90": [
+        0.066,
+        0.915
+      ]
+    }
+  },
+  "non_media_share_pct": 72.95,
+  "optimizer_past": {
+    "multipliers": {
+      "tv": 0.995,
+      "yt": 1.162,
+      "search": 1.5,
+      "meta": 0.7,
+      "agg": 0.7,
+      "print": null
+    },
+    "spend_cr": 37.09,
+    "historical_spend_cr": 37.09,
+    "gain_premium_cr": 3.96
+  }
+}

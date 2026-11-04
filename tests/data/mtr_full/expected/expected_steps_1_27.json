@@ -1,0 +1,475 @@
+{
+  "1_load": {
+    "file": "Excel, 2 sheets: 'Read me' (notes) and 'Weekly' (data)",
+    "data_sheet": "Weekly",
+    "title_rows_above_header": 2,
+    "header_row": 3,
+    "rows": 159,
+    "columns": 18
+  },
+  "2_dates": {
+    "format": "dd/mm/yyyy text in every row",
+    "rows": 159,
+    "unique_dates": 156,
+    "first": "2023-01-02",
+    "last": "2025-12-29",
+    "day_first_proven": 97,
+    "ambiguous": 56,
+    "same_either_way": 6,
+    "note": "unique dates < rows because of 3 exact duplicate rows; 1 week is absent (step 10)"
+  },
+  "3_roles": {
+    "expected": {
+      "Week (dd/mm/yyyy)": "Date",
+      "New Policies": "KPI (a count)",
+      "Premium (\u20b9 lakh)": "Revenue for KPI (in \u20b9 lakh: \u00d7 1,00,000)",
+      "TV Spend": "Paid media spend",
+      "TV GRPs": "Exposure for TV",
+      "YouTube Spend": "Paid media spend",
+      "YouTube Impr.": "Exposure for YouTube",
+      "Search Spend": "Paid media spend",
+      "Search Clicks": "Exposure for Search",
+      "Meta Spend": "Paid media spend (text with Indian commas)",
+      "PolicyBazaar Commission": "Paid media spend ('Commission' is a spend word)",
+      "Print Spend": "Paid media spend (blank after it ended)",
+      "Branded Search Vol": "Control (DECISION: set as Control on purpose, so step 18 can catch it)",
+      "Car Sales (SIAM)": "Control",
+      "Fuel Price Idx": "Control",
+      "Competitor Discount": "Control (event flag)",
+      "Festive Season": "Control (season flag)",
+      "Comments": "Excluded (free text)"
+    },
+    "paid_channels": 6,
+    "exposure_columns": 3,
+    "controls": 5
+  },
+  "4_pairs": {
+    "TV Spend": "TV GRPs",
+    "YouTube Spend": "YouTube Impr.",
+    "Search Spend": "Search Clicks",
+    "_spend_only": [
+      "Meta Spend",
+      "PolicyBazaar Commission",
+      "Print Spend"
+    ],
+    "_note": "media costs rose until Dec-2024 (TV +8%/yr, YouTube +5%, Search +6%), so exposure is not proportional to spend"
+  },
+  "5_kpi_type": {
+    "kpi": "New Policies",
+    "kpi_type": "non_revenue",
+    "revenue_per_kpi": "Premium (\u20b9 lakh) \u00d7 1,00,000 \u00f7 New Policies",
+    "median_raw_rows": 14890.0,
+    "trap": "premium is in lakh: without \u00d7 1,00,000 the value per policy is about \u20b90.14 and every ROI is 1,00,000\u00d7 too small",
+    "roi_unit": "\u20b9 per \u20b9"
+  },
+  "6_granularity": {
+    "frequency": "weekly",
+    "week_start": "Monday",
+    "regions": "one national series"
+  },
+  "7_types": {
+    "Meta Spend: text with Indian grouping (e.g. 7,99,000)": 159,
+    "Print Spend: blank cells": 79,
+    "Premium (\u20b9 lakh): decimals": 159
+  },
+  "8_duplicates": {
+    "rows_in": 159,
+    "exact_duplicate_rows": 3,
+    "exact_duplicate_weeks": [
+      "2023-05-22",
+      "2024-05-13",
+      "2025-07-21"
+    ],
+    "split_weeks": [],
+    "revisions": [],
+    "rows_out": 156
+  },
+  "9_weeks": {
+    "input": "weekly, Monday",
+    "resampling": "none"
+  },
+  "10_gaps": {
+    "missing_weeks": [
+      "2024-09-16"
+    ],
+    "decision": "Interpolate every column in the missing week (spend, exposure, KPI, controls)",
+    "interpolated": {
+      "policies": {
+        "2024-09-16": 2854.0
+      },
+      "premium_lakh": {
+        "2024-09-16": 428.71
+      },
+      "tv_spend": {
+        "2024-09-16": 0.0
+      },
+      "yt_spend": {
+        "2024-09-16": 0.0
+      },
+      "search_spend": {
+        "2024-09-16": 1446000.0
+      },
+      "meta_spend": {
+        "2024-09-16": 885500.0
+      },
+      "agg_spend": {
+        "2024-09-16": 1839000.0
+      },
+      "tv_grps": {
+        "2024-09-16": 0.0
+      },
+      "yt_impressions": {
+        "2024-09-16": 0.0
+      },
+      "search_clicks": {
+        "2024-09-16": 72699.0
+      },
+      "branded_search": {
+        "2024-09-16": 42.3
+      },
+      "car_sales": {
+        "2024-09-16": 345050.0
+      },
+      "fuel_index": {
+        "2024-09-16": 1.051
+      },
+      "competitor_discount": {
+        "2024-09-16": 0.0
+      },
+      "festive": {
+        "2024-09-16": 0.0
+      }
+    },
+    "print_ended": {
+      "after": "2024-06-24",
+      "weeks": 79,
+      "fill": "0 (channel stopped)"
+    },
+    "real_zero_weeks": {
+      "tv_spend": 68,
+      "yt_spend": 92,
+      "search_spend": 0,
+      "meta_spend": 0,
+      "agg_spend": 0,
+      "print_spend": 48
+    },
+    "real_zeros_total": 208,
+    "note": "TV is off on both sides of the missing week, so interpolation gives 0 for TV and its GRPs"
+  },
+  "11_outliers": {
+    "kpi_median": 3081.0,
+    "mad": 130.0,
+    "flagged": {
+      "2024-07-15": 9.4
+    },
+    "largest_other_abs_z": 3.34,
+    "cause": "fleet deal (see Comments)",
+    "action": "keep, add event_flag"
+  },
+  "12_impossible": {
+    "negative_spend": {},
+    "zero_kpi_weeks": [],
+    "unit_changes": [],
+    "note": "nothing to flag"
+  },
+  "13_money": {
+    "inflation_adjustment": "none",
+    "premium_unit": "\u20b9 lakh, converted when revenue per KPI is calculated (after Phase B)"
+  },
+  "_phase_b_check": "every non-interpolated cell matches truth/true_weekly.csv",
+  "_imputed_vs_truth": {
+    "policies": [
+      2854.0,
+      2846.0
+    ],
+    "tv_spend": [
+      0.0,
+      0.0
+    ],
+    "yt_spend": [
+      0.0,
+      0.0
+    ],
+    "search_spend": [
+      1446000.0,
+      1396000.0
+    ],
+    "meta_spend": [
+      885500.0,
+      1295000.0
+    ],
+    "agg_spend": [
+      1839000.0,
+      1761000.0
+    ]
+  },
+  "14_sufficiency": {
+    "weeks": 157,
+    "channels": 6,
+    "controls_at_step_14": 6,
+    "three_per_channel": {
+      "parameters": 37,
+      "obs_per_param": 4.24
+    },
+    "four_per_channel": {
+      "parameters": 43,
+      "obs_per_param": 3.65
+    }
+  },
+  "15_activity": {
+    "tv": {
+      "weeks_with_spend": 88,
+      "pct_weeks": 56.1,
+      "share_of_spend_pct": 32.9,
+      "status": "active"
+    },
+    "yt": {
+      "weeks_with_spend": 64,
+      "pct_weeks": 40.8,
+      "share_of_spend_pct": 6.6,
+      "status": "active"
+    },
+    "search": {
+      "weeks_with_spend": 157,
+      "pct_weeks": 100.0,
+      "share_of_spend_pct": 22.3,
+      "status": "active"
+    },
+    "meta": {
+      "weeks_with_spend": 157,
+      "pct_weeks": 100.0,
+      "share_of_spend_pct": 13.7,
+      "status": "active"
+    },
+    "agg": {
+      "weeks_with_spend": 157,
+      "pct_weeks": 100.0,
+      "share_of_spend_pct": 22.6,
+      "status": "active"
+    },
+    "print": {
+      "weeks_with_spend": 30,
+      "pct_weeks": 19.1,
+      "share_of_spend_pct": 1.9,
+      "status": "active"
+    },
+    "_note": "Print passes (19% of weeks, 1.9% of spend) although it stopped in Jun-2024: keep it"
+  },
+  "16_variation": {
+    "tv": {
+      "cv": 0.999,
+      "badge": ""
+    },
+    "yt": {
+      "cv": 1.324,
+      "badge": ""
+    },
+    "search": {
+      "cv": 0.118,
+      "badge": "hard to measure"
+    },
+    "meta": {
+      "cv": 0.356,
+      "badge": ""
+    },
+    "agg": {
+      "cv": 0.18,
+      "badge": "hard to measure"
+    },
+    "print": {
+      "cv": 2.11,
+      "badge": ""
+    }
+  },
+  "17_together": {
+    "max_abs_corr": 0.41,
+    "pair": [
+      "tv",
+      "yt"
+    ],
+    "vif": {
+      "tv": 1.21,
+      "yt": 1.29,
+      "search": 1.04,
+      "meta": 1.03,
+      "agg": 1.12,
+      "print": 1.15
+    },
+    "verdict": "Pass"
+  },
+  "18_marketing_caused": {
+    "checked": {
+      "branded_search": {
+        "level_rule": {
+          "value": 0.71,
+          "channel": "tv",
+          "flag": true
+        },
+        "change_rule": {
+          "value": 0.68,
+          "channel": "tv",
+          "flag": true
+        }
+      },
+      "car_sales": {
+        "level_rule": {
+          "value": 0.43,
+          "channel": "agg",
+          "flag": false
+        },
+        "change_rule": {
+          "value": 0.18,
+          "channel": "agg",
+          "flag": false
+        }
+      },
+      "fuel_index": {
+        "level_rule": {
+          "value": 0.48,
+          "channel": "agg",
+          "flag": false
+        },
+        "change_rule": {
+          "value": 0.17,
+          "channel": "meta",
+          "flag": false
+        }
+      },
+      "competitor_discount": {
+        "level_rule": {
+          "value": 0.18,
+          "channel": "yt",
+          "flag": false
+        },
+        "change_rule": {
+          "value": 0.19,
+          "channel": "agg",
+          "flag": false
+        }
+      }
+    },
+    "truth": "branded search volume is driven by TV",
+    "decision": "exclude Branded Search Vol"
+  },
+  "19_seasons": {
+    "tv": {
+      "festive": 0.13
+    },
+    "yt": {
+      "festive": 0.16
+    },
+    "search": {
+      "festive": -0.24
+    },
+    "meta": {
+      "festive": 0.0
+    },
+    "agg": {
+      "festive": -0.01
+    },
+    "print": {
+      "festive": -0.06
+    },
+    "_flagged": []
+  },
+  "20_profile": {
+    "total_spend_cr": 111.39,
+    "share_pct": {
+      "tv": 32.9,
+      "yt": 6.6,
+      "search": 22.3,
+      "meta": 13.7,
+      "agg": 22.6,
+      "print": 1.9
+    }
+  },
+  "21_calendar": {
+    "tax_season": {
+      "preset_weeks": 41,
+      "decision": "don't add: tax-saving season doesn't drive motor insurance"
+    },
+    "festive": {
+      "in_file_weeks": 16,
+      "decision": "use the file's Festive Season (Navratri to Diwali)"
+    },
+    "diwali_preset": {
+      "decision": "don't add (the file's festive flag covers it)"
+    },
+    "fy_end": {
+      "preset_weeks": 8,
+      "decision": "add (dealer year-end push in March)"
+    },
+    "controls_after": [
+      "car_sales",
+      "fuel_index",
+      "competitor_discount",
+      "festive",
+      "fy_end",
+      "event_flag"
+    ]
+  },
+  "22_max_lag": 8,
+  "23_shape": "geometric everywhere",
+  "24_knots": {
+    "knots": 12,
+    "locations": [
+      0,
+      14,
+      28,
+      42,
+      56,
+      70,
+      85,
+      99,
+      113,
+      127,
+      141,
+      156
+    ],
+    "dates": [
+      "2023-01-02",
+      "2023-04-10",
+      "2023-07-17",
+      "2023-10-23",
+      "2024-01-29",
+      "2024-05-06",
+      "2024-08-19",
+      "2024-11-25",
+      "2025-03-03",
+      "2025-06-09",
+      "2025-09-15",
+      "2025-12-29"
+    ]
+  },
+  "25_priors": "none",
+  "26_lift_tests": {
+    "run_1": "none",
+    "run_2": {
+      "channel_source_column": "Search Spend",
+      "start_date": "2025-06-02",
+      "end_date": "2025-07-27",
+      "roi": 2.74,
+      "roi_low": 2.34,
+      "roi_high": 3.14,
+      "method": "geo holdout: brand + generic search paused in matched test cities (synthetic)"
+    }
+  },
+  "27_holdout": {
+    "weeks": 13,
+    "held_back": [
+      "2025-10-06",
+      "2025-12-29"
+    ],
+    "train_weeks": 144
+  },
+  "tracking_input": {
+    "rows": 13,
+    "weeks": [
+      "2026-01-05",
+      "2026-03-30"
+    ],
+    "header": "1 header row, no title rows (unlike the main export)",
+    "print_blank": "Print Spend is blank in every row: channel ended \u2192 0",
+    "mapping": "every column name matches the saved mapping"
+  }
+}

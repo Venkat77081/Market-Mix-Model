@@ -130,17 +130,20 @@ def test_step27_offers_the_choice(tmp_path):
 
 # MTR_FULL (real fits) ---------------------------------------------------------------------------------
 
-MTR_FULL = next((p for p in Path(__file__).parent.joinpath("data").rglob("*") if p.stem.lower() == "mtr_full"), None)
-needs_mtr = pytest.mark.skipif(MTR_FULL is None or os.environ.get("MMM_FIT_TESTS") != "1",
-                               reason="put MTR_FULL (mtr_full.csv or .xlsx) in tests/data and set MMM_FIT_TESTS=1")
+from test_mtr_full import RAW as MTR_FULL  # noqa: E402
+
+needs_mtr = pytest.mark.skipif(not MTR_FULL.exists() or os.environ.get("MMM_FIT_TESTS") != "1",
+                               reason="MTR_FULL is in tests/data/mtr_full; set MMM_FIT_TESTS=1 to fit it")
+MTR_SAMPLER = {"sampler": {"n_chains": 4, "n_adapt": 500, "n_burnin": 500, "n_keep": 1000}, "seed": 42}   # the README's
 
 
 def _mtr(knots_in):
-    from mmm_tool.fit.pipeline import run_phase_e
-    from mmm_tool.pipeline import run_pipeline
+    from test_mtr_full import run
 
-    r = run_pipeline(MTR_FULL, {"holdout_knots": knots_in, "duplicate_dates": "merge"}, accept_defaults=True)
-    e = run_phase_e(r.d, {"sampler": "quick"})
+    from mmm_tool.fit.pipeline import run_phase_e
+
+    r = run({"holdout_knots": knots_in})
+    e = run_phase_e(r.d, MTR_SAMPLER)
     return r, {s.step: s for s in e.steps}
 
 

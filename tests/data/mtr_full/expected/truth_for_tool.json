@@ -1,0 +1,63 @@
+{
+  "dataset": "MTR_FULL",
+  "kpi_column": "New Policies",
+  "roi_unit": "INR per INR (premium per policy = Premium (₹ lakh) × 1,00,000 / New Policies)",
+  "assumes_decisions": "all 6 channels kept, branded search excluded (step 18), FY end added (step 21)",
+  "channels": [
+    {
+      "source_columns": [
+        "TV Spend"
+      ],
+      "true_roi": 1.309,
+      "true_share_of_kpi_pct": 6.62,
+      "true_policies_per_lakh": 8.8,
+      "true_marginal_roi": 0.832
+    },
+    {
+      "source_columns": [
+        "YouTube Spend"
+      ],
+      "true_roi": 1.601,
+      "true_share_of_kpi_pct": 1.62,
+      "true_policies_per_lakh": 10.77,
+      "true_marginal_roi": 0.994
+    },
+    {
+      "source_columns": [
+        "Search Spend"
+      ],
+      "true_roi": 2.803,
+      "true_share_of_kpi_pct": 9.64,
+      "true_policies_per_lakh": 18.87,
+      "true_marginal_roi": 1.399
+    },
+    {
+      "source_columns": [
+        "Meta Spend"
+      ],
+      "true_roi": 1.408,
+      "true_share_of_kpi_pct": 2.97,
+      "true_policies_per_lakh": 9.46,
+      "true_marginal_roi": 0.723
+    },
+    {
+      "source_columns": [
+        "PolicyBazaar Commission"
+      ],
+      "true_roi": 3.005,
+      "true_share_of_kpi_pct": 10.47,
+      "true_policies_per_lakh": 20.16,
+      "true_marginal_roi": 1.451
+    },
+    {
+      "source_columns": [
+        "Print Spend"
+      ],
+      "true_roi": 0.6,
+      "true_share_of_kpi_pct": 0.18,
+      "true_policies_per_lakh": 4.15,
+      "true_marginal_roi": 0.391
+    }
+  ],
+  "true_non_media_share_pct": 68.5
+}

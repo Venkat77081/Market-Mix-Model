@@ -6,11 +6,10 @@ Weeks of history and observations per parameter. Under 104 weeks or under
 """
 from __future__ import annotations
 
-import math
 
 from ..ingest.types import StepResult, Verdict
 from .context import (ADEQUATE_WEEKS, COMFORT_OBS_PER_PARAM, MIN_OBS_PER_PARAM, MIN_WEEKS, PARAMS_PER_CONTROL,
-                      PARAMS_PER_MEDIA, WEEKS_PER_KNOT, CCtx)
+                      PARAMS_PER_MEDIA, CCtx, default_knots)
 
 STEP = 14
 NAME = "Data sufficiency"
@@ -23,7 +22,7 @@ def parameter_count(ctx: CCtx, weeks: int, geos: int) -> dict[str, int]:
         "unpaid media": PARAMS_PER_MEDIA * len(ctx.cols("organic_media")),
         "controls": PARAMS_PER_CONTROL * len(ctx.cols("control")),
         "non-media levers": PARAMS_PER_CONTROL * len(ctx.cols("non_media_treatment")),
-        "baseline knots": max(1, math.ceil(weeks / WEEKS_PER_KNOT)),
+        "baseline knots": default_knots(weeks),
         "intercepts": max(1, geos),
     }
 
