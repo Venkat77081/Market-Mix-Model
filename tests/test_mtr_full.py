@@ -107,7 +107,9 @@ def test_phase_c(mtr):
 def test_phase_d_matches_the_expected_model_table(mtr):
     st, e = steps(mtr), expected()
     assert "cal_fy_end" in st[21].summary and "tax" not in st[21].summary              # the preset that doesn't apply, declined
-    assert st[24].details["locations"] == e["24_knots"]["locations"]
+    if st[24].details["locations"] is not None:                                     # None without Meridian installed
+        assert st[24].details["locations"] == e["24_knots"]["locations"]
+    assert st[24].details["knots"] == e["24_knots"]["knots"]
     assert mtr.d.config["holdout"]["train_weeks"] == e["27_holdout"]["train_weeks"] == 144
     t = mtr.d.table.rename(columns=CLEAN)
     exp = pd.read_csv(HERE / "expected" / "model_input.csv")

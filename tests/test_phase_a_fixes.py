@@ -206,7 +206,14 @@ def test_unique_dates_reported_a05():
 
 def test_repeated_dates_stop_unless_explained(tmp_path):
     df = gen.make_insurance()
-    p = write(tmp_path, pd.concat([df, df.iloc[[3, 9]]]))
+    copies = write(tmp_path, pd.concat([df, df.iloc[[3, 9]]]))                     # exact copies: step 8 drops them
+    r = run(copies, defaults=False)
+    assert "duplicate_dates" not in [d["id"] for d in r.pending] and step(r, 2).details["exact_copies"] == 2
+    assert "2 row(s) are exact copies" in step(r, 2).warnings[0]
+    differ = df.iloc[[3, 9]].copy()
+    differ[differ.columns[-1]] = differ[differ.columns[-1]] + 1                     # same weeks, different numbers
+    (tmp_path / "differ").mkdir()
+    p = write(tmp_path / "differ", pd.concat([df, differ]))
     r = run(p, defaults=False)
     assert r.steps[-1].step == 2 and r.pending[0]["id"] == "duplicate_dates"
     assert "158 rows, 156 unique dates" in r.steps[-1].summary
